@@ -48,6 +48,10 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Backend exchanges `code -> openid`, then creates/reuses a `shadow` user.
 - Backend issues `visitor_token` for rate limit and audit only.
 - No explicit profile authorization in MVP.
+- Real-mode policy:
+  - `USE_MOCK_WECHAT=false` means credentials are mandatory.
+  - Missing `WECHAT_APPID` or `WECHAT_SECRET` should fail fast.
+  - WeChat `errcode != 0` should return stable 4xx with safe message.
 
 ## 6) Crawler Behavior Guardrails
 
@@ -70,4 +74,3 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Convert predictable failures to 4xx with stable `detail`.
 - Log all unexpected 5xx with `request_id`.
 - For crawler refresh requests, return accepted/pending state through `crawl_jobs`.
-

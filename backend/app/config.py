@@ -18,7 +18,8 @@ class Settings(BaseSettings):
 
     wechat_appid: str = ""
     wechat_secret: str = ""
-    use_mock_wechat: bool = True
+    use_mock_wechat: bool = False
+    auto_create_tables: bool = True
 
     admin_token: str = "replace-admin-token"
     rate_limit_per_minute: int = 120

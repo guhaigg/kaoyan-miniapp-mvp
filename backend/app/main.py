@@ -11,7 +11,8 @@ from .routers import admin, auth, content, health, schools, search
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    init_db()
+    if settings.auto_create_tables:
+        init_db()
     redis_client = None
     try:
         import redis
@@ -43,4 +44,3 @@ app.include_router(schools.router, prefix=settings.api_prefix)
 app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(content.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
-

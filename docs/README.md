@@ -42,12 +42,14 @@ docker compose -f infra/docker-compose.yml up -d db redis
 cd backend
 cp .env.example .env
 pip install -r requirements.txt
+python -m alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 4. Run miniapp:
 - Open `miniapp/` with WeChat DevTools.
 - Keep default no-popup silent login flow via `wx.login`.
+- For local-only flow without WeChat secret, set `USE_MOCK_WECHAT=true` in `backend/.env`.
 
 ## Core Docs Index
 
@@ -55,4 +57,3 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - [Frontend and Design Spec](./frontend_and_design.md)
 - [Deployment Handbook](./deployment.md)
 - [Git Workflow and Release Rules](./git_workflow.md)
-

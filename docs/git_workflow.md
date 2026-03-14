@@ -43,6 +43,10 @@ Push at these four critical checkpoints:
 - Include test notes and rollback notes.
 - Require passing CI before merge.
 - Merge into `dev`, then controlled release to `main`.
+- Branch protection recommendation:
+  - Protect `main` and `dev`.
+  - Require PR reviews + passing `backend-ci`.
+  - Disallow direct push to `main`.
 
 ## 5) Husky + Commitlint Setup
 
@@ -59,4 +63,3 @@ npm install
 ```
 
 Then commit message lint runs automatically.
-

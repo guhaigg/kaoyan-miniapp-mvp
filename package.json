@@ -10,7 +10,10 @@
     "prepare": "husky",
     "lint:commit": "commitlint --from=HEAD~1 --to=HEAD --verbose",
     "test:backend": "cd backend && pytest -q",
-    "dev:backend": "cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    "dev:backend": "cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "db:migrate": "cd backend && python -m alembic upgrade head",
+    "db:downgrade": "cd backend && python -m alembic downgrade -1",
+    "db:revision": "cd backend && python -m alembic revision --autogenerate -m \"schema update\""
   },
   "keywords": [],
   "author": "",

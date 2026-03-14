@@ -11,6 +11,7 @@ Copy `backend/.env.example` to `backend/.env` and fill values:
 - `WECHAT_APPID`
 - `WECHAT_SECRET`
 - `USE_MOCK_WECHAT`
+- `AUTO_CREATE_TABLES`
 - `ADMIN_TOKEN`
 - `RATE_LIMIT_PER_MINUTE`
 
@@ -18,6 +19,9 @@ Security rule:
 
 - Never commit real `.env`.
 - Keep secrets in CI/CD secret store.
+- Production recommendation:
+  - `USE_MOCK_WECHAT=false`
+  - `AUTO_CREATE_TABLES=false` (use Alembic only)
 
 ## 2) Docker Compose Strategy
 
@@ -73,6 +77,14 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
+Project helper scripts:
+
+```bash
+npm run db:migrate
+npm run db:downgrade
+npm run db:revision
+```
+
 ## 5) Rollback Checklist
 
 - Keep previous backend image tag available.
@@ -81,4 +93,3 @@ alembic downgrade -1
   - switch gateway to previous backend image
   - verify `/api/v1/health`
   - replay failed requests if necessary
-
