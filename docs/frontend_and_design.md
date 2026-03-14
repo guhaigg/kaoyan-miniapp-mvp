@@ -33,7 +33,7 @@ Spacing baseline:
   - Continue browsing even when silent login fails.
 - Query flow:
   - User can search announcements/adjustments without explicit login.
-  - Query pages support `refresh` as optional best-effort.
+  - Query pages support `refresh` as async best-effort and poll `GET /jobs/{id}`.
 - Error flow:
   - Route to `/pages/status/index` with concise error message.
   - Do not trap user in modal loops.
@@ -63,4 +63,3 @@ sequenceDiagram
 - Never hardcode auth popup logic in page entry lifecycle.
 - Keep page data minimal and serializable.
 - Use a dedicated detail page instead of long modal content.
-

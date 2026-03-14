@@ -37,8 +37,34 @@ services:
       USE_MOCK_WECHAT: "true"
       ADMIN_TOKEN: replace-admin-token
       RATE_LIMIT_PER_MINUTE: 120
+      WORKER_POLL_INTERVAL_SECONDS: 5
+      WORKER_MAX_SOURCES_PER_JOB: 20
+      WORKER_MAX_ITEMS_PER_SOURCE: 10
     ports:
       - "8000:8000"
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    command: ["python", "-m", "app.worker"]
+    environment:
+      APP_ENV: dev
+      API_PREFIX: /api/v1
+      SECRET_KEY: replace-with-strong-secret
+      VISITOR_TOKEN_TTL_SECONDS: 604800
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/kaoyan_mvp
+      REDIS_URL: redis://redis:6379/0
+      USE_MOCK_WECHAT: "false"
+      ADMIN_TOKEN: replace-admin-token
+      RATE_LIMIT_PER_MINUTE: 120
+      WORKER_POLL_INTERVAL_SECONDS: 5
+      WORKER_MAX_SOURCES_PER_JOB: 20
+      WORKER_MAX_ITEMS_PER_SOURCE: 10
 
 volumes:
   postgres_data:

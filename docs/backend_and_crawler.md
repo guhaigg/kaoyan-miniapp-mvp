@@ -22,6 +22,8 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `GET /api/v1/schools/suggest`
 - `POST /api/v1/content`
 - `POST /api/v1/admin/manual-entry`
+- `POST /api/v1/admin/sources`
+- `GET /api/v1/jobs/{job_id}`
 - `GET /api/v1/health`
 
 ## 3) Database Naming Rules
@@ -74,3 +76,14 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Convert predictable failures to 4xx with stable `detail`.
 - Log all unexpected 5xx with `request_id`.
 - For crawler refresh requests, return accepted/pending state through `crawl_jobs`.
+
+## 8) Async Refresh Job Consumer
+
+- Trigger:
+  - `POST /api/v1/search/*` with `refresh=true` creates a `pending` row in `crawl_jobs`.
+- Consumer:
+  - Worker process `python -m app.worker` claims pending jobs and marks them `running`.
+  - Worker fetches configured sources, parses candidates, and upserts into `contents`.
+  - Job ends with `completed` or `failed`, with summary message.
+- Status polling:
+  - Client polls `GET /api/v1/jobs/{job_id}`.

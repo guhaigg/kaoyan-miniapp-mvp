@@ -43,10 +43,15 @@ function searchAdjustments(payload) {
   return request("/search/adjustments", "POST", payload);
 }
 
+function getJobStatus(jobId) {
+  return request(`/jobs/${encodeURIComponent(jobId)}`, "GET");
+}
+
 module.exports = {
   BASE_URL: DEFAULT_BASE_URL,
   request,
   silentLogin,
   searchAnnouncements,
   searchAdjustments,
+  getJobStatus,
 };

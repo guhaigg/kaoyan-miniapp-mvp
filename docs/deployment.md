@@ -14,6 +14,9 @@ Copy `backend/.env.example` to `backend/.env` and fill values:
 - `AUTO_CREATE_TABLES`
 - `ADMIN_TOKEN`
 - `RATE_LIMIT_PER_MINUTE`
+- `WORKER_POLL_INTERVAL_SECONDS`
+- `WORKER_MAX_SOURCES_PER_JOB`
+- `WORKER_MAX_ITEMS_PER_SOURCE`
 
 Security rule:
 
@@ -33,6 +36,7 @@ File: `infra/docker-compose.yml`
   - `postgres_data` persists database state.
 - Runtime:
   - Backend waits on `db` and `redis` dependencies.
+  - Worker consumes `crawl_jobs` asynchronously from the same DB.
 
 Start services:
 

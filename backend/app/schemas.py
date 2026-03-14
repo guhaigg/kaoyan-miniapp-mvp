@@ -42,6 +42,21 @@ class ManualEntryRequest(BaseModel):
     reason: str | None = None
 
 
+class AdminSourceUpsertRequest(BaseModel):
+    source_id: str | None = None
+    school_name: str = Field(min_length=1, max_length=255)
+    name: str = Field(min_length=1, max_length=255)
+    base_url: str = Field(min_length=1, max_length=1024)
+    source_type: Literal["official", "crawler"] = "official"
+    enabled: bool = True
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminSourceUpsertResponse(BaseModel):
+    id: str
+    status: Literal["created", "updated"]
+
+
 class SearchBaseRequest(BaseModel):
     school_name: str | None = None
     keywords: str | None = None
@@ -87,6 +102,17 @@ class SearchResponse(BaseModel):
     refresh_job_id: str | None = None
 
 
+class CrawlJobStatusResponse(BaseModel):
+    id: str
+    category: str
+    status: str
+    message: str | None = None
+    query: dict[str, Any]
+    requested_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
 class SchoolSuggestItem(BaseModel):
     id: str
     name: str
@@ -102,4 +128,3 @@ class HealthResponse(BaseModel):
     app_env: str
     db: Literal["up", "down"]
     redis: Literal["up", "down"]
-
