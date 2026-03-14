@@ -1,3 +1,5 @@
+import hashlib
+
 from sqlalchemy.orm import Session
 
 from ..models import Content, ContentSnapshot, School
@@ -23,9 +25,12 @@ def _resolve_school(db: Session, school_name: str | None) -> School | None:
 
 def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     school = _resolve_school(db, payload.school_name)
+    normalized_source_url = str(payload.source_url or "").strip() if payload.source_url else None
+    source_url_hash = hashlib.sha256(normalized_source_url.encode("utf-8")).hexdigest() if normalized_source_url else None
+
     existing = None
-    if payload.source_url:
-        existing = db.query(Content).filter(Content.source_url == payload.source_url).one_or_none()
+    if source_url_hash:
+        existing = db.query(Content).filter(Content.source_url_hash == source_url_hash).one_or_none()
 
     status = "updated" if existing else "created"
     content = existing or Content()
@@ -34,7 +39,8 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     content.body = payload.body
     content.summary = payload.summary
     content.school_id = school.id if school else None
-    content.source_url = payload.source_url
+    content.source_url = normalized_source_url
+    content.source_url_hash = source_url_hash
     content.source_type = payload.source_type
     content.published_at = payload.published_at
     content.region = payload.region
@@ -51,4 +57,3 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     db.commit()
     db.refresh(content)
     return content, status
-

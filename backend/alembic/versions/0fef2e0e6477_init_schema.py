@@ -98,6 +98,7 @@ def upgrade() -> None:
     sa.Column('body', sa.Text(), nullable=False),
     sa.Column('summary', sa.Text(), nullable=True),
     sa.Column('source_url', sa.String(length=2048), nullable=True),
+    sa.Column('source_url_hash', sa.String(length=64), nullable=True),
     sa.Column('source_type', sa.String(length=32), nullable=False),
     sa.Column('published_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('region', sa.String(length=64), nullable=True),
@@ -107,8 +108,7 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['school_id'], ['schools.id'], ),
     sa.ForeignKeyConstraint(['source_id'], ['sources.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('source_url', name='uq_contents_source_url')
+    sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_contents_category'), 'contents', ['category'], unique=False)
     op.create_index(op.f('ix_contents_major'), 'contents', ['major'], unique=False)
@@ -116,6 +116,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_contents_region'), 'contents', ['region'], unique=False)
     op.create_index(op.f('ix_contents_school_id'), 'contents', ['school_id'], unique=False)
     op.create_index(op.f('ix_contents_source_id'), 'contents', ['source_id'], unique=False)
+    op.create_index(op.f('ix_contents_source_url_hash'), 'contents', ['source_url_hash'], unique=True)
     op.create_index(op.f('ix_contents_source_type'), 'contents', ['source_type'], unique=False)
     op.create_index(op.f('ix_contents_title'), 'contents', ['title'], unique=False)
     op.create_table('content_snapshots',
@@ -159,6 +160,7 @@ def downgrade() -> None:
     op.drop_table('content_snapshots')
     op.drop_index(op.f('ix_contents_title'), table_name='contents')
     op.drop_index(op.f('ix_contents_source_type'), table_name='contents')
+    op.drop_index(op.f('ix_contents_source_url_hash'), table_name='contents')
     op.drop_index(op.f('ix_contents_source_id'), table_name='contents')
     op.drop_index(op.f('ix_contents_school_id'), table_name='contents')
     op.drop_index(op.f('ix_contents_region'), table_name='contents')

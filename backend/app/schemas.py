@@ -57,6 +57,12 @@ class AdminSourceUpsertResponse(BaseModel):
     status: Literal["created", "updated"]
 
 
+class AdminSourceBulkResponse(BaseModel):
+    created: int
+    updated: int
+    source_ids: list[str]
+
+
 class SearchBaseRequest(BaseModel):
     school_name: str | None = None
     keywords: str | None = None

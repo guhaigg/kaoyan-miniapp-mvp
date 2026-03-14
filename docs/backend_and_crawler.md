@@ -67,7 +67,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - Per source default max rate: <= 2 requests/sec per IP.
   - Per source concurrency: start with 2, tune after observing anti-bot behavior.
 - Data quality:
-  - Deduplicate by `source_url` unique key.
+  - Deduplicate by `source_url_hash` unique key (MySQL-friendly).
   - Keep raw snapshot for post-mortem.
 
 ## 7) Error Handling Baseline

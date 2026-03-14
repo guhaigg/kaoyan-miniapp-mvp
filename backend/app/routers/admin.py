@@ -5,7 +5,13 @@ from ..config import get_settings
 from ..db import get_db
 from ..dependencies import audit_event
 from ..models import Content, School, Source
-from ..schemas import AdminSourceUpsertRequest, AdminSourceUpsertResponse, ContentOut, ManualEntryRequest
+from ..schemas import (
+    AdminSourceBulkResponse,
+    AdminSourceUpsertRequest,
+    AdminSourceUpsertResponse,
+    ContentOut,
+    ManualEntryRequest,
+)
 from ..services.content import upsert_content
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -73,3 +79,22 @@ def upsert_source(payload: AdminSourceUpsertRequest, request: Request, db: Sessi
     db.refresh(source)
     audit_event(db, request, "admin.source_upsert", None, {"source_id": source.id, "status": status_value})
     return AdminSourceUpsertResponse(id=source.id, status=status_value)
+
+
+@router.post("/sources/bulk-import", response_model=AdminSourceBulkResponse)
+def bulk_import_sources(payload: list[AdminSourceUpsertRequest], request: Request, db: Session = Depends(get_db)) -> AdminSourceBulkResponse:
+    _check_admin(request)
+
+    created = 0
+    updated = 0
+    source_ids: list[str] = []
+    for item in payload:
+        result = upsert_source(item, request, db)
+        source_ids.append(result.id)
+        if result.status == "created":
+            created += 1
+        else:
+            updated += 1
+
+    audit_event(db, request, "admin.sources_bulk_import", None, {"created": created, "updated": updated})
+    return AdminSourceBulkResponse(created=created, updated=updated, source_ids=source_ids)

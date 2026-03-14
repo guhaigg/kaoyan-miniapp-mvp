@@ -1,0 +1,22 @@
+[
+  {"name": "北京大学", "type": "研招公告", "url": "https://admission.pku.edu.cn/zsxx/sszs/index.htm"},
+  {"name": "清华大学", "type": "研招公告", "url": "https://yz.tsinghua.edu.cn/info/1036/2422.htm"},
+  {"name": "复旦大学", "type": "研招动态", "url": "https://gsao.fudan.edu.cn/15292/list.htm"},
+  {"name": "上海交通大学", "type": "研招公告", "url": "https://yzb.sjtu.edu.cn/index/zszc/sszs.htm"},
+  {"name": "浙江大学", "type": "硕士招生", "url": "http://grs.zju.edu.cn/yjszs/list.htm"},
+  {"name": "南京大学", "type": "最新动态", "url": "https://gxyy.nju.edu.cn/26/list.htm"},
+  {"name": "中国科学技术大学", "type": "研招通知", "url": "https://yz.ustc.edu.cn/list.php?classid=10"},
+  {"name": "华中科技大学", "type": "招生信息", "url": "http://gszs.hust.edu.cn/zsxx/sszs.htm"},
+  {"name": "武汉大学", "type": "新闻公告", "url": "https://gs.whu.edu.cn/zsxx/sszs.htm"},
+  {"name": "中山大学", "type": "招生简章", "url": "https://graduate.sysu.edu.cn/zsw/postgraduate"},
+  {"name": "厦门大学", "type": "招生信息", "url": "https://zs.xmu.edu.cn/sszs/list.htm"},
+  {"name": "四川大学", "type": "研招公告", "url": "https://yz.scu.edu.cn/zhaosheng/news"},
+  {"name": "电子科技大学", "type": "通知公告", "url": "https://yz.uestc.edu.cn/tzgg.htm"},
+  {"name": "西安交通大学", "type": "最新公告", "url": "http://yz.xjtu.edu.cn/tzgg.htm"},
+  {"name": "哈尔滨工业大学", "type": "招生公告", "url": "http://yzb.hit.edu.cn/article/list/11"},
+  {"name": "同济大学", "type": "招生信息", "url": "https://yz.tongji.edu.cn/zsxx/sszs.htm"},
+  {"name": "东南大学", "type": "研招公告", "url": "https://yzb.seu.edu.cn/5966/list.htm"},
+  {"name": "中国人民大学", "type": "研招动态", "url": "http://pgs.ruc.edu.cn/sszs.htm"},
+  {"name": "北京航空航天大学", "type": "招生信息", "url": "http://yzb.buaa.edu.cn/zsxx/sszs.htm"},
+  {"name": "南开大学", "type": "招生动态", "url": "https://yzb.nankai.edu.cn/2557/list.htm"}
+]

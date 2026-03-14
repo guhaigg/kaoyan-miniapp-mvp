@@ -3,7 +3,7 @@
 This repo is a fresh implementation for:
 - WeChat Mini Program frontend
 - Python FastAPI backend
-- PostgreSQL + Redis
+- MySQL 8.0 + Redis
 - Crawler-ready ingestion pipeline
 
 ## Architecture Overview
@@ -46,7 +46,13 @@ python -m alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-4. Run miniapp:
+4. Seed Week 4 sources (20 schools):
+```bash
+cd backend
+python scripts/seed_sources.py
+```
+
+5. Run miniapp:
 - Open `miniapp/` with WeChat DevTools.
 - Keep default no-popup silent login flow via `wx.login`.
 - For local-only flow without WeChat secret, set `USE_MOCK_WECHAT=true` in `backend/.env`.

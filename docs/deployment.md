@@ -33,7 +33,7 @@ File: `infra/docker-compose.yml`
 - Network:
   - Internal service names: `db`, `redis`, `backend`.
 - Volumes:
-  - `postgres_data` persists database state.
+  - `mysql_data` persists database state.
 - Runtime:
   - Backend waits on `db` and `redis` dependencies.
   - Worker consumes `crawl_jobs` asynchronously from the same DB.
@@ -72,6 +72,7 @@ server {
 ## 4) Database Migration Baseline
 
 Recommended migration tool: Alembic.
+Current database target: MySQL 8.0.
 
 Common commands:
 

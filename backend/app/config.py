@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     secret_key: str = "replace-with-strong-secret"
     visitor_token_ttl_seconds: int = 7 * 24 * 60 * 60
 
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/kaoyan_mvp"
+    database_url: str = "mysql+pymysql://root:root@localhost:3306/kaoyan_mvp?charset=utf8mb4"
     redis_url: str = "redis://localhost:6379/0"
 
     wechat_appid: str = ""

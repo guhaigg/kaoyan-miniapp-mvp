@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -49,7 +49,6 @@ class Source(Base):
 
 class Content(Base):
     __tablename__ = "contents"
-    __table_args__ = (UniqueConstraint("source_url", name="uq_contents_source_url"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
@@ -59,6 +58,7 @@ class Content(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    source_url_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     source_type: Mapped[str] = mapped_column(String(32), default="crawler", nullable=False, index=True)  # crawler|manual
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     region: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
@@ -139,4 +139,3 @@ class UserEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user: Mapped["User | None"] = relationship(back_populates="events")
-

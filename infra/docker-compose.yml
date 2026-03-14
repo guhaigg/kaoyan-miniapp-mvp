@@ -2,16 +2,17 @@ version: "3.9"
 
 services:
   db:
-    image: postgres:16
+    image: mysql:8.0
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: kaoyan_mvp
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: kaoyan_mvp
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
 
   redis:
     image: redis:7
@@ -32,7 +33,7 @@ services:
       API_PREFIX: /api/v1
       SECRET_KEY: replace-with-strong-secret
       VISITOR_TOKEN_TTL_SECONDS: 604800
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/kaoyan_mvp
+      DATABASE_URL: mysql+pymysql://root:root@db:3306/kaoyan_mvp?charset=utf8mb4
       REDIS_URL: redis://redis:6379/0
       USE_MOCK_WECHAT: "true"
       ADMIN_TOKEN: replace-admin-token
@@ -57,7 +58,7 @@ services:
       API_PREFIX: /api/v1
       SECRET_KEY: replace-with-strong-secret
       VISITOR_TOKEN_TTL_SECONDS: 604800
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/kaoyan_mvp
+      DATABASE_URL: mysql+pymysql://root:root@db:3306/kaoyan_mvp?charset=utf8mb4
       REDIS_URL: redis://redis:6379/0
       USE_MOCK_WECHAT: "false"
       ADMIN_TOKEN: replace-admin-token
@@ -67,4 +68,4 @@ services:
       WORKER_MAX_ITEMS_PER_SOURCE: 10
 
 volumes:
-  postgres_data:
+  mysql_data:
