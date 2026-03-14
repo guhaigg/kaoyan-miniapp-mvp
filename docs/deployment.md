@@ -18,6 +18,14 @@ Copy `backend/.env.example` to `backend/.env` and fill values:
 - `WORKER_MAX_SOURCES_PER_JOB`
 - `WORKER_MAX_ITEMS_PER_SOURCE`
 
+MySQL URL format:
+
+```text
+mysql+pymysql://<username>:<urlencoded_password>@<host>:<port>/<database>?charset=utf8mb4
+```
+
+If password contains reserved characters such as `@`, `!`, `#`, encode them first.
+
 Security rule:
 
 - Never commit real `.env`.
@@ -77,9 +85,9 @@ Current database target: MySQL 8.0.
 Common commands:
 
 ```bash
-alembic revision --autogenerate -m "init schema"
-alembic upgrade head
-alembic downgrade -1
+python -m alembic revision --autogenerate -m "init schema"
+python -m alembic upgrade head
+python -m alembic downgrade -1
 ```
 
 Project helper scripts:
@@ -89,6 +97,24 @@ npm run db:migrate
 npm run db:downgrade
 npm run db:revision
 ```
+
+## 6) Test-Version Smoke Validation
+
+Goal:
+- Validate local FastAPI + remote MySQL path before miniapp internal test.
+
+Command:
+
+```bash
+npm run smoke:test-version
+```
+
+The script validates:
+- `GET /api/v1/health`
+- `POST /api/v1/auth/silent-login`
+- `POST /api/v1/search/announcements` with `refresh=true`
+- `GET /api/v1/jobs/{job_id}`
+- Worker consumption and `contents` count changes
 
 ## 5) Rollback Checklist
 

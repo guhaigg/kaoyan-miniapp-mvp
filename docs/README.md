@@ -11,7 +11,7 @@ This repo is a fresh implementation for:
 ```mermaid
 flowchart LR
   A["WeChat Mini Program"] --> B["FastAPI Gateway (/api/v1/*)"]
-  B --> C["PostgreSQL"]
+  B --> C["MySQL 8.0"]
   B --> D["Redis"]
   E["Crawler Workers"] --> B
   F["Manual Admin Entry"] --> B
@@ -56,6 +56,25 @@ python scripts/seed_sources.py
 - Open `miniapp/` with WeChat DevTools.
 - Keep default no-popup silent login flow via `wx.login`.
 - For local-only flow without WeChat secret, set `USE_MOCK_WECHAT=true` in `backend/.env`.
+
+## Test-Version Smoke Run (Local App + Remote MySQL)
+
+Use this when backend runs locally but DB is remote:
+
+```bash
+cd backend
+export DATABASE_URL="mysql+pymysql://<user>:<urlencoded_password>@<host>:<port>/<db>?charset=utf8mb4"
+export USE_MOCK_WECHAT=true
+export WECHAT_APPID=mock
+export WECHAT_SECRET=mock
+export SECRET_KEY=dev-secret
+export AUTO_CREATE_TABLES=false
+python -m alembic upgrade head
+python scripts/smoke_test_version.py
+```
+
+Password note:
+- If password contains `@` or `!`, URL-encode it first (for example `@` -> `%40`, `!` -> `%21`).
 
 ## Core Docs Index
 

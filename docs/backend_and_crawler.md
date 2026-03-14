@@ -23,6 +23,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `POST /api/v1/content`
 - `POST /api/v1/admin/manual-entry`
 - `POST /api/v1/admin/sources`
+- `POST /api/v1/admin/sources/bulk-import`
 - `GET /api/v1/jobs/{job_id}`
 - `GET /api/v1/health`
 

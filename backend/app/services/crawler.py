@@ -13,8 +13,23 @@ from ..schemas import ContentIn
 from .content import upsert_content
 
 CATEGORY_HINTS = {
-    "announcement": ["公告", "通知", "研究生", "招生", "招考", "admission", "graduate"],
-    "adjustment": ["调剂", "缺额", "名额", "复试", "transfer", "adjustment"],
+    "announcement": [
+        "\u516c\u544a",
+        "\u901a\u77e5",
+        "\u7814\u7a76\u751f",
+        "\u62db\u751f",
+        "\u62db\u8003",
+        "admission",
+        "graduate",
+    ],
+    "adjustment": [
+        "\u8c03\u5242",
+        "\u7f3a\u989d",
+        "\u540d\u989d",
+        "\u590d\u8bd5",
+        "transfer",
+        "adjustment",
+    ],
 }
 
 
@@ -69,7 +84,7 @@ def _extract_candidates(
             continue
 
         title = text[:500] if text else (page_title[:500] if page_title else f"{category} update")
-        body = f"{title}\n来源页面：{base_url}\n目标链接：{url}"
+        body = f"{title}\nsource page: {base_url}\ntarget link: {url}"
         candidates.append(
             {
                 "title": title,
@@ -176,4 +191,3 @@ def run_refresh_job(db: Session, job: CrawlJob) -> CrawlSummary:
             db.commit()
 
     return summary
-

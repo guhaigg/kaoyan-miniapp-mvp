@@ -19,7 +19,7 @@
   - Added 5 MVP pages: home / announcements / adjustments / detail / status.
   - Added silent login bootstrap and API wrapper.
 - Infra:
-  - Added Docker Compose services for backend, worker, postgres, redis.
+  - Added Docker Compose services for backend, worker, mysql, redis.
 - Quality:
   - Added backend tests and CI workflow.
 - Docs:
@@ -48,4 +48,3 @@
 - [x] No changes applied to legacy repository code.
 - [x] Docs under `docs/` updated.
 - [x] Ready for review from `dev` into `main`.
-
