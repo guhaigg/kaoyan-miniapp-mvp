@@ -1,0 +1,19 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/announcements/index",
+    "pages/adjustments/index",
+    "pages/detail/index",
+    "pages/status/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "考研公告调剂助手",
+    "navigationBarBackgroundColor": "#0b2239",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f7fa",
+    "backgroundTextStyle": "light"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
+

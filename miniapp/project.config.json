@@ -1,0 +1,18 @@
+{
+  "description": "Kaoyan miniapp MVP",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.3.5",
+  "appid": "touristappid",
+  "projectname": "kaoyan-miniapp-mvp"
+}
+

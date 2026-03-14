@@ -1,0 +1,16 @@
+<view class="container">
+  <view class="card">
+    <view class="title">查院校公告 / 调剂信息</view>
+    <view class="muted">默认匿名浏览，静默影子账户已自动初始化。</view>
+  </view>
+
+  <view class="card">
+    <input placeholder="院校名称（可选）" value="{{schoolName}}" bindinput="onSchoolInput" />
+    <input placeholder="关键词（可选）" value="{{keywords}}" bindinput="onKeywordsInput" style="margin-top: 20rpx;" />
+    <input placeholder="专业（调剂查询可选）" value="{{major}}" bindinput="onMajorInput" style="margin-top: 20rpx;" />
+    <input placeholder="地区（调剂查询可选）" value="{{region}}" bindinput="onRegionInput" style="margin-top: 20rpx;" />
+    <button class="btn-primary" style="margin-top: 24rpx;" bindtap="goAnnouncements">查询公告</button>
+    <button class="btn-plain" style="margin-top: 16rpx;" bindtap="goAdjustments">查询调剂</button>
+  </view>
+</view>
+

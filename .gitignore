@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.env
+*.db
+node_modules/
+backend/.env
+backend/.coverage
+backend/htmlcov/
+backend/.ruff_cache/
+miniapp/miniprogram_npm/
+miniapp/dist/

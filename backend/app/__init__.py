@@ -1,0 +1,2 @@
+"""Kaoyan miniapp backend package."""
+
