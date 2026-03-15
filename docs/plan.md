@@ -15,7 +15,7 @@ It converts the existing specs into concrete, trackable work.
 Goal: make local/dev/prod configuration explicit and safe.
 
 - [x] Replace miniapp hardcoded API base URL with environment-aware config.
-- [ ] Replace `touristappid` with real WeChat appid in non-local environments.
+- [x] Replace `touristappid` with real WeChat appid in non-local environments.
 - [x] Define and document `USE_MOCK_WECHAT` policy per environment.
 - [x] Restrict CORS for non-dev environments.
 - [x] Standardize app naming across backend env defaults and docs (格物简录 / 格物简).

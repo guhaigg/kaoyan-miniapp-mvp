@@ -1,12 +1,14 @@
-# 格物简录 Miniapp MVP Docs
+# 格物简录文档总览
 
-This repo is a fresh implementation for:
-- WeChat Mini Program frontend
-- Python FastAPI backend
-- External MySQL + Redis
-- Crawler-ready ingestion pipeline
+这里是项目的文档入口，覆盖开发规范、架构、部署与发布流程。
 
-## Architecture Overview
+## 先读这 3 份
+
+1. [Development Protocol](./development_protocol.md)
+2. [Git Workflow and Release Rules](./git_workflow.md)
+3. [Deployment Handbook](./deployment.md)
+
+## 架构说明
 
 ```mermaid
 flowchart LR
@@ -17,46 +19,22 @@ flowchart LR
   F["Manual Admin Entry"] --> B
 ```
 
-## Environment Requirements
+## 本地开发最短路径
 
-- Python 3.10+
-- Node.js 18+
-- External MySQL access
-- WeChat DevTools (for miniapp debug)
-
-## Quick Start (Local)
-
-1. Clone and enter project:
 ```bash
 git clone <your-repo-url>
 cd gewujl
-```
-
-2. Start optional local Redis:
-```bash
-docker compose -f infra/docker-compose.yml up -d redis
-```
-
-3. Prepare backend env:
-```bash
-cd backend
-cp .env.example .env
-```
-
-4. Install dependencies and run backend:
-```bash
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r backend/requirements.txt
 npm install
+cp backend/.env.example backend/.env
 npm run dev:backend
 ```
 
-5. Run miniapp:
-- Open `miniapp/` with WeChat DevTools.
-- Keep default no-popup silent login flow via `wx.login`.
+小程序在微信开发者工具打开 `miniapp/` 即可。
 
-## Core Docs Index
+## 文档目录
 
 - [Development Protocol](./development_protocol.md)
 - [Development Plan](./plan.md)

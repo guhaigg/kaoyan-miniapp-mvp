@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+import redis
 from sqlalchemy import text
 
 from ..config import get_settings
@@ -22,7 +23,10 @@ def health(request: Request) -> HealthResponse:
 
     try:
         redis_client = getattr(request.app.state, "redis", None)
-        if redis_client is not None and redis_client.ping():
+        if redis_client is None:
+            redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+            request.app.state.redis = redis_client
+        if redis_client.ping():
             redis_status = "up"
     except Exception:
         redis_status = "down"
