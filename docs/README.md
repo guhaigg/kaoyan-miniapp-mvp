@@ -41,5 +41,6 @@ npm run dev:backend
 - [Backend and Crawler Spec](./backend_and_crawler.md)
 - [Frontend and Design Spec](./frontend_and_design.md)
 - [Miniapp Smoke Checklist](./miniapp_smoke.md)
+- [Update Log](./update_log.md)
 - [Deployment Handbook](./deployment.md)
 - [Git Workflow and Release Rules](./git_workflow.md)

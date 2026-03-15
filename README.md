@@ -64,6 +64,7 @@ npm run smoke:miniapp:preview -- --privateKeyPath .secrets/miniprogram-ci.key
 - [Git Workflow](./docs/git_workflow.md)
 - [Deployment Handbook](./docs/deployment.md)
 - [Miniapp Smoke Checklist](./docs/miniapp_smoke.md)
+- [Update Log](./docs/update_log.md)
 
 ## Deployment Assets
 
