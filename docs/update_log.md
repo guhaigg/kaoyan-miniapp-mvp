@@ -24,6 +24,32 @@
   - ...
 ```
 
+## 2026-03-15 - ops: fix clash fake-ip pollution for miniapp API debugging
+- Branch: `dev`
+- Commit: `df5b401`
+- Summary:
+  - 调整服务器 `mihomo` 策略：保留 `global` 模式，增加 `dns.fake-ip-filter` 对 `api.gewujl.cloud` / `gewujl.cloud` / `servicewechat.com` 的排除，避免解析到 `198.18.*` 虚拟地址。
+  - 保留项目侧二维码“先删旧码再生成”流程，重新生成真机测试二维码。
+- Verification:
+  - `dig +short api.gewujl.cloud A` 返回 `211.159.223.244`
+  - `npm run smoke:miniapp:preview -- --privateKeyPath .secrets/private.wx02ddbac747a8a137.key --qrcodeOutput artifacts/miniprogram-preview-20260315-1801.jpg` 成功
+- Risks / Next:
+  - 微信 `miniprogram-ci` 上传白名单需包含当前实际出口 IP；若出口变化需同步更新白名单。
+
+## 2026-03-15 - fix: miniapp request fallback for connection reset
+- Branch: `dev`
+- Commit: `8416421`
+- Summary:
+  - 新增 API 回退基址配置：当 `api.gewujl.cloud` 发生可重试网络错误时，自动回退尝试 `https://gewujl.cloud/api/v1`。
+  - 保持原有错误页跳转机制，并在网络失败详情中输出已尝试地址，便于排障。
+  - 冒烟文档补充运行时回退说明。
+- Verification:
+  - `node --check miniapp/utils/config.js`
+  - `node --check miniapp/utils/api.js`
+  - 本地反代验证：`https://gewujl.cloud/api/v1/health`、`/api/v1/search/announcements` 均返回 `200`
+- Risks / Next:
+  - 回退域名 `https://gewujl.cloud` 也需要在对应 `appid` 的 request 合法域名中配置。
+
 ## 2026-03-15 - chore: auto-clean old preview qrcodes before generation
 - Branch: `dev`
 - Commit: `35b0280`
