@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import init_db
-from .routers import admin, auth, content, health, schools, search
+from .routers import admin, auth, content, health, jobs, schools, search
 
 
 @asynccontextmanager
@@ -43,5 +43,6 @@ app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(schools.router, prefix=settings.api_prefix)
 app.include_router(search.router, prefix=settings.api_prefix)
+app.include_router(jobs.router, prefix=settings.api_prefix)
 app.include_router(content.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)

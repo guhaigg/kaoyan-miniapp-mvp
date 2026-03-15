@@ -15,6 +15,5 @@ def test_wechat_service_real_mode_requires_credentials():
     service.settings.use_mock_wechat = False
     service.settings.wechat_appid = ""
     service.settings.wechat_secret = ""
-    with pytest.raises(ValueError, match="credentials are required"):
+    with pytest.raises(ValueError, match="WECHAT_APPID and WECHAT_SECRET are required"):
         service.exchange_code_for_openid("sample-code")
-

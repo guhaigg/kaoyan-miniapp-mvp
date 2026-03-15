@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     admin_token: str = "replace-admin-token"
     rate_limit_per_minute: int = 120
     cors_allow_origins: str = "*"
+    worker_poll_interval_seconds: int = 5
+    worker_max_sources_per_job: int = 20
+    worker_max_items_per_source: int = 10
 
     def cors_allow_origins_list(self) -> List[str]:
         if self.cors_allow_origins.strip() == "*":
