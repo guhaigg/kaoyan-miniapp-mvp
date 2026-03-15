@@ -40,6 +40,23 @@
 - Risks / Next:
   - 若微信公众平台未放行回退域名，请求会继续使用主域名重试；建议确保三个域名均已加入 request 合法域名。
 
+## 2026-03-15 - feat: add build marker and x-request-id trace for real-device diagnostics
+- Branch: `dev`
+- Commit: `6d93907`
+- Summary:
+  - 首页新增醒目版本标识 `Build 20260315-1830`，用于先排除旧预览包干扰。
+  - 小程序请求新增 `X-Request-Id` 头；保留禁用 `HTTP2/QUIC`，并在同域名重试间加入指数退避（最多 2 次退避重试）。
+  - 后端新增请求中间件：透传/生成 `X-Request-Id`，并在日志中输出 `request_id`、耗时、状态码。
+  - 搜索接口响应 `request_id` 对齐请求链路 `request_id`，便于端到端关联定位。
+  - Nginx 模板补充 `X-Request-ID` 透传配置，并更新冒烟文档中的三组真机对照表和白名单核对清单。
+- Verification:
+  - `node --check miniapp/utils/api.js`
+  - `node --check miniapp/pages/home/index.js`
+  - `npm run test:backend`（`7 passed`）
+  - `npm run smoke:miniapp:preview -- --privateKeyPath .secrets/private.wx02ddbac747a8a137.key --qrcodeOutput artifacts/miniprogram-preview-20260315-1842.jpg`
+- Risks / Next:
+  - 线上 `/etc/nginx/nginx.conf` 与 `/etc/nginx/sites-available/gewujl.conf` 已同步做 request-id 日志改动，后续若重装 Nginx 需按基础设施模板重新落地。
+
 ## 2026-03-15 - fix: rollback miniapp network path to single api domain
 - Branch: `dev`
 - Commit: `b626cfa`
