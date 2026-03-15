@@ -1,5 +1,5 @@
 {
-  "name": "kaoyan-miniapp-mvp",
+  "name": "gewu-jianlu",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -9,8 +9,8 @@
   "scripts": {
     "prepare": "husky",
     "lint:commit": "commitlint --from=HEAD~1 --to=HEAD --verbose",
-    "test:backend": "cd backend && pytest -q",
-    "dev:backend": "cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    "test:backend": "cd backend && ../.venv/bin/python -m pytest -q",
+    "dev:backend": "cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
   },
   "keywords": [],
   "author": "",

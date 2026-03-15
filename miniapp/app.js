@@ -1,13 +1,21 @@
 const api = require("./utils/api");
+const { APP_CONFIG, getApiBase, getEnvVersion } = require("./utils/config");
 
 App({
   globalData: {
     visitorToken: "",
     userId: "",
-    apiBase: "http://127.0.0.1:8000/api/v1",
+    apiBase: getApiBase(),
+    envVersion: getEnvVersion(),
+    appName: APP_CONFIG.appName,
+    shortName: APP_CONFIG.shortName,
   },
 
   onLaunch() {
+    if (!this.globalData.apiBase) {
+      console.warn("api base is empty");
+    }
+
     wx.login({
       success: async (res) => {
         if (!res.code) return;
@@ -22,4 +30,3 @@ App({
     });
   },
 });
-

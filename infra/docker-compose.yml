@@ -1,18 +1,6 @@
 version: "3.9"
 
 services:
-  db:
-    image: postgres:16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: kaoyan_mvp
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
   redis:
     image: redis:7
     restart: unless-stopped
@@ -25,20 +13,18 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      - db
       - redis
     environment:
+      APP_NAME: gewu-jianlu-backend
       APP_ENV: dev
       API_PREFIX: /api/v1
       SECRET_KEY: replace-with-strong-secret
       VISITOR_TOKEN_TTL_SECONDS: 604800
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/kaoyan_mvp
+      DATABASE_URL: mysql+pymysql://[DB-USERNAME]:[DB-PASSWORD]@172.17.0.16:3306/gwj001-7gnogq6td6fcd69f?charset=utf8mb4
       REDIS_URL: redis://redis:6379/0
       USE_MOCK_WECHAT: "true"
       ADMIN_TOKEN: replace-admin-token
       RATE_LIMIT_PER_MINUTE: 120
+      CORS_ALLOW_ORIGINS: "*"
     ports:
       - "8000:8000"
-
-volumes:
-  postgres_data:

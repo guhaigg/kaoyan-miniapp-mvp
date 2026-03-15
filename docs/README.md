@@ -1,9 +1,9 @@
-# Kaoyan Miniapp MVP Docs
+# 格物简录 Miniapp MVP Docs
 
 This repo is a fresh implementation for:
 - WeChat Mini Program frontend
 - Python FastAPI backend
-- PostgreSQL + Redis
+- External MySQL + Redis
 - Crawler-ready ingestion pipeline
 
 ## Architecture Overview
@@ -11,7 +11,7 @@ This repo is a fresh implementation for:
 ```mermaid
 flowchart LR
   A["WeChat Mini Program"] --> B["FastAPI Gateway (/api/v1/*)"]
-  B --> C["PostgreSQL"]
+  B --> C["MySQL"]
   B --> D["Redis"]
   E["Crawler Workers"] --> B
   F["Manual Admin Entry"] --> B
@@ -21,7 +21,7 @@ flowchart LR
 
 - Python 3.10+
 - Node.js 18+
-- Docker Compose v2+
+- External MySQL access
 - WeChat DevTools (for miniapp debug)
 
 ## Quick Start (Local)
@@ -29,30 +29,37 @@ flowchart LR
 1. Clone and enter project:
 ```bash
 git clone <your-repo-url>
-cd kaoyan-miniapp-mvp
+cd gewujl
 ```
 
-2. Start infra:
+2. Start optional local Redis:
 ```bash
-docker compose -f infra/docker-compose.yml up -d db redis
+docker compose -f infra/docker-compose.yml up -d redis
 ```
 
-3. Run backend:
+3. Prepare backend env:
 ```bash
 cd backend
 cp .env.example .env
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-4. Run miniapp:
+4. Install dependencies and run backend:
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r backend/requirements.txt
+npm install
+npm run dev:backend
+```
+
+5. Run miniapp:
 - Open `miniapp/` with WeChat DevTools.
 - Keep default no-popup silent login flow via `wx.login`.
 
 ## Core Docs Index
 
+- [Development Plan](./plan.md)
 - [Backend and Crawler Spec](./backend_and_crawler.md)
 - [Frontend and Design Spec](./frontend_and_design.md)
 - [Deployment Handbook](./deployment.md)
 - [Git Workflow and Release Rules](./git_workflow.md)
-

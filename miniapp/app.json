@@ -7,7 +7,7 @@
     "pages/status/index"
   ],
   "window": {
-    "navigationBarTitleText": "考研公告调剂助手",
+    "navigationBarTitleText": "格物简",
     "navigationBarBackgroundColor": "#0b2239",
     "navigationBarTextStyle": "white",
     "backgroundColor": "#f5f7fa",
@@ -16,4 +16,3 @@
   "style": "v2",
   "sitemapLocation": "sitemap.json"
 }
-

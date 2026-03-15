@@ -1,12 +1,13 @@
-const BASE_URL = "http://127.0.0.1:8000/api/v1";
+const { getApiBase } = require("./config");
 
 function request(path, method = "GET", data = null) {
   const app = getApp();
   const token = app?.globalData?.visitorToken || "";
+  const baseUrl = app?.globalData?.apiBase || getApiBase();
 
   return new Promise((resolve, reject) => {
     wx.request({
-      url: `${BASE_URL}${path}`,
+      url: `${baseUrl}${path}`,
       method,
       data,
       header: {
@@ -38,10 +39,9 @@ function searchAdjustments(payload) {
 }
 
 module.exports = {
-  BASE_URL,
+  getApiBase,
   request,
   silentLogin,
   searchAnnouncements,
   searchAdjustments,
 };
-

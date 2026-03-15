@@ -1,5 +1,5 @@
 {
-  "description": "Kaoyan miniapp MVP",
+  "description": "格物简录小程序",
   "packOptions": {
     "ignore": []
   },
@@ -12,7 +12,6 @@
   },
   "compileType": "miniprogram",
   "libVersion": "3.3.5",
-  "appid": "touristappid",
-  "projectname": "kaoyan-miniapp-mvp"
+  "appid": "wx008bb4608a3b99f0",
+  "projectname": "格物简录"
 }
-

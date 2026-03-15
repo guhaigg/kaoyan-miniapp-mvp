@@ -1,2 +1,1 @@
-"""Kaoyan miniapp backend package."""
-
+"""Ge Wu Jian Lu backend package."""

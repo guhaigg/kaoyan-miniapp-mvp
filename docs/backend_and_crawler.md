@@ -29,7 +29,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Table names: lowercase snake_case.
 - Column names: lowercase snake_case.
 - IDs: UUID string (`36 chars`) in MVP.
-- Structured data in fixed columns; crawler variable fields in JSON/JSONB (`extra`, `snapshot_meta`, `query`, `payload`).
+- Structured data in fixed columns; crawler variable fields in JSON (`extra`, `snapshot_meta`, `query`, `payload`).
 
 ## 4) Table Responsibilities
 
@@ -70,4 +70,3 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Convert predictable failures to 4xx with stable `detail`.
 - Log all unexpected 5xx with `request_id`.
 - For crawler refresh requests, return accepted/pending state through `crawl_jobs`.
-
