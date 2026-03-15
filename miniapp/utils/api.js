@@ -57,23 +57,49 @@ function request(path, method = "GET", data = null) {
   const primaryBase = app?.globalData?.apiBase || getApiBase();
   const candidateBases = [primaryBase, ...getApiFallbackBases(primaryBase)];
   const attemptedUrls = [];
+  let primaryNetworkError = null;
 
   const run = async () => {
     let lastError = null;
     for (let i = 0; i < candidateBases.length; i += 1) {
       const baseUrl = candidateBases[i];
-      const requestUrl = `${baseUrl}${path}`;
-      attemptedUrls.push(requestUrl);
-      try {
-        const result = await requestOnce(requestUrl, method, data, token);
-        if (app?.globalData) {
-          app.globalData.apiBase = baseUrl;
-        }
-        return result;
-      } catch (error) {
-        lastError = error;
-        const hasNext = i < candidateBases.length - 1;
-        if (!(hasNext && error?.code === "NETWORK_ERROR" && isRetryableNetworkError(error))) {
+      const attemptsForBase = i === 0 ? 3 : 1;
+
+      for (let attempt = 1; attempt <= attemptsForBase; attempt += 1) {
+        const requestUrl = `${baseUrl}${path}`;
+        attemptedUrls.push(requestUrl);
+        try {
+          const result = await requestOnce(requestUrl, method, data, token);
+          if (app?.globalData) {
+            app.globalData.apiBase = baseUrl;
+          }
+          return result;
+        } catch (error) {
+          lastError = error;
+          const isNetworkError =
+            error?.code === "NETWORK_ERROR" && isRetryableNetworkError(error);
+
+          if (i === 0 && isNetworkError) {
+            primaryNetworkError = error;
+          }
+
+          const isPrimaryRetry = i === 0 && attempt < attemptsForBase;
+          if (isPrimaryRetry && isNetworkError) {
+            continue;
+          }
+
+          const fallbackDomainBlocked =
+            i > 0 &&
+            typeof error?.detail === "string" &&
+            error.detail.includes("url not in domain list");
+          if (fallbackDomainBlocked && primaryNetworkError) {
+            throw primaryNetworkError;
+          }
+
+          const hasNext = i < candidateBases.length - 1;
+          if (hasNext && isNetworkError) {
+            break;
+          }
           throw error;
         }
       }

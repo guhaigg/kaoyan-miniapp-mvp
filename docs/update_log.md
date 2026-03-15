@@ -50,6 +50,17 @@
 - Risks / Next:
   - 回退域名 `https://gewujl.cloud` 也需要在对应 `appid` 的 request 合法域名中配置。
 
+## 2026-03-15 - fix: retry primary api before fallback on network reset
+- Branch: `dev`
+- Commit: `<pending>`
+- Summary:
+  - `miniapp/utils/api.js` 增加主域名网络重试（3 次）机制，减少偶发 `ERR_CONNECTION_RESET` 对查询成功率的影响。
+  - 当回退域名被微信拦截（`url not in domain list`）时，优先回传主域名网络错误，避免误导排障方向。
+- Verification:
+  - `node --check miniapp/utils/api.js`
+- Risks / Next:
+  - 若网络长期不可达，仍会失败；建议持续观察真机网络与域名白名单生效状态。
+
 ## 2026-03-15 - chore: auto-clean old preview qrcodes before generation
 - Branch: `dev`
 - Commit: `35b0280`
