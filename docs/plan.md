@@ -55,7 +55,7 @@ Done when:
 Goal: make daily iteration and release low-risk.
 
 - [ ] Ensure local backend test command works in project bootstrap docs.
-- [ ] Add miniapp smoke checklist for page routes and API interactions.
+- [x] Add miniapp smoke checklist for page routes and API interactions.
 - [ ] Add release checklist for env, migration, backup, rollback validation.
 
 Done when:

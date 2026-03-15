@@ -12,3 +12,5 @@ backend/htmlcov/
 backend/.ruff_cache/
 miniapp/miniprogram_npm/
 miniapp/dist/
+.secrets/
+artifacts/
