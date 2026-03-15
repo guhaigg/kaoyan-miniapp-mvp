@@ -1,8 +1,9 @@
 <view class="container">
   <view class="card">
-    <view class="title">{{title}}</view>
-    <view class="muted">{{message}}</view>
-    <button class="btn-plain" style="margin-top: 24rpx;" bindtap="goBack">返回上一页</button>
+    <text class="title selectable" selectable>{{title}}</text>
+    <text class="muted message selectable" selectable>{{message}}</text>
+    <button class="btn-plain" style="margin-top: 24rpx;" bindtap="copyMessage">复制错误文案</button>
+    <button class="btn-plain" style="margin-top: 16rpx;" bindtap="goBack">返回上一页</button>
     <button class="btn-primary" style="margin-top: 16rpx;" bindtap="goHome">返回首页</button>
   </view>
 </view>

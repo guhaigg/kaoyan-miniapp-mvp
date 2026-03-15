@@ -1,2 +1,10 @@
-/* status page styles intentionally minimal */
+.selectable {
+  display: block;
+  user-select: text;
+}
 
+.message {
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+}
