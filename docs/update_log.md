@@ -24,6 +24,18 @@
   - ...
 ```
 
+## 2026-03-15 - chore: auto-clean old preview qrcodes before generation
+- Branch: `dev`
+- Commit: `35b0280`
+- Summary:
+  - 更新 `scripts/miniprogram-preview.js`：每次生成预览二维码前，自动删除同目录下历史 `miniprogram-preview*.jpg|jpeg|png` 文件。
+  - 更新冒烟文档，明确“先删旧码再生成新码”的默认行为。
+- Verification:
+  - `node --check scripts/miniprogram-preview.js`
+  - `npm run smoke:miniapp:preview -- --help`
+- Risks / Next:
+  - 清理规则按文件名前缀 `miniprogram-preview` 生效，请避免将其他业务图片使用该前缀放在同目录。
+
 ## 2026-03-15 - fix: miniapp status page error visibility and request domain troubleshooting
 - Branch: `dev`
 - Commit: `a6fa43f`
