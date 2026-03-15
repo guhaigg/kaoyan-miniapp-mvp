@@ -58,6 +58,7 @@ npm run dev:backend
 
 ## Core Docs Index
 
+- [Development Protocol](./development_protocol.md)
 - [Development Plan](./plan.md)
 - [Backend and Crawler Spec](./backend_and_crawler.md)
 - [Frontend and Design Spec](./frontend_and_design.md)
