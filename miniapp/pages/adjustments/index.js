@@ -1,4 +1,5 @@
 const api = require("../../utils/api");
+const { goStatus } = require("../../utils/status");
 
 Page({
   data: {
@@ -9,6 +10,7 @@ Page({
     loading: false,
     refresh: false,
     items: [],
+    lastQueryAt: "",
   },
 
   onLoad(options) {
@@ -49,11 +51,13 @@ Page({
         page_size: 20,
         refresh: this.data.refresh,
       });
-      this.setData({ items: result.items || [] });
-    } catch (err) {
-      wx.navigateTo({
-        url: `/pages/status/index?title=${encodeURIComponent("查询失败")}&message=${encodeURIComponent(JSON.stringify(err))}`,
+      const items = Array.isArray(result.items) ? result.items : [];
+      this.setData({
+        items,
+        lastQueryAt: new Date().toLocaleString(),
       });
+    } catch (err) {
+      goStatus("调剂查询失败", err, "请稍后重试，或缩小查询范围");
     } finally {
       this.setData({ loading: false });
     }
@@ -61,7 +65,10 @@ Page({
 
   openDetail(e) {
     const item = e.currentTarget.dataset.item;
+    if (!item) {
+      goStatus("详情加载失败", null, "未找到可查看的数据，请刷新后重试");
+      return;
+    }
     wx.navigateTo({ url: `/pages/detail/index?payload=${encodeURIComponent(JSON.stringify(item))}` });
   },
 });
-
