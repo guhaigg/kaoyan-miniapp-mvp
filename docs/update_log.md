@@ -24,6 +24,19 @@
   - ...
 ```
 
+## 2026-03-15 - fix: miniapp status page error visibility and request domain troubleshooting
+- Branch: `dev`
+- Commit: `a6fa43f`
+- Summary:
+  - 增强状态页：增加安全解码、错误文案复制按钮、可选中文本展示，避免报错信息不可见或不可复制。
+  - 将 `miniapp/project.config.json` 的 `appid` 对齐为 `wx02ddbac747a8a137`，与当前测试私钥一致。
+  - 补充冒烟文档排障项：`request:fail url not in domain list` 处理步骤。
+- Verification:
+  - `node --check miniapp/pages/status/index.js`
+  - `npm run smoke:miniapp:preview -- --privateKeyPath .secrets/private.wx02ddbac747a8a137.key --qrcodeOutput artifacts/miniprogram-preview-fix-20260315-1746.jpg`（成功生成二维码）
+- Risks / Next:
+  - 真机预览仍依赖微信公众平台对当前 `appid` 完成 `request` 合法域名配置并生效。
+
 ## 2026-03-15 - fix: restore backend worker config and test compatibility
 - Branch: `dev`
 - Commit: `926eda1`

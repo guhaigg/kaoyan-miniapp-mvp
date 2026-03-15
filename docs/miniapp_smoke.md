@@ -58,3 +58,4 @@ npm run smoke:miniapp:preview
 - `private key not found`: verify `--privateKeyPath` or `MINIPROGRAM_PRIVATE_KEY_PATH`
 - preview upload permission error: re-check the WeChat code upload key and IP whitelist
 - API request failures after scan: verify the backend health endpoint and the current API base URL
+- `request:fail url not in domain list`: in WeChat public platform for current `appid`, add `https://api.gewujl.cloud` to request legal domain (no path), then retry after propagation
