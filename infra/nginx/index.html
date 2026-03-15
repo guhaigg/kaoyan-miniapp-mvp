@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>格物简录</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #122033;
+        --muted: #5b6b7d;
+        --line: #d9e2ec;
+        --card: rgba(255, 255, 255, 0.9);
+        --accent: #0b4da2;
+        --accent-2: #14532d;
+        --bg-1: #f5efe2;
+        --bg-2: #dbeafe;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Noto Serif SC", "Source Han Serif SC", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(20, 83, 45, 0.18), transparent 30%),
+          radial-gradient(circle at bottom right, rgba(11, 77, 162, 0.22), transparent 28%),
+          linear-gradient(135deg, var(--bg-1), var(--bg-2));
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      main {
+        width: min(760px, 100%);
+        background: var(--card);
+        border: 1px solid rgba(18, 32, 51, 0.08);
+        border-radius: 28px;
+        padding: 40px 28px;
+        box-shadow: 0 24px 80px rgba(18, 32, 51, 0.12);
+        backdrop-filter: blur(10px);
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        font-size: 13px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(34px, 6vw, 58px);
+        line-height: 1.06;
+      }
+
+      p {
+        margin: 16px 0 0;
+        font-size: 18px;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 28px;
+      }
+
+      a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 46px;
+        padding: 0 18px;
+        border-radius: 999px;
+        text-decoration: none;
+        transition: transform 180ms ease, box-shadow 180ms ease;
+      }
+
+      a:hover {
+        transform: translateY(-1px);
+      }
+
+      .primary {
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: #fff;
+        box-shadow: 0 16px 36px rgba(11, 77, 162, 0.25);
+      }
+
+      .secondary {
+        border: 1px solid var(--line);
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.72);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Ge Wu Jian Lu</p>
+      <h1>格物简录</h1>
+      <p>微信小程序与内容服务的开发环境已经部署到当前服务器。根域名提供项目入口，API 服务运行在独立子域名。</p>
+      <div class="actions">
+        <a class="primary" href="https://api.gewujl.cloud/api/v1/health">查看 API 健康检查</a>
+        <a class="secondary" href="https://www.gewujl.cloud">访问 www 域名</a>
+      </div>
+    </main>
+  </body>
+</html>

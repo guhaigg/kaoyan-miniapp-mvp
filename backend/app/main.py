@@ -5,14 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import init_db
-from .routers import admin, auth, content, health, jobs, schools, search
+from .routers import admin, auth, content, health, schools, search
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    if settings.auto_create_tables:
-        init_db()
+    init_db()
     redis_client = None
     try:
         import redis
@@ -29,11 +28,13 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+cors_allow_origins = settings.cors_allow_origins_list()
+allow_all_origins = cors_allow_origins == ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_allow_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -44,4 +45,3 @@ app.include_router(schools.router, prefix=settings.api_prefix)
 app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(content.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
-app.include_router(jobs.router, prefix=settings.api_prefix)

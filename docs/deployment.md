@@ -11,40 +11,42 @@ Copy `backend/.env.example` to `backend/.env` and fill values:
 - `WECHAT_APPID`
 - `WECHAT_SECRET`
 - `USE_MOCK_WECHAT`
-- `AUTO_CREATE_TABLES`
 - `ADMIN_TOKEN`
 - `RATE_LIMIT_PER_MINUTE`
-- `WORKER_POLL_INTERVAL_SECONDS`
-- `WORKER_MAX_SOURCES_PER_JOB`
-- `WORKER_MAX_ITEMS_PER_SOURCE`
-
-MySQL URL format:
-
-```text
-mysql+pymysql://<username>:<urlencoded_password>@<host>:<port>/<database>?charset=utf8mb4
-```
-
-If password contains reserved characters such as `@`, `!`, `#`, encode them first.
+- `CORS_ALLOW_ORIGINS`
 
 Security rule:
 
 - Never commit real `.env`.
 - Keep secrets in CI/CD secret store.
-- Production recommendation:
-  - `USE_MOCK_WECHAT=false`
-  - `AUTO_CREATE_TABLES=false` (use Alembic only)
+- In production, replace `CORS_ALLOW_ORIGINS=*` with explicit trusted origins.
+
+Recommended environment policy:
+
+- Local dev: `USE_MOCK_WECHAT=true`, `CORS_ALLOW_ORIGINS=*`
+- Shared test or staging: prefer real `WECHAT_APPID` and `WECHAT_SECRET`, set `USE_MOCK_WECHAT=false`, and restrict `CORS_ALLOW_ORIGINS`
+- Production: `USE_MOCK_WECHAT=false`, real WeChat credentials required, never use wildcard CORS
+
+Database note:
+
+- The formal development environment uses external MySQL.
+- Recommended format:
+  `DATABASE_URL=mysql+pymysql://user:password@host:3306/gewu_jianlu?charset=utf8mb4`
+- Ensure the MySQL user can create and alter tables during initial bootstrap.
+
+Miniapp note:
+
+- `miniapp/project.config.json` can keep `touristappid` for local DevTools work.
+- Before real release, replace it with the actual miniapp `appid`.
 
 ## 2) Docker Compose Strategy
 
 File: `infra/docker-compose.yml`
 
 - Network:
-  - Internal service names: `db`, `redis`, `backend`.
-- Volumes:
-  - `mysql_data` persists database state.
+  - Internal service names: `redis`, `backend`.
 - Runtime:
-  - Backend waits on `db` and `redis` dependencies.
-  - Worker consumes `crawl_jobs` asynchronously from the same DB.
+  - Backend waits on `redis`; MySQL is provided externally.
 
 Start services:
 
@@ -80,41 +82,14 @@ server {
 ## 4) Database Migration Baseline
 
 Recommended migration tool: Alembic.
-Current database target: MySQL 8.0.
 
 Common commands:
 
 ```bash
-python -m alembic revision --autogenerate -m "init schema"
-python -m alembic upgrade head
-python -m alembic downgrade -1
+alembic revision --autogenerate -m "init schema"
+alembic upgrade head
+alembic downgrade -1
 ```
-
-Project helper scripts:
-
-```bash
-npm run db:migrate
-npm run db:downgrade
-npm run db:revision
-```
-
-## 6) Test-Version Smoke Validation
-
-Goal:
-- Validate local FastAPI + remote MySQL path before miniapp internal test.
-
-Command:
-
-```bash
-npm run smoke:test-version
-```
-
-The script validates:
-- `GET /api/v1/health`
-- `POST /api/v1/auth/silent-login`
-- `POST /api/v1/search/announcements` with `refresh=true`
-- `GET /api/v1/jobs/{job_id}`
-- Worker consumption and `contents` count changes
 
 ## 5) Rollback Checklist
 

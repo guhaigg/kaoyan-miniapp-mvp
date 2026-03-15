@@ -1,19 +1,6 @@
 version: "3.9"
 
 services:
-  db:
-    image: mysql:8.0
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: kaoyan_mvp
-      MYSQL_CHARSET: utf8mb4
-      MYSQL_COLLATION: utf8mb4_unicode_ci
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-
   redis:
     image: redis:7
     restart: unless-stopped
@@ -26,46 +13,18 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      - db
       - redis
     environment:
+      APP_NAME: gewu-jianlu-backend
       APP_ENV: dev
       API_PREFIX: /api/v1
       SECRET_KEY: replace-with-strong-secret
       VISITOR_TOKEN_TTL_SECONDS: 604800
-      DATABASE_URL: mysql+pymysql://root:root@db:3306/kaoyan_mvp?charset=utf8mb4
+      DATABASE_URL: mysql+pymysql://[DB-USERNAME]:[DB-PASSWORD]@172.17.0.16:3306/gwj001-7gnogq6td6fcd69f?charset=utf8mb4
       REDIS_URL: redis://redis:6379/0
       USE_MOCK_WECHAT: "true"
       ADMIN_TOKEN: replace-admin-token
       RATE_LIMIT_PER_MINUTE: 120
-      WORKER_POLL_INTERVAL_SECONDS: 5
-      WORKER_MAX_SOURCES_PER_JOB: 20
-      WORKER_MAX_ITEMS_PER_SOURCE: 10
+      CORS_ALLOW_ORIGINS: "*"
     ports:
       - "8000:8000"
-
-  worker:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      - db
-      - redis
-    command: ["python", "-m", "app.worker"]
-    environment:
-      APP_ENV: dev
-      API_PREFIX: /api/v1
-      SECRET_KEY: replace-with-strong-secret
-      VISITOR_TOKEN_TTL_SECONDS: 604800
-      DATABASE_URL: mysql+pymysql://root:root@db:3306/kaoyan_mvp?charset=utf8mb4
-      REDIS_URL: redis://redis:6379/0
-      USE_MOCK_WECHAT: "false"
-      ADMIN_TOKEN: replace-admin-token
-      RATE_LIMIT_PER_MINUTE: 120
-      WORKER_POLL_INTERVAL_SECONDS: 5
-      WORKER_MAX_SOURCES_PER_JOB: 20
-      WORKER_MAX_ITEMS_PER_SOURCE: 10
-
-volumes:
-  mysql_data:

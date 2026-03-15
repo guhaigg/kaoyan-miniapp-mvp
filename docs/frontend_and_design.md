@@ -4,6 +4,7 @@
 
 - `pages/`: business pages (`home`, `announcements`, `adjustments`, `detail`, `status`)
 - `utils/`: API and utility wrappers
+- `utils/config.js`: environment-aware miniapp runtime config
 - `app.js`: global silent login bootstrap
 - `app.json`: route and window setup
 - `app.wxss`: global style tokens
@@ -60,6 +61,7 @@ sequenceDiagram
 ## 5) Frontend Engineering Conventions
 
 - Keep API calls in `utils/api.js`.
+- Centralize runtime API base config in `utils/config.js`.
 - Never hardcode auth popup logic in page entry lifecycle.
 - Keep page data minimal and serializable.
 - Use a dedicated detail page instead of long modal content.

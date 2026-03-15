@@ -2,7 +2,7 @@
   <view class="card">
     <view class="title">{{item.title}}</view>
     <view class="muted">{{item.school_name || "未知院校"}} · {{item.published_at || "未知时间"}}</view>
-    <view class="muted" style="margin-top: 8rpx;">分类：{{item.category}} ｜ 来源：{{item.source_type}}</view>
+    <view class="muted" style="margin-top: 8rpx;">分类：{{item.category || "未分类"}} ｜ 来源：{{item.source_type || "未知来源"}}</view>
     <view class="muted" style="margin-top: 8rpx;" wx:if="{{item.major}}">专业：{{item.major}}</view>
     <view class="muted" style="margin-top: 8rpx;" wx:if="{{item.region}}">地区：{{item.region}}</view>
   </view>
@@ -18,4 +18,3 @@
     <button class="btn-plain" style="margin-top: 16rpx;" bindtap="copySourceUrl">复制链接</button>
   </view>
 </view>
-

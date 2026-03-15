@@ -19,5 +19,9 @@
       <view class="muted" style="margin-top: 8rpx;">来源：{{item.source_type}}</view>
     </view>
   </block>
-</view>
 
+  <view class="card" wx:if="{{!loading && items.length === 0}}">
+    <view class="muted">暂无符合条件的调剂结果，请调整筛选后重试。</view>
+    <view class="muted" wx:if="{{lastQueryAt}}" style="margin-top: 10rpx;">最近查询时间：{{lastQueryAt}}</view>
+  </view>
+</view>

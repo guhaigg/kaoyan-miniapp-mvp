@@ -21,8 +21,10 @@ def silent_login(payload: SilentLoginRequest, request: Request, db: Session = De
 
     try:
         openid = WechatService().exchange_code_for_openid(payload.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - network dependent
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"silent login failed: {exc}") from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="silent login failed") from exc
 
     user = db.query(User).filter(User.openid == openid).one_or_none()
     if user is None:
@@ -43,4 +45,3 @@ def silent_login(payload: SilentLoginRequest, request: Request, db: Session = De
         user_state="shadow",
         expires_in=settings.visitor_token_ttl_seconds,
     )
-

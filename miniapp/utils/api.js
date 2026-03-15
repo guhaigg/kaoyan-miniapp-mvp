@@ -1,18 +1,14 @@
-const DEFAULT_BASE_URL = "http://127.0.0.1:8000/api/v1";
-
-function getBaseUrl() {
-  const app = getApp();
-  return app?.globalData?.apiBase || DEFAULT_BASE_URL;
-}
+const { getApiBase } = require("./config");
 
 function request(path, method = "GET", data = null) {
   const app = getApp();
   const token = app?.globalData?.visitorToken || "";
-  const baseUrl = getBaseUrl();
+  const baseUrl = app?.globalData?.apiBase || getApiBase();
+  const requestUrl = `${baseUrl}${path}`;
 
   return new Promise((resolve, reject) => {
     wx.request({
-      url: `${baseUrl}${path}`,
+      url: requestUrl,
       method,
       data,
       header: {
@@ -24,9 +20,24 @@ function request(path, method = "GET", data = null) {
           resolve(res.data);
           return;
         }
-        reject(res.data || { message: "Request failed" });
+        reject(
+          res.data || {
+            code: res.statusCode,
+            message: "服务返回异常状态码",
+            detail: `HTTP ${res.statusCode} (${requestUrl})`,
+          }
+        );
       },
-      fail: reject,
+      fail: (err) => {
+        const errMsg = typeof err?.errMsg === "string" ? err.errMsg.trim() : "";
+        reject({
+          code: "NETWORK_ERROR",
+          message: "网络连接失败，请检查网络或代理设置",
+          detail: errMsg
+            ? `${errMsg}，目标地址：${requestUrl}`
+            : `无法连接服务，目标地址：${requestUrl}`,
+        });
+      },
     });
   });
 }
@@ -43,15 +54,10 @@ function searchAdjustments(payload) {
   return request("/search/adjustments", "POST", payload);
 }
 
-function getJobStatus(jobId) {
-  return request(`/jobs/${encodeURIComponent(jobId)}`, "GET");
-}
-
 module.exports = {
-  BASE_URL: DEFAULT_BASE_URL,
+  getApiBase,
   request,
   silentLogin,
   searchAnnouncements,
   searchAdjustments,
-  getJobStatus,
 };

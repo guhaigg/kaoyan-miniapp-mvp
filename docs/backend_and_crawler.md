@@ -22,9 +22,6 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `GET /api/v1/schools/suggest`
 - `POST /api/v1/content`
 - `POST /api/v1/admin/manual-entry`
-- `POST /api/v1/admin/sources`
-- `POST /api/v1/admin/sources/bulk-import`
-- `GET /api/v1/jobs/{job_id}`
 - `GET /api/v1/health`
 
 ## 3) Database Naming Rules
@@ -32,7 +29,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Table names: lowercase snake_case.
 - Column names: lowercase snake_case.
 - IDs: UUID string (`36 chars`) in MVP.
-- Structured data in fixed columns; crawler variable fields in JSON/JSONB (`extra`, `snapshot_meta`, `query`, `payload`).
+- Structured data in fixed columns; crawler variable fields in JSON (`extra`, `snapshot_meta`, `query`, `payload`).
 
 ## 4) Table Responsibilities
 
@@ -51,10 +48,6 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Backend exchanges `code -> openid`, then creates/reuses a `shadow` user.
 - Backend issues `visitor_token` for rate limit and audit only.
 - No explicit profile authorization in MVP.
-- Real-mode policy:
-  - `USE_MOCK_WECHAT=false` means credentials are mandatory.
-  - Missing `WECHAT_APPID` or `WECHAT_SECRET` should fail fast.
-  - WeChat `errcode != 0` should return stable 4xx with safe message.
 
 ## 6) Crawler Behavior Guardrails
 
@@ -68,7 +61,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - Per source default max rate: <= 2 requests/sec per IP.
   - Per source concurrency: start with 2, tune after observing anti-bot behavior.
 - Data quality:
-  - Deduplicate by `source_url_hash` unique key (MySQL-friendly).
+  - Deduplicate by `source_url` unique key.
   - Keep raw snapshot for post-mortem.
 
 ## 7) Error Handling Baseline
@@ -77,14 +70,3 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Convert predictable failures to 4xx with stable `detail`.
 - Log all unexpected 5xx with `request_id`.
 - For crawler refresh requests, return accepted/pending state through `crawl_jobs`.
-
-## 8) Async Refresh Job Consumer
-
-- Trigger:
-  - `POST /api/v1/search/*` with `refresh=true` creates a `pending` row in `crawl_jobs`.
-- Consumer:
-  - Worker process `python -m app.worker` claims pending jobs and marks them `running`.
-  - Worker fetches configured sources, parses candidates, and upserts into `contents`.
-  - Job ends with `completed` or `failed`, with summary message.
-- Status polling:
-  - Client polls `GET /api/v1/jobs/{job_id}`.
