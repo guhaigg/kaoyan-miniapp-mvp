@@ -1,4 +1,11 @@
-const { getApiBase } = require("./config");
+const { getApiBase, getApiBaseCandidates } = require("./config");
+
+function dedupeBaseUrls(urls) {
+  const normalized = Array.isArray(urls)
+    ? urls.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  return Array.from(new Set(normalized));
+}
 
 function requestOnce(requestUrl, method, data, token) {
   return new Promise((resolve, reject) => {
@@ -6,6 +13,9 @@ function requestOnce(requestUrl, method, data, token) {
       url: requestUrl,
       method,
       data,
+      timeout: 12000,
+      enableHttp2: false,
+      enableQuic: false,
       header: {
         "Content-Type": "application/json",
         "X-Visitor-Token": token,
@@ -25,11 +35,12 @@ function requestOnce(requestUrl, method, data, token) {
       },
       fail: (err) => {
         const errMsg = typeof err?.errMsg === "string" ? err.errMsg.trim() : "";
+        const errno = typeof err?.errno === "number" ? `，errno:${err.errno}` : "";
         reject({
           code: "NETWORK_ERROR",
           message: "网络连接失败，请检查网络或代理设置",
           detail: errMsg
-            ? `${errMsg}，目标地址：${requestUrl}`
+            ? `${errMsg}${errno}，目标地址：${requestUrl}`
             : `无法连接服务，目标地址：${requestUrl}`,
         });
       },
@@ -51,34 +62,66 @@ function isRetryableNetworkError(error) {
   );
 }
 
+function isDomainListError(error) {
+  const detail = typeof error?.detail === "string" ? error.detail.toLowerCase() : "";
+  return detail.includes("url not in domain list");
+}
+
 function request(path, method = "GET", data = null) {
   const app = getApp();
   const token = app?.globalData?.visitorToken || "";
-  const primaryBase = app?.globalData?.apiBase || getApiBase();
+  const configuredBases = dedupeBaseUrls(
+    app?.globalData?.apiBaseCandidates?.length
+      ? app.globalData.apiBaseCandidates
+      : getApiBaseCandidates()
+  );
+  const primaryBase = app?.globalData?.apiBase || configuredBases[0] || getApiBase();
+  const baseCandidates = dedupeBaseUrls([primaryBase, ...configuredBases]);
   const attemptedUrls = [];
 
   const run = async () => {
-    const requestUrl = `${primaryBase}${path}`;
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      attemptedUrls.push(requestUrl);
-      try {
-        const result = await requestOnce(requestUrl, method, data, token);
-        if (app?.globalData) {
-          app.globalData.apiBase = primaryBase;
+    let lastError = null;
+    let primaryNetworkError = null;
+
+    for (const baseUrl of baseCandidates) {
+      const requestUrl = `${baseUrl}${path}`;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        attemptedUrls.push(requestUrl);
+        try {
+          const result = await requestOnce(requestUrl, method, data, token);
+          if (app?.globalData) {
+            app.globalData.apiBase = baseUrl;
+            app.globalData.apiBaseCandidates = baseCandidates;
+          }
+          return result;
+        } catch (error) {
+          lastError = error;
+          const isNetworkError =
+            error?.code === "NETWORK_ERROR" && isRetryableNetworkError(error);
+          const domainListError = isDomainListError(error);
+
+          if (baseUrl === primaryBase && isNetworkError && !domainListError) {
+            primaryNetworkError = error;
+          }
+
+          if (isNetworkError && !domainListError && attempt < 3) {
+            continue;
+          }
+          break;
         }
-        return result;
-      } catch (error) {
-        const isNetworkError = error?.code === "NETWORK_ERROR" && isRetryableNetworkError(error);
-        if (isNetworkError && attempt < 3) {
-          continue;
-        }
-        throw error;
       }
     }
+
+    const finalError =
+      primaryNetworkError && isDomainListError(lastError) ? primaryNetworkError : lastError;
+    if (finalError) {
+      throw finalError;
+    }
+
     throw {
       code: "NETWORK_ERROR",
       message: "网络连接失败，请检查网络或代理设置",
-      detail: `无法连接服务，目标地址：${requestUrl}`,
+      detail: `无法连接服务，目标地址：${baseCandidates.map((base) => `${base}${path}`).join(" | ")}`,
     };
   };
 

@@ -1,10 +1,11 @@
 const api = require("./utils/api");
-const { APP_CONFIG, getApiBase, getEnvVersion } = require("./utils/config");
+const { APP_CONFIG, getApiBase, getApiBaseCandidates, getEnvVersion } = require("./utils/config");
 
 App({
   globalData: {
     visitorToken: "",
     userId: "",
+    apiBaseCandidates: getApiBaseCandidates(),
     apiBase: getApiBase(),
     envVersion: getEnvVersion(),
     appName: APP_CONFIG.appName,

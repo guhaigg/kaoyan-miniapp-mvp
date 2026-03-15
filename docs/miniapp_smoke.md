@@ -42,8 +42,10 @@ npm run smoke:miniapp:preview
 
 ## Runtime Notes
 
-- The current mini program runtime config points `develop`, `trial`, and `release` to `https://api.gewujl.cloud/api/v1`
-- Network-level request retries are enabled on the primary API domain (`api.gewujl.cloud`)
+- The current mini program runtime config uses multi-domain candidates in order:
+  `https://api.gewujl.cloud/api/v1` -> `https://gewujl.cloud/api/v1` -> `https://www.gewujl.cloud/api/v1`
+- Requests retry the same domain first (up to 3 attempts), then switch to next candidate domain
+- `wx.request` network options force `enableHttp2: false` and `enableQuic: false` to reduce network-stack compatibility resets
 - If you want to test against another backend, update `miniapp/utils/config.js` before generating the preview
 
 ## Manual Smoke Checklist
@@ -60,5 +62,6 @@ npm run smoke:miniapp:preview
 - `private key not found`: verify `--privateKeyPath` or `MINIPROGRAM_PRIVATE_KEY_PATH`
 - preview upload permission error: re-check the WeChat code upload key and IP whitelist
 - API request failures after scan: verify the backend health endpoint and the current API base URL
-- `request:fail url not in domain list`: in WeChat public platform for current `appid`, add `https://api.gewujl.cloud` to request legal domain (no path), then retry after propagation
+- `request:fail url not in domain list`: in WeChat public platform for current `appid`, add all used request legal domains:
+  `https://api.gewujl.cloud`, `https://gewujl.cloud`, `https://www.gewujl.cloud` (no path), then retry after propagation
 - `request:fail net::ERR_CONNECTION_RESET`: check clash/mihomo fake-ip policy, ensure `api.gewujl.cloud` is excluded from fake-ip mapping and avoid proxy-induced DNS pollution
