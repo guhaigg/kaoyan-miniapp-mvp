@@ -83,3 +83,4 @@ Password note:
 - [Deployment Handbook](./deployment.md)
 - [Git Workflow and Release Rules](./git_workflow.md)
 - [PR Draft: dev -> main](./pr_dev_to_main.md)
+- [Handover Status](./handover_status.md)
