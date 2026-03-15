@@ -24,6 +24,22 @@
   - ...
 ```
 
+## 2026-03-15 - fix: harden miniapp network fallback for 600001 connection reset
+- Branch: `dev`
+- Commit: `845719d`
+- Summary:
+  - `miniapp/utils/api.js` 增强网络容灾：同域名最多重试 3 次，失败后自动切换候选域名继续请求。
+  - 请求参数新增 `timeout: 12000`、`enableHttp2: false`、`enableQuic: false`，降低部分网络环境下 `ERR_CONNECTION_RESET` 触发概率。
+  - 错误详情保留 `errno` 并统一输出已尝试地址列表，便于定位 `600001` 等微信网络错误。
+  - `miniapp/utils/config.js` 与 `app.js` 增加多域名候选配置，默认顺序为 `api` -> `gewujl` -> `www`。
+  - 同步更新 `docs/miniapp_smoke.md` 的运行说明与域名白名单排障项。
+- Verification:
+  - `node --check miniapp/utils/config.js`
+  - `node --check miniapp/utils/api.js`
+  - `node --check miniapp/app.js`
+- Risks / Next:
+  - 若微信公众平台未放行回退域名，请求会继续使用主域名重试；建议确保三个域名均已加入 request 合法域名。
+
 ## 2026-03-15 - fix: rollback miniapp network path to single api domain
 - Branch: `dev`
 - Commit: `b626cfa`
