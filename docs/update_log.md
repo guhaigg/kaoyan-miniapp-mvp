@@ -24,6 +24,19 @@
   - ...
 ```
 
+## 2026-03-15 - fix: rollback miniapp network path to single api domain
+- Branch: `dev`
+- Commit: `<pending>`
+- Summary:
+  - 将小程序请求链路回退为仅使用 `https://api.gewujl.cloud/api/v1`，移除 `gewujl.cloud` 回退域名路径。
+  - 保留主域名网络重试机制（3 次），减少偶发连接重置带来的失败概率。
+  - 同步更新冒烟文档运行说明，避免与当前行为不一致。
+- Verification:
+  - `node --check miniapp/utils/config.js`
+  - `node --check miniapp/utils/api.js`
+- Risks / Next:
+  - 若当前网络对 `api.gewujl.cloud` 长时不可达，查询仍会失败，需要继续从网络侧排障。
+
 ## 2026-03-15 - ops: fix clash fake-ip pollution for miniapp API debugging
 - Branch: `dev`
 - Commit: `df5b401`
