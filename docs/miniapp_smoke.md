@@ -43,6 +43,7 @@ npm run smoke:miniapp:preview
 ## Runtime Notes
 
 - The current mini program runtime config points `develop`, `trial`, and `release` to `https://api.gewujl.cloud/api/v1`
+- Network-level request fallback is enabled: on retryable connection failures, mini program will retry once with `https://gewujl.cloud/api/v1`
 - If you want to test against another backend, update `miniapp/utils/config.js` before generating the preview
 
 ## Manual Smoke Checklist
