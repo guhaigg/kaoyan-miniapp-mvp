@@ -26,7 +26,7 @@
 
 ## 2026-03-15 - fix: rollback miniapp network path to single api domain
 - Branch: `dev`
-- Commit: `<pending>`
+- Commit: `b626cfa`
 - Summary:
   - 将小程序请求链路回退为仅使用 `https://api.gewujl.cloud/api/v1`，移除 `gewujl.cloud` 回退域名路径。
   - 保留主域名网络重试机制（3 次），减少偶发连接重置带来的失败概率。
@@ -65,7 +65,7 @@
 
 ## 2026-03-15 - fix: retry primary api before fallback on network reset
 - Branch: `dev`
-- Commit: `<pending>`
+- Commit: `29c7c9d`
 - Summary:
   - `miniapp/utils/api.js` 增加主域名网络重试（3 次）机制，减少偶发 `ERR_CONNECTION_RESET` 对查询成功率的影响。
   - 当回退域名被微信拦截（`url not in domain list`）时，优先回传主域名网络错误，避免误导排障方向。
