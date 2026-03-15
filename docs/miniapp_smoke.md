@@ -60,3 +60,4 @@ npm run smoke:miniapp:preview
 - preview upload permission error: re-check the WeChat code upload key and IP whitelist
 - API request failures after scan: verify the backend health endpoint and the current API base URL
 - `request:fail url not in domain list`: in WeChat public platform for current `appid`, add `https://api.gewujl.cloud` to request legal domain (no path), then retry after propagation
+- `request:fail net::ERR_CONNECTION_RESET`: check clash/mihomo fake-ip policy, ensure `api.gewujl.cloud` is excluded from fake-ip mapping and avoid proxy-induced DNS pollution
