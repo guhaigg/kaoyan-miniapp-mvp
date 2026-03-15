@@ -10,7 +10,8 @@
     "prepare": "husky",
     "lint:commit": "commitlint --from=HEAD~1 --to=HEAD --verbose",
     "test:backend": "cd backend && ../.venv/bin/python -m pytest -q",
-    "dev:backend": "cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    "dev:backend": "cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "smoke:miniapp:preview": "node scripts/miniprogram-preview.js"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@commitlint/cli": "^20.4.4",
     "@commitlint/config-conventional": "^20.4.4",
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "miniprogram-ci": "^2.1.31"
   }
 }

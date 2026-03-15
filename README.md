@@ -44,12 +44,26 @@ Open `miniapp/` in WeChat DevTools.
 npm run test:backend
 ```
 
+Ubuntu miniapp preview smoke:
+
+```bash
+npm run smoke:miniapp:preview -- --privateKeyPath .secrets/miniprogram-ci.key
+```
+
+## Branch Policy
+
+- Default delivery branch: `dev`
+- Feature work branch: `feat/*` (branched from `dev`)
+- Keep `main` unchanged during normal development
+- Only push or merge to `main` after explicit confirmation
+
 ## Project Docs
 
 - [Docs Index](./docs/README.md)
 - [Development Protocol](./docs/development_protocol.md)
 - [Git Workflow](./docs/git_workflow.md)
 - [Deployment Handbook](./docs/deployment.md)
+- [Miniapp Smoke Checklist](./docs/miniapp_smoke.md)
 
 ## Deployment Assets
 
