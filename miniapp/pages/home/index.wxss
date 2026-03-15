@@ -5,3 +5,14 @@ input {
   padding: 0 20rpx;
 }
 
+.build-tag {
+  margin-top: 18rpx;
+  display: inline-block;
+  background: #0f3f94;
+  color: #ffffff;
+  border-radius: 999rpx;
+  padding: 8rpx 18rpx;
+  font-size: 22rpx;
+  font-weight: 700;
+  letter-spacing: 0.3rpx;
+}

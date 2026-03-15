@@ -10,6 +10,7 @@ App({
     envVersion: getEnvVersion(),
     appName: APP_CONFIG.appName,
     shortName: APP_CONFIG.shortName,
+    buildId: APP_CONFIG.buildId,
     authReady: false,
     authMode: "anonymous",
     silentLoginError: "",

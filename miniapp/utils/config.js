@@ -1,6 +1,7 @@
 const APP_CONFIG = {
   appName: "格物简录",
   shortName: "格物简",
+  buildId: "20260315-1830",
   manualApiBase: "",
   manualApiBaseCandidates: [],
   apiBaseByEnv: {

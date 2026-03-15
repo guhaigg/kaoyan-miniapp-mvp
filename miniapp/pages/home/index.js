@@ -5,16 +5,22 @@ Page({
     major: "",
     region: "",
     accessModeText: "正在初始化访问身份...",
+    buildId: "",
+    envVersion: "",
   },
 
   onShow() {
     const app = getApp();
-    const { authReady, authMode } = app.globalData || {};
+    const { authReady, authMode, buildId, envVersion } = app.globalData || {};
     let accessModeText = "正在初始化访问身份...";
     if (authReady) {
       accessModeText = authMode === "shadow" ? "当前为静默影子账户访问模式" : "当前为匿名访问模式";
     }
-    this.setData({ accessModeText });
+    this.setData({
+      accessModeText,
+      buildId: buildId || "",
+      envVersion: envVersion || "",
+    });
   },
 
   onSchoolInput(e) {

@@ -18,6 +18,10 @@ from ..schemas import (
 router = APIRouter(prefix="/search", tags=["search"])
 
 
+def _resolve_request_id(request: Request) -> str:
+    return str(getattr(request.state, "request_id", "") or uuid4())
+
+
 def _apply_common_filters(query, payload: AnnouncementSearchRequest | AdjustmentSearchRequest):
     if payload.school_name:
         query = query.join(School, isouter=True).filter(School.name.ilike(f"%{payload.school_name.strip()}%"))
@@ -92,7 +96,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
     identity = user.id if user else (request.client.host if request.client else "unknown")
     enforce_rate_limit(request, f"search_announcement:{identity}")
 
-    request_id = str(uuid4())
+    request_id = _resolve_request_id(request)
     base_query = db.query(Content).filter(Content.category == "announcement")
     base_query = _apply_common_filters(base_query, payload)
 
@@ -119,7 +123,7 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     identity = user.id if user else (request.client.host if request.client else "unknown")
     enforce_rate_limit(request, f"search_adjustment:{identity}")
 
-    request_id = str(uuid4())
+    request_id = _resolve_request_id(request)
     base_query = db.query(Content).filter(Content.category == "adjustment")
     base_query = _apply_common_filters(base_query, payload)
     if payload.major:

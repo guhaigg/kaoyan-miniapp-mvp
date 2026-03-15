@@ -7,7 +7,20 @@ function dedupeBaseUrls(urls) {
   return Array.from(new Set(normalized));
 }
 
-function requestOnce(requestUrl, method, data, token) {
+function generateRequestId() {
+  return `wx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getBackoffDelayMs(attempt) {
+  const retryIndex = attempt - 1;
+  return Math.min(1200, 300 * 2 ** Math.max(0, retryIndex - 1));
+}
+
+function requestOnce(requestUrl, method, data, token, requestId) {
   return new Promise((resolve, reject) => {
     wx.request({
       url: requestUrl,
@@ -19,6 +32,7 @@ function requestOnce(requestUrl, method, data, token) {
       header: {
         "Content-Type": "application/json",
         "X-Visitor-Token": token,
+        "X-Request-Id": requestId,
       },
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -29,7 +43,8 @@ function requestOnce(requestUrl, method, data, token) {
           res.data || {
             code: res.statusCode,
             message: "服务返回异常状态码",
-            detail: `HTTP ${res.statusCode} (${requestUrl})`,
+            detail: `HTTP ${res.statusCode} (${requestUrl})，requestId:${requestId}`,
+            requestId,
           }
         );
       },
@@ -40,8 +55,9 @@ function requestOnce(requestUrl, method, data, token) {
           code: "NETWORK_ERROR",
           message: "网络连接失败，请检查网络或代理设置",
           detail: errMsg
-            ? `${errMsg}${errno}，目标地址：${requestUrl}`
-            : `无法连接服务，目标地址：${requestUrl}`,
+            ? `${errMsg}${errno}，目标地址：${requestUrl}，requestId:${requestId}`
+            : `无法连接服务，目标地址：${requestUrl}，requestId:${requestId}`,
+          requestId,
         });
       },
     });
@@ -70,6 +86,7 @@ function isDomainListError(error) {
 function request(path, method = "GET", data = null) {
   const app = getApp();
   const token = app?.globalData?.visitorToken || "";
+  const requestId = generateRequestId();
   const configuredBases = dedupeBaseUrls(
     app?.globalData?.apiBaseCandidates?.length
       ? app.globalData.apiBaseCandidates
@@ -88,10 +105,11 @@ function request(path, method = "GET", data = null) {
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         attemptedUrls.push(requestUrl);
         try {
-          const result = await requestOnce(requestUrl, method, data, token);
+          const result = await requestOnce(requestUrl, method, data, token, requestId);
           if (app?.globalData) {
             app.globalData.apiBase = baseUrl;
             app.globalData.apiBaseCandidates = baseCandidates;
+            app.globalData.lastRequestId = requestId;
           }
           return result;
         } catch (error) {
@@ -105,6 +123,7 @@ function request(path, method = "GET", data = null) {
           }
 
           if (isNetworkError && !domainListError && attempt < 3) {
+            await sleep(getBackoffDelayMs(attempt + 1));
             continue;
           }
           break;
@@ -121,7 +140,8 @@ function request(path, method = "GET", data = null) {
     throw {
       code: "NETWORK_ERROR",
       message: "网络连接失败，请检查网络或代理设置",
-      detail: `无法连接服务，目标地址：${baseCandidates.map((base) => `${base}${path}`).join(" | ")}`,
+      detail: `无法连接服务，目标地址：${baseCandidates.map((base) => `${base}${path}`).join(" | ")}，requestId:${requestId}`,
+      requestId,
     };
   };
 
@@ -129,6 +149,7 @@ function request(path, method = "GET", data = null) {
     if (error?.code === "NETWORK_ERROR") {
       return Promise.reject({
         ...error,
+        requestId: error?.requestId || requestId,
         detail: `${error?.detail || "网络连接失败"}，已尝试：${attemptedUrls.join(" | ")}`,
       });
     }

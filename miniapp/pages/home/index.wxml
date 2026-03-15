@@ -2,6 +2,7 @@
   <view class="card">
     <view class="title">查院校公告 / 调剂信息</view>
     <view class="muted">{{accessModeText}}</view>
+    <view class="build-tag">Build {{buildId || "-"}} · {{envVersion || "develop"}}</view>
   </view>
 
   <view class="card">
