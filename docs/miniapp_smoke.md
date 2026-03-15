@@ -18,6 +18,7 @@ npm run smoke:miniapp:preview -- --privateKeyPath .secrets/miniprogram-ci.key
 The command will:
 
 - compile the mini program with `miniprogram-ci`
+- delete existing `artifacts/miniprogram-preview*.jpg|png` old QR files before generation
 - create a preview QR image at `artifacts/miniprogram-preview.jpg`
 - print progress logs in the terminal
 

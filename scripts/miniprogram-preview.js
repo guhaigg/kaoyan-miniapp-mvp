@@ -71,6 +71,33 @@ function buildVersion() {
   return `preview-${parts.join("")}`;
 }
 
+function isQrcodeImageFile(fileName) {
+  const lower = fileName.toLowerCase();
+  return (
+    lower.startsWith("miniprogram-preview") &&
+    (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png"))
+  );
+}
+
+function cleanupOldQrcodeFiles(qrcodeOutputDest) {
+  const dirPath = path.dirname(qrcodeOutputDest);
+  if (!fs.existsSync(dirPath)) {
+    return;
+  }
+
+  const fileNames = fs.readdirSync(dirPath);
+  const deleteTargets = fileNames
+    .filter((fileName) => isQrcodeImageFile(fileName))
+    .map((fileName) => path.join(dirPath, fileName));
+
+  for (const target of deleteTargets) {
+    if (fs.existsSync(target)) {
+      fs.unlinkSync(target);
+      console.log(`- removed old qrcode: ${target}`);
+    }
+  }
+}
+
 function printHelp() {
   console.log(`Usage:
   npm run smoke:miniapp:preview -- --privateKeyPath .secrets/miniprogram-ci.key
@@ -134,6 +161,7 @@ async function main() {
       "artifacts/miniprogram-preview.jpg"
   );
   fs.mkdirSync(path.dirname(qrcodeOutputDest), { recursive: true });
+  cleanupOldQrcodeFiles(qrcodeOutputDest);
 
   const pagePath = args.pagePath || process.env.MINIPROGRAM_PREVIEW_PAGE_PATH;
   const searchQuery = args.searchQuery || process.env.MINIPROGRAM_PREVIEW_SEARCH_QUERY;
