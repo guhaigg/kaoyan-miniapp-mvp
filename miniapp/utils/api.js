@@ -4,10 +4,11 @@ function request(path, method = "GET", data = null) {
   const app = getApp();
   const token = app?.globalData?.visitorToken || "";
   const baseUrl = app?.globalData?.apiBase || getApiBase();
+  const requestUrl = `${baseUrl}${path}`;
 
   return new Promise((resolve, reject) => {
     wx.request({
-      url: `${baseUrl}${path}`,
+      url: requestUrl,
       method,
       data,
       header: {
@@ -19,9 +20,24 @@ function request(path, method = "GET", data = null) {
           resolve(res.data);
           return;
         }
-        reject(res.data || { message: "Request failed" });
+        reject(
+          res.data || {
+            code: res.statusCode,
+            message: "服务返回异常状态码",
+            detail: `HTTP ${res.statusCode} (${requestUrl})`,
+          }
+        );
       },
-      fail: reject,
+      fail: (err) => {
+        const errMsg = typeof err?.errMsg === "string" ? err.errMsg.trim() : "";
+        reject({
+          code: "NETWORK_ERROR",
+          message: "网络连接失败，请检查网络或代理设置",
+          detail: errMsg
+            ? `${errMsg}，目标地址：${requestUrl}`
+            : `无法连接服务，目标地址：${requestUrl}`,
+        });
+      },
     });
   });
 }
