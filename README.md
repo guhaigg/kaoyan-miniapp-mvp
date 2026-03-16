@@ -8,6 +8,7 @@
 - Web (www): `https://www.gewujl.cloud`
 - API: `https://api.gewujl.cloud`
 - Health: `https://api.gewujl.cloud/api/v1/health`
+- Console: `https://api.gewujl.cloud/console/`
 
 ## Tech Stack
 

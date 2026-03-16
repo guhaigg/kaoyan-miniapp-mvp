@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>格物简录 控制台</title>
+    <link rel="stylesheet" href="/static/console/styles.css" />
+  </head>
+  <body>
+    <div class="bg-layer"></div>
+    <main class="shell">
+      <header class="hero card">
+        <p class="hero-kicker">GEWU OPS CONSOLE</p>
+        <h1>格物简录后台界面</h1>
+        <p class="hero-sub">用于健康检查、公告/调剂检索、手动录入与下线操作。</p>
+      </header>
+
+      <section class="card grid-two settings-panel">
+        <div>
+          <label for="apiBase">API Base</label>
+          <input id="apiBase" type="text" />
+        </div>
+        <div>
+          <label for="adminToken">Admin Token</label>
+          <input id="adminToken" type="password" placeholder="请输入 X-Admin-Token" />
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="panel-title-row">
+          <h2>系统状态</h2>
+          <button id="btnHealth" class="btn">刷新健康状态</button>
+        </div>
+        <pre id="healthOutput" class="output">点击“刷新健康状态”查看结果</pre>
+      </section>
+
+      <section class="card">
+        <div class="panel-title-row">
+          <h2>检索面板</h2>
+          <button id="btnSearch" class="btn">执行查询</button>
+        </div>
+        <div class="grid-four">
+          <div>
+            <label for="searchType">查询类型</label>
+            <select id="searchType">
+              <option value="announcements">公告</option>
+              <option value="adjustments">调剂</option>
+            </select>
+          </div>
+          <div>
+            <label for="schoolName">院校</label>
+            <input id="schoolName" type="text" placeholder="例如：复旦大学" />
+          </div>
+          <div>
+            <label for="keywords">关键词</label>
+            <input id="keywords" type="text" placeholder="例如：复试" />
+          </div>
+          <div>
+            <label for="pageSize">每页条数</label>
+            <input id="pageSize" type="number" value="20" min="1" max="100" />
+          </div>
+          <div>
+            <label for="major">专业（调剂）</label>
+            <input id="major" type="text" placeholder="例如：计算机" />
+          </div>
+          <div>
+            <label for="region">地区（调剂）</label>
+            <input id="region" type="text" placeholder="例如：北京" />
+          </div>
+          <div class="toggle-wrap">
+            <input id="refresh" type="checkbox" />
+            <label for="refresh">按需补抓</label>
+          </div>
+        </div>
+        <pre id="searchOutput" class="output">执行查询后展示请求结果</pre>
+      </section>
+
+      <section class="card">
+        <div class="panel-title-row">
+          <h2>手动录入内容</h2>
+          <button id="btnIngest" class="btn">提交录入</button>
+        </div>
+        <div class="grid-two">
+          <div>
+            <label for="ingestCategory">分类</label>
+            <select id="ingestCategory">
+              <option value="announcement">announcement</option>
+              <option value="adjustment">adjustment</option>
+            </select>
+          </div>
+          <div>
+            <label for="ingestSourceType">来源类型</label>
+            <select id="ingestSourceType">
+              <option value="manual">manual</option>
+              <option value="crawler">crawler</option>
+            </select>
+          </div>
+          <div>
+            <label for="ingestTitle">标题</label>
+            <input id="ingestTitle" type="text" placeholder="标题" />
+          </div>
+          <div>
+            <label for="ingestSchool">院校</label>
+            <input id="ingestSchool" type="text" placeholder="院校名称" />
+          </div>
+          <div>
+            <label for="ingestMajor">专业</label>
+            <input id="ingestMajor" type="text" placeholder="可选" />
+          </div>
+          <div>
+            <label for="ingestRegion">地区</label>
+            <input id="ingestRegion" type="text" placeholder="可选" />
+          </div>
+          <div class="full-row">
+            <label for="ingestSourceUrl">来源链接</label>
+            <input id="ingestSourceUrl" type="text" placeholder="https://example.com/..." />
+          </div>
+          <div class="full-row">
+            <label for="ingestSummary">摘要</label>
+            <textarea id="ingestSummary" rows="2" placeholder="可选"></textarea>
+          </div>
+          <div class="full-row">
+            <label for="ingestBody">正文</label>
+            <textarea id="ingestBody" rows="6" placeholder="正文内容"></textarea>
+          </div>
+        </div>
+        <pre id="ingestOutput" class="output">提交录入后展示请求结果</pre>
+      </section>
+
+      <section class="card">
+        <div class="panel-title-row">
+          <h2>手动下线</h2>
+          <button id="btnOffline" class="btn danger">提交下线</button>
+        </div>
+        <div class="grid-two">
+          <div>
+            <label for="offlineContentId">内容 ID</label>
+            <input id="offlineContentId" type="text" placeholder="content_id" />
+          </div>
+          <div>
+            <label for="offlineReason">原因</label>
+            <input id="offlineReason" type="text" placeholder="manual offline" />
+          </div>
+        </div>
+        <pre id="offlineOutput" class="output">提交下线后展示请求结果</pre>
+      </section>
+    </main>
+    <script src="/static/console/app.js"></script>
+  </body>
+</html>

@@ -20,7 +20,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `POST /api/v1/search/announcements`
 - `POST /api/v1/search/adjustments`
 - `GET /api/v1/schools/suggest`
-- `POST /api/v1/content`
+- `POST /api/v1/content` (requires `X-Admin-Token`)
 - `POST /api/v1/admin/manual-entry`
 - `GET /api/v1/health`
 

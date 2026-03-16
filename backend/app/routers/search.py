@@ -103,7 +103,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         .limit(payload.page_size)
         .all()
     )
-    stats_rows = db.query(Content.source_type, func.count(Content.id)).filter(Content.category == "announcement").group_by(Content.source_type).all()
+    stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
     source_breakdown = {k: int(v) for k, v in stats_rows}
 
     refresh_job_id = None
@@ -134,7 +134,7 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
         .limit(payload.page_size)
         .all()
     )
-    stats_rows = db.query(Content.source_type, func.count(Content.id)).filter(Content.category == "adjustment").group_by(Content.source_type).all()
+    stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
     source_breakdown = {k: int(v) for k, v in stats_rows}
 
     refresh_job_id = None
