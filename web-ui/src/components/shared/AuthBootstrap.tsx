@@ -8,6 +8,7 @@ export default function AuthBootstrap() {
   const {
     portalAuth,
     authBootstrapped,
+    hasServerSessionHint,
     setAuthBootstrapped,
     setPortalAuthFromToken,
     setPortalProfile,
@@ -24,6 +25,10 @@ export default function AuthBootstrap() {
           const profile = await getCurrentUser(portalAuth.accessToken);
           if (!alive) return;
           setPortalProfile({ nickname: profile.nickname, status: profile.status });
+          return;
+        }
+
+        if (!hasServerSessionHint) {
           return;
         }
 
@@ -64,6 +69,7 @@ export default function AuthBootstrap() {
   }, [
     authBootstrapped,
     clearPortalAuth,
+    hasServerSessionHint,
     portalAuth?.accessToken,
     setAuthBootstrapped,
     setPortalAuthFromToken,

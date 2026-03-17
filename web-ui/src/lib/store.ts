@@ -19,6 +19,7 @@ interface AppState {
   setWatchlistOpen: (open: boolean) => void;
   authBootstrapped: boolean;
   setAuthBootstrapped: (done: boolean) => void;
+  hasServerSessionHint: boolean;
   portalAuth: PortalAuthSession | null;
   setPortalAuthFromToken: (payload: {
     tokenType: "bearer";
@@ -41,9 +42,11 @@ export const useAppStore = create<AppState>()(
       setWatchlistOpen: (open) => set({ isWatchlistOpen: open }),
       authBootstrapped: false,
       setAuthBootstrapped: (done) => set({ authBootstrapped: done }),
+      hasServerSessionHint: false,
       portalAuth: null,
       setPortalAuthFromToken: (payload) =>
         set({
+          hasServerSessionHint: true,
           portalAuth: {
             tokenType: payload.tokenType,
             accessToken: payload.accessToken,
@@ -66,12 +69,13 @@ export const useAppStore = create<AppState>()(
             },
           };
         }),
-      clearPortalAuth: () => set({ portalAuth: null }),
+      clearPortalAuth: () => set({ portalAuth: null, hasServerSessionHint: false }),
     }),
     {
       name: "gewu_portal_auth",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
+        hasServerSessionHint: state.hasServerSessionHint,
         portalAuth: state.portalAuth,
       }),
     },
