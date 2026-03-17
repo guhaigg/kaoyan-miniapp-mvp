@@ -13,3 +13,4 @@ backend/.ruff_cache/
 miniapp/miniprogram_npm/
 miniapp/dist/
 miniapp/project.private.config.json
+.claude/settings.local.json

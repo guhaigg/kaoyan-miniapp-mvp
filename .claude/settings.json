@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write",
+      "Read",
+      "Bash(npm run test:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)"
+    ]
+  },
+  "hooks": {
+    "postEdit": {
+      "commands": [
+        "cd web-ui && npm run lint -- --fix"
+      ],
+      "pattern": "web-ui/src/**/*.{ts,tsx,js,jsx}"
+    },
+    "preCommit": {
+      "commands": [
+        "npm run test:backend",
+        "cd web-ui && npm run lint && npm run build"
+      ]
+    }
+  }
+}
