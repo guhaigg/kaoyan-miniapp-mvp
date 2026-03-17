@@ -8,6 +8,11 @@
 2. [Git Workflow and Release Rules](./git_workflow.md)
 3. [Deployment Handbook](./deployment.md)
 
+补充：
+
+- [Claude Project Guide](../CLAUDE.md)
+- [Claude Quickstart](./claude_quickstart.md)
+
 ## 架构说明
 
 ```mermaid

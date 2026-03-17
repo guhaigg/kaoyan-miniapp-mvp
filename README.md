@@ -52,6 +52,8 @@ npm run test:backend
 
 ## Project Docs
 
+- [Claude Project Guide](./CLAUDE.md)
+- [Claude Quickstart](./docs/claude_quickstart.md)
 - [Docs Index](./docs/README.md)
 - [Development Protocol](./docs/development_protocol.md)
 - [Git Workflow](./docs/git_workflow.md)
