@@ -120,3 +120,40 @@ alembic downgrade -1
   - switch gateway to previous backend image
   - verify `/api/v1/health`
   - replay failed requests if necessary
+
+## 6) GitHub Actions Auto-Deploy (Hong Kong Server)
+
+Workflow file:
+
+- `.github/workflows/deploy-hk.yml`
+
+Trigger:
+
+- push to `main`
+- manual trigger (`workflow_dispatch`)
+
+Required GitHub Secrets:
+
+- `HK_HOST` (example: `45.192.110.219`)
+- `HK_USER` (example: `root`)
+- `HK_SSH_PRIVATE_KEY` (private key content)
+- `HK_SSH_PORT` (optional, default `22`)
+
+Optional GitHub Variables:
+
+- `HK_DEPLOY_PATH` (default `/root/code/kaoyan-miniapp-mvp`)
+- `HK_WEB_ROOT` (default `/var/www/html`)
+- `HK_BACKEND_SERVICE` (example: `gewujl-backend`)
+
+Deploy actions on server:
+
+1. `git pull --ff-only origin main` in repo path
+2. Sync static pages to web root:
+   - `index.html`
+   - `register.html`
+   - `register/index.html`
+   - `query/index.html`
+   - `assets/brand/gw-mark.svg`
+3. Install backend dependencies if `.venv/bin/pip` exists
+4. Restart backend service if `HK_BACKEND_SERVICE` is configured
+5. `nginx -t` and `systemctl reload nginx`
