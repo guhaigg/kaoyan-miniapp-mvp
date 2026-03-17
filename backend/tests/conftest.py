@@ -10,6 +10,7 @@ os.environ["ADMIN_TOKEN"] = "test-admin-token"
 os.environ["ADMIN_USERNAME"] = "admin"
 os.environ["ADMIN_PASSWORD"] = "test-admin-password"
 os.environ["ENABLE_NOTIFICATION_WORKER"] = "false"
+os.environ["NOTIFICATION_BATCH_WINDOW_SECONDS"] = "0"
 
 from app.main import app  # noqa: E402
 from app.db import Base, engine  # noqa: E402
