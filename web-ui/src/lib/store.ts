@@ -12,6 +12,13 @@ interface PortalAuthSession {
   refreshExpiresAt: number;
 }
 
+interface ToastState {
+  open: boolean;
+  title: string;
+  message: string;
+  type: "info" | "urgent";
+}
+
 interface AppState {
   isAuthOpen: boolean;
   setAuthOpen: (open: boolean) => void;
@@ -31,6 +38,10 @@ interface AppState {
   }) => void;
   setPortalProfile: (payload: { nickname: string | null; status: string }) => void;
   clearPortalAuth: () => void;
+  logout: () => void;
+  toast: ToastState;
+  showToast: (title: string, message: string, type?: "info" | "urgent") => void;
+  hideToast: () => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -70,6 +81,30 @@ export const useAppStore = create<AppState>()(
           };
         }),
       clearPortalAuth: () => set({ portalAuth: null, hasServerSessionHint: false }),
+      logout: () =>
+        set({
+          portalAuth: null,
+          hasServerSessionHint: false,
+          isAuthOpen: true,
+        }),
+      toast: { open: false, title: "", message: "", type: "info" },
+      showToast: (title, message, type = "info") => {
+        set({
+          toast: {
+            open: true,
+            title,
+            message,
+            type,
+          },
+        });
+      },
+      hideToast: () =>
+        set((state) => ({
+          toast: {
+            ...state.toast,
+            open: false,
+          },
+        })),
     }),
     {
       name: "gewu_portal_auth",

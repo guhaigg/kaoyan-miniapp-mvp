@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     notification_poll_interval_seconds: float = 1.0
     notification_cache_refresh_seconds: int = 60
     notification_batch_window_seconds: int = 180
+    notification_inapp_delay_seconds: int = 0
     notification_retry_delay_seconds: int = 10
     notification_max_attempts: int = 5
     notification_processing_timeout_seconds: int = 120

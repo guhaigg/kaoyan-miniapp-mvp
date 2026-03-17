@@ -6,9 +6,11 @@ import { BellRing, Star, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
+  NotificationEventItem,
   createSubscription,
   deleteSubscription,
   getCurrentUser,
+  listPendingNotifications,
   listSubscriptions,
   loginUser,
   logoutUser,
@@ -41,11 +43,27 @@ export default function Modals() {
     () => (mode === "register" ? "创建账户并登录" : "确认授权"),
     [mode],
   );
+  const noticeQueryKey = useMemo(
+    () => ["portal", "watchlistNotices", portalAuth?.userId] as const,
+    [portalAuth?.userId],
+  );
 
   const subscriptionsQuery = useQuery({
     queryKey: ["portal", "subscriptions", portalAuth?.userId],
     queryFn: () => listSubscriptions(portalAuth!.accessToken),
     enabled: Boolean(portalAuth?.accessToken) && isWatchlistOpen,
+  });
+
+  const realtimeNoticesQuery = useQuery({
+    queryKey: noticeQueryKey,
+    queryFn: async () => {
+      if (!portalAuth?.accessToken) return [] as NotificationEventItem[];
+      const response = await listPendingNotifications(portalAuth.accessToken);
+      const existing = queryClient.getQueryData<NotificationEventItem[]>(noticeQueryKey) || [];
+      return mergeNoticeList(existing, response.items);
+    },
+    enabled: Boolean(portalAuth?.accessToken) && isWatchlistOpen,
+    refetchOnWindowFocus: false,
   });
 
   const createSubscriptionMutation = useMutation({
@@ -391,6 +409,39 @@ export default function Modals() {
                       </div>
                     ) : null}
 
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="mb-2 text-xs text-slate-400">
+                        实时情报流（SSE）
+                      </div>
+                      {realtimeNoticesQuery.isLoading ? (
+                        <div className="text-xs text-slate-300">探针巡航中，拉取最新节点...</div>
+                      ) : realtimeNoticesQuery.data?.length ? (
+                        <div className="space-y-2">
+                          <AnimatePresence initial={false}>
+                            {realtimeNoticesQuery.data.map((item) => (
+                              <motion.div
+                                key={item.id}
+                                initial={{ opacity: 0, y: -8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -8 }}
+                                transition={{ duration: 0.2 }}
+                                className="rounded-xl border border-white/10 bg-black/30 p-3"
+                              >
+                                <div className="text-sm text-white">
+                                  {formatNoticeTitle(item)}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-400">
+                                  {formatNoticeSubline(item)}
+                                </div>
+                              </motion.div>
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-300">暂无最新公告。底层探针正在持续观测。</div>
+                      )}
+                    </div>
+
                     {subscriptionsQuery.data?.items.length ? (
                       subscriptionsQuery.data.items.map((item) => (
                         <div
@@ -450,4 +501,32 @@ function watchTypeLabel(type: string) {
   if (type === "keyword") return "关键词";
   if (type === "region") return "地区";
   return "未知";
+}
+
+function mergeNoticeList(base: NotificationEventItem[], incoming: NotificationEventItem[]) {
+  const map = new Map<string, NotificationEventItem>();
+  for (const item of base) {
+    map.set(item.id, item);
+  }
+  for (const item of incoming) {
+    if (!map.has(item.id)) {
+      map.set(item.id, item);
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+}
+
+function formatNoticeTitle(item: NotificationEventItem) {
+  const school = item.payload.school_name || "未知院校";
+  const category = item.payload.category === "adjustment" ? "调剂更新" : "公告更新";
+  return `${school} · ${category}`;
+}
+
+function formatNoticeSubline(item: NotificationEventItem) {
+  const title = item.payload.title || "无标题";
+  const major = item.payload.major ? ` · ${item.payload.major}` : "";
+  const time = new Date(item.created_at).toLocaleString("zh-CN", { hour12: false });
+  return `${title}${major} · ${time}`;
 }

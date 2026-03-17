@@ -1,4 +1,4 @@
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1").replace(/\/+$/, "");
+export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1").replace(/\/+$/, "");
 
 export class ApiError extends Error {
   status: number;
@@ -193,6 +193,32 @@ export type SubscriptionListResponse = {
   items: SubscriptionItem[];
 };
 
+export type NotificationPayload = {
+  content_id?: string;
+  category?: string;
+  title?: string;
+  body?: string;
+  summary?: string;
+  school_name?: string;
+  major?: string;
+  region?: string;
+  source_url?: string;
+  published_at?: string | null;
+  status?: string;
+};
+
+export type NotificationEventItem = {
+  id: string;
+  outbox_id: string;
+  created_at: string;
+  payload: NotificationPayload;
+};
+
+export type NotificationPendingResponse = {
+  total: number;
+  items: NotificationEventItem[];
+};
+
 export function registerUser(payload: {
   username: string;
   password: string;
@@ -324,4 +350,14 @@ export function deleteSubscription(subscriptionId: string, token: string) {
     method: "DELETE",
     token,
   });
+}
+
+export function listPendingNotifications(token: string) {
+  return request<NotificationPendingResponse>("/notifications/pending", {
+    token,
+  });
+}
+
+export function notificationsStreamUrl() {
+  return `${API_BASE}/notifications/stream`;
 }

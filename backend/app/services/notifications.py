@@ -183,7 +183,7 @@ class NotificationEngine:
                     self._matcher.refresh_if_needed(db)
                     payload = dict(outbox.payload or {})
                     user_ids = self._matcher.match_user_ids(payload)
-                    deliver_after = utcnow() + timedelta(seconds=settings.notification_batch_window_seconds)
+                    deliver_after = utcnow() + timedelta(seconds=settings.notification_inapp_delay_seconds)
                     for user_id in user_ids:
                         exists = (
                             db.query(NotificationDelivery.id)

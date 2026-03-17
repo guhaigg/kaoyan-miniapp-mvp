@@ -4,7 +4,9 @@ import Header from "@/components/layout/Header";
 import Background from "@/components/layout/Background";
 import BootLoader from "@/components/shared/BootLoader";
 import Modals from "@/components/shared/Modals";
+import Toast from "@/components/shared/Toast";
 import AuthBootstrap from "@/components/shared/AuthBootstrap";
+import SSEClient from "@/components/shared/SSEClient";
 
 export const metadata = {
   title: "格物简录 GW | 考研情报中枢",
@@ -22,10 +24,12 @@ export default function RootLayout({
         <Providers>
           <BootLoader />
           <AuthBootstrap />
+          <SSEClient />
           <Background />
           <Header />
           <main className="relative z-10 pb-20 pt-24">{children}</main>
           <Modals />
+          <Toast />
         </Providers>
       </body>
     </html>
