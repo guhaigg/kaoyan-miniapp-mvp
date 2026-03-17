@@ -127,6 +127,39 @@ nginx -t
 systemctl reload nginx
 ```
 
+## Remote Server Permission
+
+Claude may directly use SSH to operate the deployment server for this project when needed for development, debugging, deployment, verification, or log inspection.
+
+Allowed without extra confirmation:
+
+- `ssh`
+- `scp`
+- `rsync`
+- `git pull`
+- `git push`
+- `systemctl restart/status`
+- `journalctl`
+- `nginx -t`
+- standard build and deploy commands
+- health checks, curl-based verification, and service inspection
+
+Preferred behavior:
+
+- Use the minimum necessary remote commands first.
+- After each meaningful step, report back what was done before continuing.
+- Explain what was changed and what was verified after remote work.
+- Prefer targeted fixes over broad server-side refactors.
+
+Must ask before proceeding if the action is high risk:
+
+- deleting files or directories
+- dropping, truncating, or overwriting database data
+- rotating or replacing credentials
+- changing DNS, SSL, firewall, or security policy
+- replacing production env files wholesale
+- destructive process cleanup beyond normal service restart/reload
+
 ## Documentation to Update When Relevant
 
 - Behavior/process rules: `docs/development_protocol.md`
