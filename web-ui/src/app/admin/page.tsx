@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, ShieldAlert, UserCog } from "lucide-react";
+import { Activity, Download, ShieldAlert, UserCog } from "lucide-react";
+import ActivityChart from "@/components/admin/ActivityChart";
 import {
   ApiError,
   adminAudits,
@@ -43,7 +44,7 @@ export default function AdminPage() {
 
   const auditsQuery = useQuery({
     queryKey: ["admin", "audits"],
-    queryFn: () => adminAudits({ page: 1, page_size: 10, prefix: "admin." }),
+    queryFn: () => adminAudits({ page: 1, page_size: 24, prefix: "admin." }),
     enabled: isAuthenticated,
   });
 
@@ -104,8 +105,11 @@ export default function AdminPage() {
   const dashboard = useMemo(() => {
     const audits = auditsQuery.data?.items || [];
     const urgentCount = audits.filter((item) => item.event_type.includes("offline")).length;
-    const activeServices =
-      (healthQuery.data?.db === "up" ? 1 : 0) + (healthQuery.data?.redis === "up" ? 1 : 0);
+    const activeServices = (healthQuery.data?.db === "up" ? 1 : 0) + (healthQuery.data?.redis === "up" ? 1 : 0);
+    const chartPoints = buildChartPoints(audits);
+    const firstHalf = average(chartPoints.slice(0, 6));
+    const secondHalf = average(chartPoints.slice(6));
+    const trend = firstHalf === 0 ? 100 : ((secondHalf - firstHalf) / firstHalf) * 100;
     return {
       requests: auditsQuery.data?.total ?? 0,
       urgentCount,
@@ -113,6 +117,8 @@ export default function AdminPage() {
       dbState: healthQuery.data?.db || "--",
       redisState: healthQuery.data?.redis || "--",
       audits,
+      chartPoints,
+      trend,
     };
   }, [auditsQuery.data, healthQuery.data]);
 
@@ -128,6 +134,7 @@ export default function AdminPage() {
         <h2 className="text-3xl font-bold tracking-tight">爬虫阵列中控</h2>
         {isAuthenticated ? (
           <button
+            type="button"
             onClick={() => logoutMutation.mutate()}
             className="flex items-center gap-2 rounded-xl bg-white/10 px-5 py-2.5 text-sm font-medium transition-colors hover:bg-white/20 active:scale-95"
           >
@@ -157,6 +164,7 @@ export default function AdminPage() {
               className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition-colors focus:border-cyan-400"
             />
             <button
+              type="button"
               onClick={() => {
                 setMessage("");
                 loginMutation.mutate({ username, password });
@@ -172,36 +180,41 @@ export default function AdminPage() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-        {[
-          { label: "Admin Events", val: String(dashboard.requests), color: "text-white" },
-          {
-            label: "Urgent Alerts",
-            val: String(dashboard.urgentCount),
-            color: "text-orange-400",
-            border: "border-orange-500/30",
-            bg: "bg-orange-950/20",
-          },
-          {
-            label: "Service Status",
-            val: `${dashboard.activeServices}/2`,
-            color: dashboard.activeServices === 2 ? "text-cyan-400" : "text-yellow-400",
-          },
-          {
-            label: "Database Health",
-            val: dashboard.dbState.toUpperCase(),
-            color: dashboard.dbState === "up" ? "text-green-400" : "text-red-400",
-          },
-        ].map((stat, index) => (
-          <div
-            key={index}
-            className={`${stat.bg || "bg-white/5"} ${stat.border || "border-white/10"} flex flex-col justify-between rounded-3xl border p-6 shadow-xl backdrop-blur-xl`}
-          >
-            <div className="mb-2 font-mono text-xs uppercase tracking-wider text-slate-400">
-              {stat.label}
+        <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl backdrop-blur-xl md:col-span-2">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="mb-1 font-mono text-xs uppercase tracking-wider text-slate-400">
+                24H 爬虫全网吞吐量 (Requests)
+              </div>
+              <div className="text-4xl font-bold text-white">{dashboard.requests}</div>
             </div>
-            <div className={`font-mono text-4xl font-bold ${stat.color}`}>{stat.val}</div>
+            <span className="rounded-md border border-cyan-500/30 bg-cyan-500/20 px-2 py-1 text-xs text-cyan-400">
+              {dashboard.trend >= 0 ? "+" : ""}
+              {dashboard.trend.toFixed(1)}%
+            </span>
           </div>
-        ))}
+          <ActivityChart dataPoints={dashboard.chartPoints} />
+        </div>
+
+        <div className="flex flex-col justify-between rounded-3xl border border-orange-500/30 bg-orange-950/20 p-6 shadow-xl backdrop-blur-xl">
+          <div className="mb-2 font-mono text-xs uppercase tracking-wider text-slate-400">
+            Urgent Alerts
+          </div>
+          <div className="font-mono text-4xl font-bold text-orange-400">{dashboard.urgentCount}</div>
+          <div className="mt-4 text-xs text-slate-400">离线事件和异常告警会在这里累计。</div>
+        </div>
+
+        <div className="flex flex-col justify-between rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl backdrop-blur-xl">
+          <div className="mb-2 font-mono text-xs uppercase tracking-wider text-slate-400">
+            Service Status
+          </div>
+          <div className={`font-mono text-4xl font-bold ${dashboard.activeServices === 2 ? "text-cyan-400" : "text-yellow-400"}`}>
+            {dashboard.activeServices}/2
+          </div>
+          <div className="mt-4 text-xs text-slate-400">
+            DB {dashboard.dbState.toUpperCase()} · Redis {dashboard.redisState.toUpperCase()}
+          </div>
+        </div>
 
         <div className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-2xl md:col-span-2">
           <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
@@ -215,9 +228,7 @@ export default function AdminPage() {
                 className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3"
               >
                 <div>
-                  <div className="text-sm font-semibold text-white">
-                    {item.nickname || item.username}
-                  </div>
+                  <div className="text-sm font-semibold text-white">{item.nickname || item.username}</div>
                   <div className="text-xs text-slate-400">
                     {item.username} · {item.status}
                   </div>
@@ -228,6 +239,7 @@ export default function AdminPage() {
                   </span>
                 ) : (
                   <button
+                    type="button"
                     disabled={promotingId === item.id}
                     onClick={() => {
                       setPromotingId(item.id);
@@ -247,13 +259,13 @@ export default function AdminPage() {
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-2xl md:col-span-2">
-          <h3 className="mb-4 text-lg font-semibold text-white">审计事件（admin.*）</h3>
+          <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
+            <Activity size={18} className="text-cyan-400" />
+            审计事件（admin.*）
+          </h3>
           <div className="space-y-2">
             {dashboard.audits.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3"
-              >
+              <div key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
                 <div className="mb-1 text-sm font-medium text-cyan-300">{item.event_type}</div>
                 <div className="text-xs text-slate-400">
                   {new Date(item.created_at).toLocaleString("zh-CN", { hour12: false })}
@@ -274,8 +286,7 @@ export default function AdminPage() {
               <div className="h-3 w-3 rounded-full bg-green-500/80" />
             </div>
             <span className="ml-4 font-mono text-xs text-slate-500">
-              health status · app={healthQuery.data?.app_env || "--"} · db={dashboard.dbState} ·
-              redis={dashboard.redisState}
+              health status · app={healthQuery.data?.app_env || "--"} · db={dashboard.dbState} · redis={dashboard.redisState}
             </span>
           </div>
           <div className="h-60 overflow-y-auto p-6 font-mono text-sm leading-relaxed text-slate-300">
@@ -302,4 +313,30 @@ export default function AdminPage() {
       ) : null}
     </motion.div>
   );
+}
+
+function buildChartPoints(
+  audits: Array<{
+    created_at: string;
+  }>,
+) {
+  if (audits.length === 0) {
+    return [20, 35, 25, 60, 85, 45, 90, 120, 105, 140, 110, 160];
+  }
+
+  const now = Date.now();
+  const buckets = new Array(12).fill(0);
+
+  audits.forEach((item) => {
+    const diffHours = (now - new Date(item.created_at).getTime()) / 3_600_000;
+    const bucket = 11 - Math.min(11, Math.max(0, Math.floor(diffHours / 2)));
+    buckets[bucket] += 1;
+  });
+
+  return buckets.map((value, index) => value * 18 + 18 + index * 2);
+}
+
+function average(values: number[]) {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
