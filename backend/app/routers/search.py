@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -77,7 +77,7 @@ def _create_refresh_job(db: Session, category: str, payload: dict, user_id: str 
         status="pending",
         query=payload,
         requested_by_user_id=user_id,
-        requested_at=datetime.now(UTC),
+        requested_at=datetime.now(timezone.utc),
         message="queued by api",
     )
     db.add(job)

@@ -1,5 +1,5 @@
 import time
-from datetime import UTC, timedelta
+from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
@@ -84,8 +84,8 @@ def _create_user_refresh_session(db: Session, request: Request, user: PortalUser
 
 def _as_utc(dt):
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC)
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 @router.post("/silent-login", response_model=SilentLoginResponse)
