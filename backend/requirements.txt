@@ -6,4 +6,5 @@ redis>=5.2.0
 pydantic>=2.11.0
 pydantic-settings>=2.8.0
 httpx>=0.28.1
+pyahocorasick>=2.1.0
 pytest>=8.4.0

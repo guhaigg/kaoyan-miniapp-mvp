@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     admin_login_lock_seconds: int = 15 * 60
     user_refresh_ttl_seconds: int = 30 * 24 * 60 * 60
     rate_limit_per_minute: int = 120
+    enable_notification_worker: bool = True
+    notification_batch_size: int = 100
+    notification_poll_interval_seconds: float = 1.0
+    notification_cache_refresh_seconds: int = 60
+    notification_batch_window_seconds: int = 180
+    notification_retry_delay_seconds: int = 10
+    notification_max_attempts: int = 5
+    notification_processing_timeout_seconds: int = 120
+    notification_sse_poll_seconds: float = 1.0
     cors_allow_origins: str = ",".join(
         [
             "http://localhost:3000",

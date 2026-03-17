@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from ..models import Content, ContentSnapshot, School
+from ..models import Content, ContentSnapshot, NotificationOutbox, School, utcnow
 from ..schemas import ContentIn
 
 
@@ -48,7 +48,27 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     if payload.raw_html:
         snapshot = ContentSnapshot(content_id=content.id, raw_html=payload.raw_html, raw_text=payload.body, snapshot_meta={})
         db.add(snapshot)
+
+    outbox = NotificationOutbox(
+        content_id=content.id,
+        event_type="content.upsert",
+        payload={
+            "content_id": content.id,
+            "category": content.category,
+            "title": content.title,
+            "body": content.body,
+            "summary": content.summary,
+            "school_name": school.name if school else None,
+            "major": content.major,
+            "region": content.region,
+            "source_url": content.source_url,
+            "published_at": content.published_at.isoformat() if content.published_at else None,
+            "status": status,
+        },
+        status="pending",
+        available_at=utcnow(),
+    )
+    db.add(outbox)
     db.commit()
     db.refresh(content)
     return content, status
-

@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,8 +8,24 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import init_db
-from .routers import admin, auth, content, health, schools, search, subscriptions
+from .routers import admin, auth, content, health, notifications, schools, search, subscriptions
 from .routers import console
+from .services.notifications import notification_engine
+
+
+async def _notification_worker_loop():
+    settings = get_settings()
+    sleep_seconds = max(0.2, float(settings.notification_poll_interval_seconds))
+    while True:
+        try:
+            processed = await asyncio.to_thread(notification_engine.process_outbox_batch)
+        except Exception:
+            processed = 0
+
+        if processed <= 0:
+            await asyncio.sleep(sleep_seconds)
+        else:
+            await asyncio.sleep(0.05)
 
 
 @asynccontextmanager
@@ -24,7 +41,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         redis_client = None
     app.state.redis = redis_client
+    notification_task = None
+    if settings.enable_notification_worker:
+        notification_task = asyncio.create_task(_notification_worker_loop())
+    app.state.notification_task = notification_task
     yield
+    if notification_task is not None:
+        notification_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await notification_task
     if redis_client is not None:
         redis_client.close()
 
@@ -50,5 +75,6 @@ app.include_router(schools.router, prefix=settings.api_prefix)
 app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(content.router, prefix=settings.api_prefix)
 app.include_router(subscriptions.router, prefix=settings.api_prefix)
+app.include_router(notifications.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
 app.include_router(console.router)

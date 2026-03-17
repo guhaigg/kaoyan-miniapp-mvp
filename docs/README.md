@@ -45,3 +45,4 @@ npm run dev:backend
 - [注册登录架构（Portal 用户）](./auth_login_architecture.md)
 - [服务器版本记录（2026-03-17）](./server_release_2026-03-17.md)
 - [Web UI 接口对齐说明（2026-03-17）](./web_ui_api_alignment_2026-03-17.md)
+- [通知实时链路（Outbox + SSE）](./notification_realtime_architecture_2026-03-17.md)
