@@ -57,6 +57,23 @@ jobs:
             "DEPLOY_PATH='$DEPLOY_PATH' WEB_ROOT='$WEB_ROOT' BACKEND_SERVICE='$BACKEND_SERVICE' bash -s" <<'REMOTE'
           set -euo pipefail
 
+          pre_ts="$(date '+%Y%m%d-%H%M%S')"
+          pre_dir="/root/backups/predeploy/${pre_ts}"
+          mkdir -p "${pre_dir}"
+          if [ -d "${DEPLOY_PATH}" ]; then
+            tar \
+              --exclude='.git' \
+              --exclude='backend/.venv' \
+              --exclude='**/__pycache__' \
+              -czf "${pre_dir}/repo.tar.gz" \
+              -C "${DEPLOY_PATH}" \
+              .
+          fi
+          if [ -d "${WEB_ROOT}" ]; then
+            tar -czf "${pre_dir}/web.tar.gz" -C "${WEB_ROOT}" .
+          fi
+          find /root/backups/predeploy -mindepth 1 -maxdepth 1 -type d -mtime +10 -exec rm -rf {} +
+
           cd "$DEPLOY_PATH"
           git fetch origin main
           git checkout main
@@ -68,6 +85,15 @@ jobs:
           cp infra/nginx/register.html "$WEB_ROOT/register/index.html"
           cp infra/nginx/query/index.html "$WEB_ROOT/query/index.html"
           cp infra/nginx/assets/brand/gw-mark.svg "$WEB_ROOT/assets/brand/gw-mark.svg"
+
+          install -m 750 infra/backup/gewujl-backup.sh /usr/local/bin/gewujl-backup
+          install -m 644 infra/systemd/gewujl-backup.service /etc/systemd/system/gewujl-backup.service
+          install -m 644 infra/systemd/gewujl-backup.timer /etc/systemd/system/gewujl-backup.timer
+          if [ ! -f /etc/default/gewujl-backup ]; then
+            install -m 640 infra/backup/gewujl-backup.env.example /etc/default/gewujl-backup
+          fi
+          systemctl daemon-reload
+          systemctl enable --now gewujl-backup.timer
 
           if [ -x "backend/.venv/bin/pip" ]; then
             ./backend/.venv/bin/pip install -r backend/requirements.txt

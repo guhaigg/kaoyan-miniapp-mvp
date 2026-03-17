@@ -1,0 +1,11 @@
+[Unit]
+Description=Run GeWuJian backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=gewujl-backup.service
+
+[Install]
+WantedBy=timers.target

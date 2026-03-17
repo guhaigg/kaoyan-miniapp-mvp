@@ -147,13 +147,63 @@ Optional GitHub Variables:
 
 Deploy actions on server:
 
-1. `git pull --ff-only origin main` in repo path
-2. Sync static pages to web root:
+1. Create pre-deploy snapshot under `/root/backups/predeploy/<timestamp>/`
+2. `git pull --ff-only origin main` in repo path
+3. Sync static pages to web root:
    - `index.html`
    - `register.html`
    - `register/index.html`
    - `query/index.html`
    - `assets/brand/gw-mark.svg`
-3. Install backend dependencies if `.venv/bin/pip` exists
-4. Restart backend service if `HK_BACKEND_SERVICE` is configured
-5. `nginx -t` and `systemctl reload nginx`
+4. Install/enable backup automation (`gewujl-backup.timer`)
+5. Install backend dependencies if `.venv/bin/pip` exists
+6. Restart backend service if `HK_BACKEND_SERVICE` is configured
+7. `nginx -t` and `systemctl reload nginx`
+
+## 7) Fully Automated Backups
+
+Backup assets:
+
+- Repository snapshot (excluding `.git` and `backend/.venv`)
+- Static web root (`/var/www/html`)
+- Nginx config (`/etc/nginx`)
+- Systemd units (`kaoyan-backend.service`, `gewujl-backup.*`)
+- MySQL dump (auto-read from `DATABASE_URL` in backend `.env`, if MySQL URL)
+
+Files:
+
+- Script: `infra/backup/gewujl-backup.sh`
+- Env template: `infra/backup/gewujl-backup.env.example`
+- Service: `infra/systemd/gewujl-backup.service`
+- Timer: `infra/systemd/gewujl-backup.timer`
+
+Server runtime files:
+
+- `/usr/local/bin/gewujl-backup`
+- `/etc/default/gewujl-backup`
+- `/etc/systemd/system/gewujl-backup.service`
+- `/etc/systemd/system/gewujl-backup.timer`
+
+Daily schedule:
+
+- `03:30` server local time (`OnCalendar=*-*-* 03:30:00`)
+- with `Persistent=true` (missed runs execute after reboot)
+
+### Upload backups to another Tencent Cloud server (SSH)
+
+Edit `/etc/default/gewujl-backup`:
+
+```bash
+REMOTE_BACKUP_TARGET=root@<backup_server_ip>:/data/gewujl-backups
+REMOTE_SSH_PORT=22
+REMOTE_SSH_KEY=/root/.ssh/id_ed25519
+```
+
+Then reload and test:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart gewujl-backup.timer
+sudo /usr/local/bin/gewujl-backup daily
+sudo systemctl list-timers --all | grep gewujl-backup
+```
