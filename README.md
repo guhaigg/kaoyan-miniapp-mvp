@@ -57,6 +57,7 @@ npm run test:backend
 - [Git Workflow](./docs/git_workflow.md)
 - [Deployment Handbook](./docs/deployment.md)
 - [Server Release Record (2026-03-17)](./docs/server_release_2026-03-17.md)
+- [Web UI API Alignment (2026-03-17)](./docs/web_ui_api_alignment_2026-03-17.md)
 
 ## Deployment Assets
 

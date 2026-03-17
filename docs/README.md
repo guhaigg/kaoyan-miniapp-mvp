@@ -44,3 +44,4 @@ npm run dev:backend
 - [Git Workflow and Release Rules](./git_workflow.md)
 - [注册登录架构（Portal 用户）](./auth_login_architecture.md)
 - [服务器版本记录（2026-03-17）](./server_release_2026-03-17.md)
+- [Web UI 接口对齐说明（2026-03-17）](./web_ui_api_alignment_2026-03-17.md)
