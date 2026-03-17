@@ -2,105 +2,37 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Download, ShieldAlert, UserCog } from "lucide-react";
 import ActivityChart from "@/components/admin/ActivityChart";
+import { ApiError } from "@/lib/api";
 import {
-  ApiError,
-  adminAudits,
-  adminLogin,
-  adminLogout,
-  adminMe,
-  adminPromoteUser,
-  adminUsers,
-  healthCheck,
-} from "@/lib/api";
+  useAdminAuditsQuery,
+  useAdminHealthQuery,
+  useAdminLoginMutation,
+  useAdminLogoutMutation,
+  useAdminMeQuery,
+  useAdminPromoteMutation,
+  useAdminUsersQuery,
+} from "@/hooks/useAdmin";
 
 export default function AdminPage() {
-  const queryClient = useQueryClient();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [promotingId, setPromotingId] = useState<string | null>(null);
 
-  const meQuery = useQuery({
-    queryKey: ["admin", "me"],
-    queryFn: adminMe,
-    retry: false,
-  });
+  const meQuery = useAdminMeQuery();
   const isAuthenticated = meQuery.isSuccess && meQuery.data.authenticated;
 
-  const healthQuery = useQuery({
-    queryKey: ["admin", "health"],
-    queryFn: healthCheck,
-    refetchInterval: 20_000,
-  });
+  const healthQuery = useAdminHealthQuery();
 
-  const usersQuery = useQuery({
-    queryKey: ["admin", "users"],
-    queryFn: () => adminUsers({ page: 1, page_size: 10 }),
-    enabled: isAuthenticated,
-  });
+  const usersQuery = useAdminUsersQuery(isAuthenticated);
 
-  const auditsQuery = useQuery({
-    queryKey: ["admin", "audits"],
-    queryFn: () => adminAudits({ page: 1, page_size: 24, prefix: "admin." }),
-    enabled: isAuthenticated,
-  });
+  const auditsQuery = useAdminAuditsQuery(isAuthenticated);
 
-  const loginMutation = useMutation({
-    mutationFn: adminLogin,
-    onSuccess: async () => {
-      setMessage("管理员登录成功");
-      setPassword("");
-      await queryClient.invalidateQueries({ queryKey: ["admin", "me"] });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin", "users"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin", "audits"] }),
-      ]);
-    },
-    onError: (error) => {
-      if (error instanceof ApiError) {
-        setMessage(`登录失败：${error.message}`);
-      } else {
-        setMessage("登录失败，请稍后重试");
-      }
-    },
-  });
-
-  const logoutMutation = useMutation({
-    mutationFn: adminLogout,
-    onSuccess: async () => {
-      setMessage("已退出管理员会话");
-      await queryClient.invalidateQueries({ queryKey: ["admin", "me"] });
-      queryClient.removeQueries({ queryKey: ["admin", "users"] });
-      queryClient.removeQueries({ queryKey: ["admin", "audits"] });
-    },
-    onError: (error) => {
-      if (error instanceof ApiError) {
-        setMessage(`退出失败：${error.message}`);
-      } else {
-        setMessage("退出失败，请稍后重试");
-      }
-    },
-  });
-
-  const promoteMutation = useMutation({
-    mutationFn: (userId: string) => adminPromoteUser(userId),
-    onSuccess: async () => {
-      setMessage("用户已提升为管理员");
-      await queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-      await queryClient.invalidateQueries({ queryKey: ["admin", "audits"] });
-    },
-    onError: (error) => {
-      if (error instanceof ApiError) {
-        setMessage(`提升失败：${error.message}`);
-      } else {
-        setMessage("提升失败，请稍后重试");
-      }
-    },
-    onSettled: () => setPromotingId(null),
-  });
+  const loginMutation = useAdminLoginMutation();
+  const logoutMutation = useAdminLogoutMutation();
+  const promoteMutation = useAdminPromoteMutation();
 
   const dashboard = useMemo(() => {
     const audits = auditsQuery.data?.items || [];
@@ -122,6 +54,52 @@ export default function AdminPage() {
     };
   }, [auditsQuery.data, healthQuery.data]);
 
+  async function handleAdminLogin() {
+    setMessage("");
+    try {
+      await loginMutation.mutateAsync({ username, password });
+      setMessage("管理员登录成功");
+      setPassword("");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`登录失败：${error.message}`);
+      } else {
+        setMessage("登录失败，请稍后重试");
+      }
+    }
+  }
+
+  async function handleAdminLogout() {
+    setMessage("");
+    try {
+      await logoutMutation.mutateAsync();
+      setMessage("已退出管理员会话");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`退出失败：${error.message}`);
+      } else {
+        setMessage("退出失败，请稍后重试");
+      }
+    }
+  }
+
+  async function handlePromoteUser(userId: string) {
+    setPromotingId(userId);
+    setMessage("");
+    try {
+      await promoteMutation.mutateAsync(userId);
+      setMessage("用户已提升为管理员");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`提升失败：${error.message}`);
+      } else {
+        setMessage("提升失败，请稍后重试");
+      }
+    } finally {
+      setPromotingId(null);
+    }
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -135,7 +113,7 @@ export default function AdminPage() {
         {isAuthenticated ? (
           <button
             type="button"
-            onClick={() => logoutMutation.mutate()}
+            onClick={handleAdminLogout}
             className="flex items-center gap-2 rounded-xl bg-white/10 px-5 py-2.5 text-sm font-medium transition-colors hover:bg-white/20 active:scale-95"
           >
             <Download size={16} /> 退出管理员
@@ -166,8 +144,7 @@ export default function AdminPage() {
             <button
               type="button"
               onClick={() => {
-                setMessage("");
-                loginMutation.mutate({ username, password });
+                handleAdminLogin();
               }}
               disabled={loginMutation.isPending}
               className="rounded-xl bg-cyan-500 px-6 py-3 font-semibold text-white transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
@@ -241,10 +218,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     disabled={promotingId === item.id}
-                    onClick={() => {
-                      setPromotingId(item.id);
-                      promoteMutation.mutate(item.id);
-                    }}
+                    onClick={() => handlePromoteUser(item.id)}
                     className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-xs text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {promotingId === item.id ? "处理中..." : "提升为管理员"}
@@ -321,7 +295,7 @@ function buildChartPoints(
   }>,
 ) {
   if (audits.length === 0) {
-    return [20, 35, 25, 60, 85, 45, 90, 120, 105, 140, 110, 160];
+    return new Array(12).fill(0);
   }
 
   const now = Date.now();

@@ -303,8 +303,8 @@ export default function Modals() {
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-              className="fixed right-0 top-0 z-[100] flex h-full w-80 flex-col border-l border-white/10 bg-slate-900/95 shadow-[-20px_0_50px_rgba(0,0,0,0.5)] backdrop-blur-2xl md:w-96"
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed right-0 top-0 z-[100] flex h-full w-80 flex-col border-l border-white/10 bg-[#0a0f1a]/95 shadow-[-20px_0_50px_rgba(0,0,0,0.5)] backdrop-blur-3xl md:w-96"
             >
               <div className="flex items-center justify-between border-b border-white/10 p-6 text-white">
                 <h3 className="flex items-center gap-2 text-lg font-bold">
@@ -312,9 +312,9 @@ export default function Modals() {
                 </h3>
                 <button
                   onClick={() => setWatchlistOpen(false)}
-                  className="text-slate-400 transition-colors hover:text-white"
+                  className="rounded-full bg-white/5 p-1.5 text-slate-400 transition-colors hover:text-white"
                 >
-                  <X size={20} />
+                  <X size={16} />
                 </button>
               </div>
               <div className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -379,23 +379,42 @@ export default function Modals() {
                       ) : realtimeNoticesQuery.data?.length ? (
                         <div className="space-y-2">
                           <AnimatePresence initial={false}>
-                            {realtimeNoticesQuery.data.map((item) => (
-                              <motion.div
-                                key={item.id}
-                                initial={{ opacity: 0, y: -8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -8 }}
-                                transition={{ duration: 0.2 }}
-                                className="rounded-xl border border-white/10 bg-black/30 p-3"
-                              >
-                                <div className="text-sm text-white">
-                                  {formatNoticeTitle(item)}
-                                </div>
-                                <div className="mt-1 text-xs text-slate-400">
-                                  {formatNoticeSubline(item)}
-                                </div>
-                              </motion.div>
-                            ))}
+                            {realtimeNoticesQuery.data.map((item) => {
+                              const urgent = isUrgentNotice(item);
+                              return (
+                                <motion.div
+                                  key={item.id}
+                                  layout
+                                  initial={{ opacity: 0, y: -30, scale: 0.9 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+                                  transition={{
+                                    layout: { type: "spring", bounce: 0.4, duration: 0.6 },
+                                    opacity: { duration: 0.3 },
+                                    y: { type: "spring", bounce: 0.5, duration: 0.6 },
+                                  }}
+                                  className={`cursor-pointer rounded-xl border p-3 transition-colors ${
+                                    urgent
+                                      ? "border-orange-500/30 bg-orange-950/20 shadow-[0_4px_20px_rgba(249,115,22,0.05)] hover:border-orange-500/50"
+                                      : "border-white/10 bg-white/5 shadow-[0_4px_20px_rgba(0,0,0,0.2)] hover:bg-white/10"
+                                  }`}
+                                >
+                                  <div
+                                    className={`mb-2 flex items-center gap-1 text-xs font-mono ${
+                                      urgent ? "animate-pulse text-orange-400" : "text-cyan-400"
+                                    }`}
+                                  >
+                                    <BellRing size={12} /> {urgent ? "紧急异动！" : "常规监控"}
+                                  </div>
+                                  <div className="text-sm font-medium leading-snug text-white">
+                                    {formatNoticeTitle(item)}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-400">
+                                    {formatNoticeSubline(item)}
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
                           </AnimatePresence>
                         </div>
                       ) : (
@@ -476,4 +495,8 @@ function formatNoticeSubline(item: NotificationEventItem) {
   const major = item.payload.major ? ` · ${item.payload.major}` : "";
   const time = new Date(item.created_at).toLocaleString("zh-CN", { hour12: false });
   return `${title}${major} · ${time}`;
+}
+
+function isUrgentNotice(item: NotificationEventItem) {
+  return item.payload.category === "adjustment" || item.payload.status === "urgent";
 }
