@@ -1,3 +1,6 @@
+import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
+import { useAppStore } from "./store";
+
 export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1").replace(/\/+$/, "");
 
 export class ApiError extends Error {
@@ -12,54 +15,137 @@ export class ApiError extends Error {
   }
 }
 
-type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
-  body?: unknown;
-  token?: string;
-  headers?: Record<string, string>;
-};
+export const api = axios.create({
+  baseURL: API_BASE,
+  timeout: 15_000,
+  withCredentials: true,
+});
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const url = `${API_BASE}${normalizedPath}`;
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
-  };
-  if (options.token) {
-    headers["X-User-Token"] = options.token;
-  }
+let isRefreshing = false;
+let failedQueue: Array<{ resolve: (token: string) => void; reject: (error: unknown) => void }> = [];
 
-  const response = await fetch(url, {
-    method: options.method || "GET",
-    credentials: "include",
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    cache: "no-store",
+function processQueue(error: unknown, token: string | null = null) {
+  failedQueue.forEach((promise) => {
+    if (error) {
+      promise.reject(error);
+      return;
+    }
+    promise.resolve(token as string);
   });
+  failedQueue = [];
+}
 
-  let payload: unknown = null;
-  const text = await response.text();
-  if (text) {
+function shouldSkipRefresh(originalRequest?: (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined) {
+  const url = originalRequest?.url || "";
+  if (!url) return true;
+  if (url.includes("/admin/")) return true;
+  if (url.includes("/auth/login")) return true;
+  if (url.includes("/auth/register")) return true;
+  if (url.includes("/auth/refresh")) return true;
+  if (url.includes("/auth/logout")) return true;
+  return false;
+}
+
+function extractMessage(payload: unknown, fallback: string) {
+  if (payload && typeof payload === "object" && "detail" in payload) {
+    const detail = (payload as { detail?: unknown }).detail;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+  }
+  return fallback;
+}
+
+function normalizeApiError(error: unknown): ApiError {
+  if (error instanceof ApiError) {
+    return error;
+  }
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status ?? 0;
+    const payload = error.response?.data;
+    const fallback = status ? `Request failed with status ${status}` : "Network request failed";
+    return new ApiError(extractMessage(payload, fallback), status, payload);
+  }
+  return new ApiError("Network request failed", 0, null);
+}
+
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const token = useAppStore.getState().portalAuth?.accessToken;
+  if (token && config.headers) {
+    config.headers["X-User-Token"] = token;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+    if (
+      error.response?.status !== 401 ||
+      !originalRequest ||
+      originalRequest._retry ||
+      shouldSkipRefresh(originalRequest)
+    ) {
+      return Promise.reject(error);
+    }
+
+    if (isRefreshing) {
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      })
+        .then((token) => {
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers["X-User-Token"] = token;
+          return api(originalRequest);
+        })
+        .catch((queueError) => Promise.reject(queueError));
+    }
+
+    originalRequest._retry = true;
+    isRefreshing = true;
+
     try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = text;
-    }
-  }
+      const { data } = await axios.post<UserLoginResponse>(
+        `${API_BASE}/auth/refresh`,
+        {},
+        {
+          withCredentials: true,
+          timeout: 15_000,
+        },
+      );
 
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-    if (payload && typeof payload === "object" && "detail" in payload) {
-      const detail = (payload as { detail?: unknown }).detail;
-      if (typeof detail === "string" && detail.trim()) {
-        message = detail;
-      }
-    }
-    throw new ApiError(message, response.status, payload);
-  }
+      useAppStore.getState().setPortalAuthFromToken({
+        tokenType: data.token_type,
+        accessToken: data.access_token,
+        expiresIn: data.expires_in,
+        refreshExpiresIn: data.refresh_expires_in,
+        userId: data.user_id,
+        username: data.username,
+      });
 
-  return payload as T;
+      processQueue(null, data.access_token);
+      originalRequest.headers = originalRequest.headers || {};
+      originalRequest.headers["X-User-Token"] = data.access_token;
+      return api(originalRequest);
+    } catch (refreshError) {
+      processQueue(refreshError, null);
+      useAppStore.getState().logout();
+      useAppStore.getState().showToast("会话已过期", "请重新接入系统", "urgent");
+      return Promise.reject(refreshError);
+    } finally {
+      isRefreshing = false;
+    }
+  },
+);
+
+async function request<T>(config: AxiosRequestConfig): Promise<T> {
+  try {
+    const response = await api.request<T>(config);
+    return response.data;
+  } catch (error) {
+    throw normalizeApiError(error);
+  }
 }
 
 export type UserLoginResponse = {
@@ -224,66 +310,83 @@ export function registerUser(payload: {
   password: string;
   nickname?: string;
 }) {
-  return request<UserRegisterResponse>("/auth/register", {
+  return request<UserRegisterResponse>({
+    url: "/auth/register",
     method: "POST",
-    body: payload,
+    data: payload,
   });
 }
 
 export function loginUser(payload: { username: string; password: string }) {
-  return request<UserLoginResponse>("/auth/login", {
+  return request<UserLoginResponse>({
+    url: "/auth/login",
     method: "POST",
-    body: payload,
+    data: payload,
   });
 }
 
 export function refreshUserSession(refreshToken?: string) {
-  return request<UserLoginResponse>("/auth/refresh", {
+  return request<UserLoginResponse>({
+    url: "/auth/refresh",
     method: "POST",
-    body: refreshToken ? { refresh_token: refreshToken } : {},
+    data: refreshToken ? { refresh_token: refreshToken } : {},
   });
 }
 
 export function logoutUser(refreshToken?: string) {
-  return request<{ status: "ok" }>("/auth/logout", {
+  return request<{ status: "ok" }>({
+    url: "/auth/logout",
     method: "POST",
-    body: refreshToken ? { refresh_token: refreshToken } : {},
+    data: refreshToken ? { refresh_token: refreshToken } : {},
   });
 }
 
 export function getCurrentUser(token: string) {
-  return request<UserMeResponse>("/auth/me", { token });
+  return request<UserMeResponse>({
+    url: "/auth/me",
+    method: "GET",
+    headers: {
+      "X-User-Token": token,
+    },
+  });
 }
 
 export function searchAnnouncements(payload: SearchBaseRequest) {
-  return request<SearchResponse>("/search/announcements", {
+  return request<SearchResponse>({
+    url: "/search/announcements",
     method: "POST",
-    body: payload,
+    data: payload,
   });
 }
 
 export function searchAdjustments(payload: AdjustmentSearchRequest) {
-  return request<SearchResponse>("/search/adjustments", {
+  return request<SearchResponse>({
+    url: "/search/adjustments",
     method: "POST",
-    body: payload,
+    data: payload,
   });
 }
 
 export function adminLogin(payload: { username: string; password: string }) {
-  return request<AdminLoginResponse>("/admin/auth/login", {
+  return request<AdminLoginResponse>({
+    url: "/admin/auth/login",
     method: "POST",
-    body: payload,
+    data: payload,
   });
 }
 
 export function adminLogout() {
-  return request<{ status: "ok" }>("/admin/auth/logout", {
+  return request<{ status: "ok" }>({
+    url: "/admin/auth/logout",
     method: "POST",
   });
 }
 
 export function adminMe() {
-  return request<AdminMeResponse>("/admin/auth/me");
+  return request<AdminMeResponse>({
+    url: "/admin/auth/me",
+    method: "GET",
+  });
 }
 
 export function adminUsers(payload: {
@@ -292,17 +395,16 @@ export function adminUsers(payload: {
   state?: string;
   keyword?: string;
 }) {
-  const query = new URLSearchParams();
-  if (payload.page) query.set("page", String(payload.page));
-  if (payload.page_size) query.set("page_size", String(payload.page_size));
-  if (payload.state) query.set("state", payload.state);
-  if (payload.keyword) query.set("keyword", payload.keyword);
-  const suffix = query.toString();
-  return request<AdminUserListResponse>(`/admin/users${suffix ? `?${suffix}` : ""}`);
+  return request<AdminUserListResponse>({
+    url: "/admin/users",
+    method: "GET",
+    params: payload,
+  });
 }
 
 export function adminPromoteUser(userId: string) {
-  return request<AdminUserItem>(`/admin/users/${encodeURIComponent(userId)}/promote`, {
+  return request<AdminUserItem>({
+    url: `/admin/users/${encodeURIComponent(userId)}/promote`,
     method: "POST",
   });
 }
@@ -312,16 +414,18 @@ export function adminAudits(payload: {
   page_size?: number;
   prefix?: string;
 }) {
-  const query = new URLSearchParams();
-  if (payload.page) query.set("page", String(payload.page));
-  if (payload.page_size) query.set("page_size", String(payload.page_size));
-  if (payload.prefix) query.set("prefix", payload.prefix);
-  const suffix = query.toString();
-  return request<AdminAuditListResponse>(`/admin/audits${suffix ? `?${suffix}` : ""}`);
+  return request<AdminAuditListResponse>({
+    url: "/admin/audits",
+    method: "GET",
+    params: payload,
+  });
 }
 
 export function healthCheck() {
-  return request<HealthResponse>("/health");
+  return request<HealthResponse>({
+    url: "/health",
+    method: "GET",
+  });
 }
 
 export function createSubscription(
@@ -332,29 +436,43 @@ export function createSubscription(
   },
   token: string,
 ) {
-  return request<SubscriptionItem>("/subscriptions", {
+  return request<SubscriptionItem>({
+    url: "/subscriptions",
     method: "POST",
-    token,
-    body: payload,
+    data: payload,
+    headers: {
+      "X-User-Token": token,
+    },
   });
 }
 
 export function listSubscriptions(token: string) {
-  return request<SubscriptionListResponse>("/subscriptions", {
-    token,
+  return request<SubscriptionListResponse>({
+    url: "/subscriptions",
+    method: "GET",
+    headers: {
+      "X-User-Token": token,
+    },
   });
 }
 
 export function deleteSubscription(subscriptionId: string, token: string) {
-  return request<{ status: "ok" }>(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+  return request<{ status: "ok" }>({
+    url: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
     method: "DELETE",
-    token,
+    headers: {
+      "X-User-Token": token,
+    },
   });
 }
 
 export function listPendingNotifications(token: string) {
-  return request<NotificationPendingResponse>("/notifications/pending", {
-    token,
+  return request<NotificationPendingResponse>({
+    url: "/notifications/pending",
+    method: "GET",
+    headers: {
+      "X-User-Token": token,
+    },
   });
 }
 
