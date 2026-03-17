@@ -86,7 +86,18 @@ jobs:
           fi
 
           if command -v curl >/dev/null 2>&1; then
-            curl -fsS "http://127.0.0.1:8000/api/v1/health" >/dev/null
+            ok=0
+            for i in $(seq 1 30); do
+              if curl -fsS "http://127.0.0.1:8000/api/v1/health" >/dev/null; then
+                ok=1
+                break
+              fi
+              sleep 1
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "health check failed after retries"
+              exit 1
+            fi
           fi
 
           echo "Deploy complete: $(git rev-parse --short HEAD)"
