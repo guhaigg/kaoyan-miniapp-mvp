@@ -3,10 +3,21 @@
 import { FormEvent, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BellRing, Star, X } from "lucide-react";
-import { ApiError, getCurrentUser, loginUser, logoutUser, registerUser } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ApiError,
+  createSubscription,
+  deleteSubscription,
+  getCurrentUser,
+  listSubscriptions,
+  loginUser,
+  logoutUser,
+  registerUser,
+} from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 
 export default function Modals() {
+  const queryClient = useQueryClient();
   const {
     isAuthOpen,
     setAuthOpen,
@@ -23,11 +34,44 @@ export default function Modals() {
   const [nickname, setNickname] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [watchType, setWatchType] = useState<"school" | "major" | "keyword" | "region">("school");
+  const [watchValue, setWatchValue] = useState("");
 
   const submitLabel = useMemo(
     () => (mode === "register" ? "创建账户并登录" : "确认授权"),
     [mode],
   );
+
+  const subscriptionsQuery = useQuery({
+    queryKey: ["portal", "subscriptions", portalAuth?.userId],
+    queryFn: () => listSubscriptions(portalAuth!.accessToken),
+    enabled: Boolean(portalAuth?.accessToken) && isWatchlistOpen,
+  });
+
+  const createSubscriptionMutation = useMutation({
+    mutationFn: async (payload: { subscription_type: "school" | "major" | "keyword" | "region"; value: string }) => {
+      if (!portalAuth?.accessToken) {
+        throw new ApiError("请先登录后再添加关注", 401, null);
+      }
+      return createSubscription({ ...payload, category: "all" }, portalAuth.accessToken);
+    },
+    onSuccess: async () => {
+      setWatchValue("");
+      await queryClient.invalidateQueries({ queryKey: ["portal", "subscriptions", portalAuth?.userId] });
+    },
+  });
+
+  const deleteSubscriptionMutation = useMutation({
+    mutationFn: async (subscriptionId: string) => {
+      if (!portalAuth?.accessToken) {
+        throw new ApiError("请先登录后再管理关注库", 401, null);
+      }
+      return deleteSubscription(subscriptionId, portalAuth.accessToken);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["portal", "subscriptions", portalAuth?.userId] });
+    },
+  });
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -103,6 +147,42 @@ export default function Modals() {
       }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleCreateSubscription() {
+    const value = watchValue.trim();
+    if (!value) {
+      setMessage("请输入你要关注的关键词或院校");
+      return;
+    }
+    try {
+      setMessage("");
+      await createSubscriptionMutation.mutateAsync({
+        subscription_type: watchType,
+        value,
+      });
+      setMessage("卡片已归档。");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`操作失败：${error.message}`);
+      } else {
+        setMessage("操作失败，请稍后重试");
+      }
+    }
+  }
+
+  async function handleDeleteSubscription(subscriptionId: string) {
+    try {
+      setMessage("");
+      await deleteSubscriptionMutation.mutateAsync(subscriptionId);
+      setMessage("已移出归档。");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`操作失败：${error.message}`);
+      } else {
+        setMessage("操作失败，请稍后重试");
+      }
     }
   }
 
@@ -259,18 +339,97 @@ export default function Modals() {
                 </button>
               </div>
               <div className="flex-1 space-y-4 overflow-y-auto p-4">
-                <div className="cursor-pointer rounded-2xl border border-white/10 bg-white/5 p-5 transition-colors hover:bg-white/10">
-                  <div className="mb-2 flex items-center gap-1 font-mono text-xs text-cyan-400">
-                    <BellRing size={12} /> 正在监控
+                {portalAuth ? (
+                  <>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="mb-3 flex items-center gap-2 text-xs text-slate-400">
+                        <BellRing size={14} />
+                        添加新关注
+                      </div>
+                      <div className="mb-2 grid grid-cols-4 gap-2">
+                        {[
+                          { key: "school", label: "院校" },
+                          { key: "major", label: "专业" },
+                          { key: "keyword", label: "关键词" },
+                          { key: "region", label: "地区" },
+                        ].map((x) => (
+                          <button
+                            key={x.key}
+                            type="button"
+                            onClick={() => setWatchType(x.key as "school" | "major" | "keyword" | "region")}
+                            className={`rounded-lg px-2 py-1.5 text-xs transition-colors ${
+                              watchType === x.key
+                                ? "bg-cyan-500 text-white"
+                                : "bg-white/5 text-slate-300 hover:bg-white/10"
+                            }`}
+                          >
+                            {x.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          value={watchValue}
+                          onChange={(event) => setWatchValue(event.target.value)}
+                          placeholder="例如：电子科技大学 / 0854 / 复试线"
+                          className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                        />
+                        <button
+                          type="button"
+                          disabled={createSubscriptionMutation.isPending}
+                          onClick={handleCreateSubscription}
+                          className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-400 disabled:opacity-70"
+                        >
+                          添加
+                        </button>
+                      </div>
+                    </div>
+
+                    {subscriptionsQuery.isLoading ? (
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-slate-300">
+                        探针巡航中，拉取最新节点...
+                      </div>
+                    ) : null}
+
+                    {subscriptionsQuery.data?.items.length ? (
+                      subscriptionsQuery.data.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/10"
+                        >
+                          <div className="mb-2 flex items-center justify-between">
+                            <div className="flex items-center gap-2 font-mono text-xs text-cyan-400">
+                              <BellRing size={12} />
+                              正在监控 · {watchTypeLabel(item.subscription_type)}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={deleteSubscriptionMutation.isPending}
+                              onClick={() => handleDeleteSubscription(item.id)}
+                              className="rounded-md border border-white/20 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:bg-white/10"
+                            >
+                              移除
+                            </button>
+                          </div>
+                          <div className="mb-2 text-sm font-medium text-white">{item.value}</div>
+                          <div className="text-xs text-slate-400">
+                            类别：{item.category} · 创建于{" "}
+                            {new Date(item.created_at).toLocaleString("zh-CN", { hour12: false })}
+                          </div>
+                        </div>
+                      ))
+                    ) : subscriptionsQuery.isSuccess ? (
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-slate-300">
+                        暂无归档。将有价值的卡片留存于此。
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-slate-300">
+                    执行归档（收藏）或个性化订阅，需要建立身份映射。请先登录后再管理关注库。
                   </div>
-                  <div className="mb-2 font-medium text-white">
-                    杭州电子科技大学 - 计算机学院
-                  </div>
-                  <div className="flex justify-between text-xs text-slate-400">
-                    <span>已监控 12 天</span>
-                    <span className="text-green-400">暂无异动</span>
-                  </div>
-                </div>
+                )}
+
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-slate-300">
                   {portalAuth
                     ? `当前登录：${portalAuth.nickname || portalAuth.username}`
@@ -283,4 +442,12 @@ export default function Modals() {
       </AnimatePresence>
     </>
   );
+}
+
+function watchTypeLabel(type: string) {
+  if (type === "school") return "院校";
+  if (type === "major") return "专业";
+  if (type === "keyword") return "关键词";
+  if (type === "region") return "地区";
+  return "未知";
 }

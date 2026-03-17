@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import init_db
-from .routers import admin, auth, content, health, schools, search
+from .routers import admin, auth, content, health, schools, search, subscriptions
 from .routers import console
 
 
@@ -49,5 +49,6 @@ app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(schools.router, prefix=settings.api_prefix)
 app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(content.router, prefix=settings.api_prefix)
+app.include_router(subscriptions.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
 app.include_router(console.router)

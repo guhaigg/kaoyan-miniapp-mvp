@@ -65,6 +65,27 @@ class UserMeResponse(BaseModel):
     status: str
 
 
+class SubscriptionCreateRequest(BaseModel):
+    subscription_type: Literal["school", "major", "keyword", "region"] = "school"
+    value: str = Field(min_length=1, max_length=255)
+    category: Literal["all", "announcement", "adjustment"] = "all"
+
+
+class SubscriptionItem(BaseModel):
+    id: str
+    subscription_type: str
+    value: str
+    category: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class SubscriptionListResponse(BaseModel):
+    total: int
+    items: list[SubscriptionItem]
+
+
 class AdminLoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=256)

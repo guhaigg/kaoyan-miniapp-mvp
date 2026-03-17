@@ -139,6 +139,9 @@ class PortalUser(Base):
 
     admin_account: Mapped["AdminAccount | None"] = relationship(back_populates="user", uselist=False)
     sessions: Mapped[list["PortalUserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    subscriptions: Mapped[list["PortalUserSubscription"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class AdminAccount(Base):
@@ -170,6 +173,24 @@ class PortalUserSession(Base):
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     user: Mapped["PortalUser"] = relationship(back_populates="sessions")
+
+
+class PortalUserSubscription(Base):
+    __tablename__ = "portal_user_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "subscription_type", "value", name="uq_portal_subscriptions_user_type_value"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    subscription_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(32), default="all", nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    user: Mapped["PortalUser"] = relationship(back_populates="subscriptions")
 
 
 class UserEvent(Base):

@@ -175,6 +175,24 @@ export type HealthResponse = {
   redis: "up" | "down";
 };
 
+export type SubscriptionType = "school" | "major" | "keyword" | "region";
+export type SubscriptionCategory = "all" | "announcement" | "adjustment";
+
+export type SubscriptionItem = {
+  id: string;
+  subscription_type: SubscriptionType;
+  value: string;
+  category: SubscriptionCategory;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SubscriptionListResponse = {
+  total: number;
+  items: SubscriptionItem[];
+};
+
 export function registerUser(payload: {
   username: string;
   password: string;
@@ -278,4 +296,32 @@ export function adminAudits(payload: {
 
 export function healthCheck() {
   return request<HealthResponse>("/health");
+}
+
+export function createSubscription(
+  payload: {
+    subscription_type: SubscriptionType;
+    value: string;
+    category?: SubscriptionCategory;
+  },
+  token: string,
+) {
+  return request<SubscriptionItem>("/subscriptions", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export function listSubscriptions(token: string) {
+  return request<SubscriptionListResponse>("/subscriptions", {
+    token,
+  });
+}
+
+export function deleteSubscription(subscriptionId: string, token: string) {
+  return request<{ status: "ok" }>(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    method: "DELETE",
+    token,
+  });
 }
