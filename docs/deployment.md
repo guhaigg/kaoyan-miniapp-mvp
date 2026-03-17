@@ -143,7 +143,7 @@ Optional GitHub Variables:
 
 - `HK_DEPLOY_PATH` (default `/root/code/kaoyan-miniapp-mvp`)
 - `HK_WEB_ROOT` (default `/var/www/html`)
-- `HK_BACKEND_SERVICE` (example: `gewujl-backend`)
+- `HK_BACKEND_SERVICE` (example: `kaoyan-backend`)
 
 Deploy actions on server:
 

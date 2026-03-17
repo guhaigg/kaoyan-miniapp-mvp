@@ -51,9 +51,10 @@ jobs:
           TARGET="${HK_USER}@${HK_HOST}"
           DEPLOY_PATH="${DEPLOY_PATH:-/root/code/kaoyan-miniapp-mvp}"
           WEB_ROOT="${WEB_ROOT:-/var/www/html}"
+          BACKEND_SERVICE="${BACKEND_SERVICE:-kaoyan-backend}"
 
           ssh -p "$PORT" "$TARGET" \
-            "DEPLOY_PATH='$DEPLOY_PATH' WEB_ROOT='$WEB_ROOT' BACKEND_SERVICE='${BACKEND_SERVICE:-}' bash -s" <<'REMOTE'
+            "DEPLOY_PATH='$DEPLOY_PATH' WEB_ROOT='$WEB_ROOT' BACKEND_SERVICE='$BACKEND_SERVICE' bash -s" <<'REMOTE'
           set -euo pipefail
 
           cd "$DEPLOY_PATH"
@@ -68,11 +69,13 @@ jobs:
           cp infra/nginx/query/index.html "$WEB_ROOT/query/index.html"
           cp infra/nginx/assets/brand/gw-mark.svg "$WEB_ROOT/assets/brand/gw-mark.svg"
 
-          if [ -x ".venv/bin/pip" ]; then
+          if [ -x "backend/.venv/bin/pip" ]; then
+            ./backend/.venv/bin/pip install -r backend/requirements.txt
+          elif [ -x ".venv/bin/pip" ]; then
             ./.venv/bin/pip install -r backend/requirements.txt
           fi
 
-          if [ -n "${BACKEND_SERVICE:-}" ] && systemctl list-unit-files | grep -q "^${BACKEND_SERVICE}\.service"; then
+          if systemctl list-unit-files | grep -q "^${BACKEND_SERVICE}\.service"; then
             systemctl restart "${BACKEND_SERVICE}.service"
             systemctl is-active --quiet "${BACKEND_SERVICE}.service"
           fi
@@ -80,6 +83,10 @@ jobs:
           if systemctl list-unit-files | grep -q "^nginx\.service"; then
             nginx -t
             systemctl reload nginx
+          fi
+
+          if command -v curl >/dev/null 2>&1; then
+            curl -fsS "http://127.0.0.1:8000/api/v1/health" >/dev/null
           fi
 
           echo "Deploy complete: $(git rev-parse --short HEAD)"
