@@ -30,7 +30,14 @@ class Settings(BaseSettings):
     admin_login_lock_seconds: int = 15 * 60
     user_refresh_ttl_seconds: int = 30 * 24 * 60 * 60
     rate_limit_per_minute: int = 120
-    cors_allow_origins: str = "*"
+    cors_allow_origins: str = ",".join(
+        [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "https://gewujl.cloud",
+            "https://www.gewujl.cloud",
+        ]
+    )
 
     def cors_allow_origins_list(self) -> List[str]:
         if self.cors_allow_origins.strip() == "*":
