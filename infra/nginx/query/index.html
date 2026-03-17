@@ -69,6 +69,10 @@
         opacity: 0.22;
       }
 
+      .swup-contract-placeholder {
+        display: none !important;
+      }
+
       .shell {
         width: min(1280px, 100%);
         margin: 0 auto;
@@ -606,6 +610,9 @@
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="left-sidebar" class="swup-contract-placeholder" aria-hidden="true"></div>
+    <div id="right-sidebar" class="swup-contract-placeholder" aria-hidden="true"></div>
+    <div id="middle-sidebar" class="swup-contract-placeholder" aria-hidden="true"></div>
 
     <main id="swup-container" class="shell transition-swup-fade">
       <header class="header glass">

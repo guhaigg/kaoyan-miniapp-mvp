@@ -1,0 +1,1 @@
+import{a7 as t,w as b,v as h,a3 as k,a8 as S}from"./utils.CtNpEk8W.js";function u(r,a){return r===a||r?.[S]===a}function d(r={},a,f,T){return t(()=>{var i,s;return b(()=>{i=s,s=[],h(()=>{r!==f(...s)&&(a(r,...s),i&&u(f(...i),r)&&a(null,...i))})}),()=>{k(()=>{s&&u(f(...s),r)&&a(null,...s)})}}),r}export{d as b};
