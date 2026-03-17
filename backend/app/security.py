@@ -2,6 +2,8 @@ import base64
 import hashlib
 import hmac
 import json
+import os
+import secrets
 import time
 from binascii import Error as BinasciiError
 from typing import Any
@@ -50,3 +52,32 @@ def parse_visitor_token(token: str, secret_key: str, ttl_seconds: int) -> dict[s
     if iat <= 0 or int(time.time()) - iat > ttl_seconds:
         return None
     return payload
+
+
+def hash_password(password: str, iterations: int = 120_000) -> str:
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${_b64_encode(salt)}${_b64_encode(digest)}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        algo, iter_text, salt_encoded, digest_encoded = password_hash.split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        iterations = int(iter_text)
+        salt = _b64_decode(salt_encoded)
+        expected_digest = _b64_decode(digest_encoded)
+    except (ValueError, BinasciiError):
+        return False
+
+    actual_digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return hmac.compare_digest(actual_digest, expected_digest)
+
+
+def create_session_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_session_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

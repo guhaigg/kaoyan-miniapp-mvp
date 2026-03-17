@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>格物简录 · 管理员中心</title>
+    <link rel="icon" type="image/svg+xml" href="/static/console/gw-mark.svg" />
+    <link rel="stylesheet" href="/static/console/admin.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="intro">
+        <div class="logo">
+          <img class="mark" src="/static/console/gw-mark.svg" alt="GW" />
+          <div>
+            <strong>GeWuJian</strong>
+            <small>Twilight Admin</small>
+          </div>
+        </div>
+        <p class="kicker">Twilight Console</p>
+        <h1>管理员后台控制台</h1>
+        <p>
+          账号、内容、审计、系统状态集中管理。普通用户界面只展示检索和公告，后台能力全部收敛在此页面。
+        </p>
+
+        <div class="tips">
+          <article class="tip">
+            <b>权限隔离</b>
+            <span>用户与管理员双表存储，提权操作全程在后台执行并可审计。</span>
+          </article>
+          <article class="tip">
+            <b>稳定可控</b>
+            <span>支持内容录入、内容下线、健康检查和密码更新，便于线上维护。</span>
+          </article>
+          <article class="tip">
+            <b>对外信息简洁</b>
+            <span>业务入口保留给访客与注册用户，管理面板不在站点主流程暴露。</span>
+          </article>
+        </div>
+
+        <div class="entry">
+          <a href="https://gewujl.cloud" target="_blank" rel="noopener noreferrer">返回首页</a>
+          <a href="https://gewujl.cloud/register/" target="_blank" rel="noopener noreferrer">注册/登录页</a>
+          <a
+            href="https://github.com/guhaigg/kaoyan-miniapp-mvp"
+            target="_blank"
+            rel="noopener noreferrer"
+            >GitHub 仓库</a
+          >
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="hero">
+          <p class="tag">TWILIGHT ADMIN CONSOLE</p>
+          <h2>格物简录管理员中心</h2>
+          <p class="sub">
+            采用 Twilight 视觉体系。后台仅供管理员使用，不对普通用户开放敏感信息。
+          </p>
+        </header>
+
+        <section id="loginCard" class="card login-card">
+          <div class="panel-head">
+            <h3>管理员登录</h3>
+          </div>
+          <div class="form-grid">
+            <div>
+              <label for="username">管理员账号</label>
+              <input id="username" type="text" placeholder="请输入管理员账号" />
+            </div>
+            <div>
+              <label for="password">管理员密码</label>
+              <input id="password" type="password" placeholder="请输入管理员密码" />
+            </div>
+          </div>
+          <div class="actions">
+            <button id="btnLogin" class="btn">登录后台</button>
+          </div>
+          <p id="loginStatus" class="status">未登录</p>
+        </section>
+
+        <section id="panelCard" class="card hidden">
+          <div class="toolbar">
+            <div>
+              <h3>后台控制台</h3>
+              <p id="meStatus" class="muted"></p>
+            </div>
+            <div class="toolbar-actions">
+              <button id="btnLogout" class="btn danger">退出登录</button>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <button class="tab active" data-tab="users">用户管理</button>
+            <button class="tab" data-tab="content">内容管理</button>
+            <button class="tab" data-tab="system">系统状态</button>
+          </div>
+
+          <section id="tab-users" class="tab-panel active">
+            <div class="panel-head">
+              <h4>用户管理与权限提升</h4>
+              <button id="btnRefreshUsers" class="btn secondary">刷新列表</button>
+            </div>
+            <div class="form-grid">
+              <div>
+                <label for="keyword">关键词</label>
+                <input id="keyword" type="text" placeholder="用户名 / 昵称" />
+              </div>
+              <div>
+                <label for="stateFilter">状态筛选</label>
+                <select id="stateFilter">
+                  <option value="">全部状态</option>
+                  <option value="active">active</option>
+                  <option value="blocked">blocked</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>用户 ID</th>
+                    <th>用户名</th>
+                    <th>昵称</th>
+                    <th>状态</th>
+                    <th>管理员</th>
+                    <th>最近登录</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTbody"></tbody>
+              </table>
+            </div>
+            <p id="usersStatus" class="status muted">请先登录后加载用户</p>
+          </section>
+
+          <section id="tab-content" class="tab-panel">
+            <div class="panel-head">
+              <h4>内容录入与下线</h4>
+            </div>
+            <div class="form-grid">
+              <div>
+                <label for="ingestCategory">分类</label>
+                <select id="ingestCategory">
+                  <option value="announcement">announcement</option>
+                  <option value="adjustment">adjustment</option>
+                </select>
+              </div>
+              <div>
+                <label for="ingestSourceType">来源类型</label>
+                <select id="ingestSourceType">
+                  <option value="manual">manual</option>
+                  <option value="crawler">crawler</option>
+                </select>
+              </div>
+              <div>
+                <label for="ingestTitle">标题</label>
+                <input id="ingestTitle" type="text" placeholder="内容标题" />
+              </div>
+              <div>
+                <label for="ingestSchool">院校</label>
+                <input id="ingestSchool" type="text" placeholder="院校名称" />
+              </div>
+              <div>
+                <label for="ingestMajor">专业</label>
+                <input id="ingestMajor" type="text" placeholder="可选" />
+              </div>
+              <div>
+                <label for="ingestRegion">地区</label>
+                <input id="ingestRegion" type="text" placeholder="可选" />
+              </div>
+              <div class="full-row">
+                <label for="ingestSourceUrl">来源链接</label>
+                <input id="ingestSourceUrl" type="text" placeholder="https://example.com/..." />
+              </div>
+              <div class="full-row">
+                <label for="ingestSummary">摘要</label>
+                <textarea id="ingestSummary" rows="2" placeholder="可选"></textarea>
+              </div>
+              <div class="full-row">
+                <label for="ingestBody">正文</label>
+                <textarea id="ingestBody" rows="6" placeholder="正文内容"></textarea>
+              </div>
+            </div>
+            <div class="actions">
+              <button id="btnIngest" class="btn">提交录入</button>
+            </div>
+            <pre id="ingestOutput" class="output">提交录入后展示请求结果</pre>
+
+            <div class="split"></div>
+
+            <div class="form-grid">
+              <div>
+                <label for="offlineContentId">下线内容 ID</label>
+                <input id="offlineContentId" type="text" placeholder="content_id" />
+              </div>
+              <div>
+                <label for="offlineReason">下线原因</label>
+                <input id="offlineReason" type="text" placeholder="manual offline" />
+              </div>
+            </div>
+            <div class="actions">
+              <button id="btnOffline" class="btn danger">执行下线</button>
+            </div>
+            <pre id="offlineOutput" class="output">提交下线后展示请求结果</pre>
+          </section>
+
+          <section id="tab-system" class="tab-panel">
+            <div class="panel-head">
+              <h4>系统状态</h4>
+              <button id="btnHealth" class="btn secondary">刷新健康状态</button>
+            </div>
+            <pre id="healthOutput" class="output">点击“刷新健康状态”查看结果</pre>
+            <p class="status muted">提示：Redis 当前允许降级，不影响主流程注册与登录。</p>
+
+            <div class="split"></div>
+
+            <div class="panel-head">
+              <h4>管理员密码修改</h4>
+            </div>
+            <div class="form-grid">
+              <div>
+                <label for="oldPassword">旧密码</label>
+                <input id="oldPassword" type="password" placeholder="输入当前密码" />
+              </div>
+              <div>
+                <label for="newPassword">新密码</label>
+                <input id="newPassword" type="password" placeholder="至少 8 位" />
+              </div>
+            </div>
+            <div class="actions">
+              <button id="btnChangePassword" class="btn">更新密码</button>
+            </div>
+            <pre id="passwordOutput" class="output">修改密码后会显示执行结果</pre>
+
+            <div class="split"></div>
+
+            <div class="panel-head">
+              <h4>后台操作审计</h4>
+              <button id="btnAudit" class="btn secondary">刷新审计</button>
+            </div>
+            <pre id="auditOutput" class="output">点击“刷新审计”查看最近管理员操作</pre>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script>
+      window.addEventListener("pageshow", (event) => {
+        if (event.persisted) {
+          window.location.reload();
+        }
+      });
+    </script>
+    <script src="/static/console/admin.js"></script>
+  </body>
+</html>

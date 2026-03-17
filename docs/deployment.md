@@ -1,5 +1,26 @@
 # Deployment and Operations Handbook
 
+## 0) Python/Node Baseline
+
+- Python: `>=3.11` (recommended `3.12`)
+- Node.js: `>=20`
+
+If you run tests with Python 3.9, you may hit compatibility errors such as `datetime.UTC` import failure.
+
+## 0.1) Current Production Paths (Hong Kong Server)
+
+- Static web root: `/var/www/html`
+- Backend repo root: `/root/code/kaoyan-miniapp-mvp`
+- Admin static files: `/root/code/kaoyan-miniapp-mvp/backend/app/static/console`
+
+Version-controlled source mapping:
+
+- `/var/www/html/index.html`  <- `infra/nginx/index.html`
+- `/var/www/html/register.html` + `/var/www/html/register/index.html` <- `infra/nginx/register.html`
+- `/var/www/html/query/index.html` <- `infra/nginx/query/index.html`
+- `/var/www/html/assets/brand/gw-mark.svg` <- `infra/nginx/assets/brand/gw-mark.svg`
+- `/root/code/kaoyan-miniapp-mvp/backend/app/static/console/*` <- `backend/app/static/console/*`
+
 ## 1) Environment Variables
 
 Copy `backend/.env.example` to `backend/.env` and fill values:

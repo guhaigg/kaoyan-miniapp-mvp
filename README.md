@@ -2,13 +2,18 @@
 
 格物简录是一个微信小程序 + FastAPI 后端的项目，用于聚合与检索公告/调剂信息。当前开发环境已接入外部 MySQL，服务域名已配置 HTTPS。
 
+## Runtime Requirements
+
+- Python `>=3.11`（推荐 `3.12`）
+- Node.js `>=20`
+
 ## Online Endpoints
 
 - Web: `https://gewujl.cloud`
 - Web (www): `https://www.gewujl.cloud`
 - API: `https://api.gewujl.cloud`
 - Health: `https://api.gewujl.cloud/api/v1/health`
-- Console: `https://api.gewujl.cloud/console/`
+- Admin Console: `https://api.gewujl.cloud/admin/`
 
 ## Tech Stack
 
@@ -51,6 +56,7 @@ npm run test:backend
 - [Development Protocol](./docs/development_protocol.md)
 - [Git Workflow](./docs/git_workflow.md)
 - [Deployment Handbook](./docs/deployment.md)
+- [Server Release Record (2026-03-17)](./docs/server_release_2026-03-17.md)
 
 ## Deployment Assets
 

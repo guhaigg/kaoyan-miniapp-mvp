@@ -42,3 +42,5 @@ npm run dev:backend
 - [Frontend and Design Spec](./frontend_and_design.md)
 - [Deployment Handbook](./deployment.md)
 - [Git Workflow and Release Rules](./git_workflow.md)
+- [注册登录架构（Portal 用户）](./auth_login_architecture.md)
+- [服务器版本记录（2026-03-17）](./server_release_2026-03-17.md)
