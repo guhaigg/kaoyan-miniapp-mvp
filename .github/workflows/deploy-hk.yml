@@ -79,12 +79,11 @@ jobs:
           git checkout main
           git pull --ff-only origin main
 
-          install -d "$WEB_ROOT/query" "$WEB_ROOT/register" "$WEB_ROOT/assets/brand"
-          cp infra/nginx/index.html "$WEB_ROOT/index.html"
+          install -d "$WEB_ROOT"
+          rsync -a --exclude 'gewujl.conf' infra/nginx/ "$WEB_ROOT/"
+          install -d "$WEB_ROOT/register"
           cp infra/nginx/register.html "$WEB_ROOT/register.html"
           cp infra/nginx/register.html "$WEB_ROOT/register/index.html"
-          cp infra/nginx/query/index.html "$WEB_ROOT/query/index.html"
-          cp infra/nginx/assets/brand/gw-mark.svg "$WEB_ROOT/assets/brand/gw-mark.svg"
 
           install -m 750 infra/backup/gewujl-backup.sh /usr/local/bin/gewujl-backup
           install -m 644 infra/systemd/gewujl-backup.service /etc/systemd/system/gewujl-backup.service

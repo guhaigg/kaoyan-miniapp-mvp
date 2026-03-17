@@ -520,6 +520,15 @@
         text-decoration: underline;
       }
 
+      .transition-swup-fade {
+        transition: opacity 0.4s ease, transform 0.4s ease;
+      }
+
+      html.is-animating .transition-swup-fade {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
       .toast {
         position: fixed;
         top: 20px;
@@ -598,7 +607,7 @@
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <main class="shell">
+    <main id="swup-container" class="shell transition-swup-fade">
       <header class="header glass">
         <div class="brand">
           <img src="/assets/brand/gw-mark.svg" alt="GW" />
@@ -748,191 +757,6 @@
       </footer>
     </main>
 
-    <script>
-      const API_BASE = "https://api.gewujl.cloud/api/v1";
-
-      function $(id) {
-        return document.getElementById(id);
-      }
-
-      function esc(value) {
-        return String(value ?? "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;");
-      }
-
-      function fmtDate(value) {
-        if (!value) return "未知时间";
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return String(value);
-        return date.toLocaleString("zh-CN", { hour12: false });
-      }
-
-      let toastTimer = 0;
-      function showToast(message, type = "") {
-        const el = $("toast");
-        el.textContent = message;
-        el.classList.remove("ok", "error");
-        if (type) el.classList.add(type);
-        el.classList.add("show");
-        window.clearTimeout(toastTimer);
-        toastTimer = window.setTimeout(() => el.classList.remove("show"), 2200);
-      }
-
-      function toggleAdjustFields() {
-        const isAdjust = $("queryType").value === "adjustments";
-        $("majorWrap").style.display = isAdjust ? "" : "none";
-        $("regionWrap").style.display = isAdjust ? "" : "none";
-      }
-
-      function renderItems(items) {
-        const box = $("resultCards");
-        if (!Array.isArray(items) || !items.length) {
-          box.innerHTML =
-            "<article class='result-card'><p>未匹配到确切坐标，请尝试提取核心关键词。</p></article>";
-          return;
-        }
-
-        box.innerHTML = items
-          .map((item) => {
-            const source = item.source_url
-              ? `<a href="${esc(item.source_url)}" target="_blank" rel="noopener noreferrer">查看来源原文</a>`
-              : "<span>暂无来源链接</span>";
-            return `<article class="result-card">
-              <h4>${esc(item.title || "未命名信息")}</h4>
-              <p>${esc(item.summary || "暂无摘要")}</p>
-              <div class="tag-row">
-                <span class="tag">${esc(item.school_name || "未知院校")}</span>
-                <span class="tag">${esc(item.major || "未标注专业")}</span>
-                <span class="tag">${esc(item.region || "未标注地区")}</span>
-                <span class="tag">${esc(fmtDate(item.published_at))}</span>
-              </div>
-              <p>${source}</p>
-            </article>`;
-          })
-          .join("");
-      }
-
-      async function runSearch() {
-        const type = $("queryType").value;
-        const endpoint =
-          type === "adjustments"
-            ? "/search/adjustments"
-            : "/search/announcements";
-        const payload = {
-          school_name: $("schoolName").value.trim() || null,
-          keywords: $("keywords").value.trim() || null,
-          page: 1,
-          page_size: Number($("pageSize").value || 20),
-          refresh: false,
-        };
-
-        if (type === "adjustments") {
-          payload.major = $("major").value.trim() || null;
-          payload.region = $("region").value.trim() || null;
-        }
-
-        const button = $("btnSearch");
-        button.disabled = true;
-        button.textContent = "检索中...";
-        $("resultMeta").textContent = "正在重构数据卡片...";
-        $("resultMeta").classList.add("loading");
-
-        try {
-          const response = await fetch(`${API_BASE}${endpoint}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-          const data = await response.json();
-
-          if (!response.ok) {
-            $("resultMeta").textContent = `查询失败（${response.status}）`;
-            $("resultHint").textContent = "数据源响应超时，请稍后重连。";
-            $("resultCards").innerHTML = "";
-            showToast("数据源响应超时，请稍后重连。", "error");
-            return;
-          }
-
-          const total = Number(data.total || 0);
-          const mode = data.mode || "-";
-          const items = Array.isArray(data.items) ? data.items : [];
-          $("sideTotal").textContent = String(total);
-          $("sideMode").textContent = String(mode);
-          $("resultMeta").textContent = `共 ${total} 条，当前显示 ${items.length} 条`;
-          $("resultHint").textContent = "数据已重构，可继续细化筛选条件。";
-          renderItems(items);
-          showToast("卡片已完成重构。", "ok");
-        } catch (error) {
-          $("resultMeta").textContent = "网络异常，请稍后重试。";
-          $("resultHint").textContent = String(error);
-          $("resultCards").innerHTML = "";
-          showToast("数据源响应超时，请稍后重连。", "error");
-        } finally {
-          $("resultMeta").classList.remove("loading");
-          button.disabled = false;
-          button.textContent = "执行查询";
-        }
-      }
-
-      function clearQuery() {
-        $("queryType").value = "announcements";
-        $("pageSize").value = "20";
-        $("schoolName").value = "";
-        $("keywords").value = "";
-        $("major").value = "";
-        $("region").value = "";
-        toggleAdjustFields();
-        $("sideTotal").textContent = "-";
-        $("sideMode").textContent = "-";
-        $("resultMeta").textContent = "条件已重置。";
-        $("resultHint").textContent = "可重新定义关键词后再次查询。";
-        $("resultCards").innerHTML = "";
-      }
-
-      async function loadPreview() {
-        try {
-          const response = await fetch(`${API_BASE}/search/announcements`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ page: 1, page_size: 3, refresh: false }),
-          });
-          const data = await response.json();
-          const items = Array.isArray(data.items) ? data.items : [];
-          if (!response.ok || !items.length) {
-            $("previewList").innerHTML = "<li>暂无最新公告。底层探针正在持续观测。</li>";
-            return;
-          }
-          $("previewList").innerHTML = items
-            .map((item) => {
-              const title = esc(item.title || "未命名信息");
-              const school = esc(item.school_name || "未知院校");
-              const dateText = esc(fmtDate(item.published_at));
-              if (!item.source_url) return `<li>${title} · ${school} · ${dateText}</li>`;
-              return `<li><a href="${esc(item.source_url)}" target="_blank" rel="noopener noreferrer">${title}</a> · ${school} · ${dateText}</li>`;
-            })
-            .join("");
-        } catch {
-          $("previewList").innerHTML = "<li>数据源响应超时，请稍后重连。</li>";
-        }
-      }
-
-      $("year").textContent = String(new Date().getFullYear());
-      $("queryType").addEventListener("change", toggleAdjustFields);
-      $("btnSearch").addEventListener("click", runSearch);
-      $("btnClear").addEventListener("click", clearQuery);
-
-      ["schoolName", "keywords", "major", "region"].forEach((id) => {
-        $(id).addEventListener("keydown", (event) => {
-          if (event.key === "Enter") runSearch();
-        });
-      });
-
-      toggleAdjustFields();
-      loadPreview();
-      runSearch();
-    </script>
-  </body>
+    <script defer src="/assets/brand/gw-app-shell.js"></script>
+</body>
 </html>
