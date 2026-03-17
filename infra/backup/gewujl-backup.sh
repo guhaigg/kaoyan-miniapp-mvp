@@ -10,6 +10,9 @@ WEB_ROOT="${WEB_ROOT:-/var/www/html}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_PATH}/backend/.env}"
 KEEP_DAYS_DAILY="${KEEP_DAYS_DAILY:-14}"
 KEEP_DAYS_PREDEPLOY="${KEEP_DAYS_PREDEPLOY:-10}"
+KEEP_DAILY_COUNT="${KEEP_DAILY_COUNT:-30}"
+KEEP_PREDEPLOY_COUNT="${KEEP_PREDEPLOY_COUNT:-50}"
+MAX_BACKUP_TOTAL_MB="${MAX_BACKUP_TOTAL_MB:-8192}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-}"
 REMOTE_BACKUP_TARGET="${REMOTE_BACKUP_TARGET:-}"
 REMOTE_SSH_PORT="${REMOTE_SSH_PORT:-22}"
@@ -52,6 +55,62 @@ upload_to_ssh_target() {
   log "uploading backup to ${remote_host}:${remote_dest}"
   ssh "${ssh_opts[@]}" "${remote_host}" "mkdir -p '${remote_dest}'"
   scp "${ssh_opts[@]}" -r "${source_dir}/." "${remote_host}:${remote_dest}/"
+}
+
+prune_by_quota() {
+  local usage_mb oldest line
+  usage_mb="$(du -sm "${BACKUP_ROOT}" 2>/dev/null | awk '{print $1}')"
+  usage_mb="${usage_mb:-0}"
+
+  while [[ "${usage_mb}" -gt "${MAX_BACKUP_TOTAL_MB}" ]]; do
+    line="$(
+      {
+        find "${BACKUP_ROOT}/daily" -mindepth 2 -maxdepth 2 -type d -printf '%T@ %p\n' 2>/dev/null || true
+        find "${BACKUP_ROOT}/predeploy" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null || true
+      } | sort -n | head -n 1
+    )"
+    oldest="${line#* }"
+
+    if [[ -z "${oldest}" || ! -d "${oldest}" ]]; then
+      break
+    fi
+    log "quota prune remove ${oldest}"
+    rm -rf "${oldest}"
+    usage_mb="$(du -sm "${BACKUP_ROOT}" 2>/dev/null | awk '{print $1}')"
+    usage_mb="${usage_mb:-0}"
+  done
+}
+
+prune_predeploy_count() {
+  local count remove_count
+  mapfile -t pre_dirs < <(
+    find "${BACKUP_ROOT}/predeploy" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -n | awk '{print $2}'
+  )
+  count="${#pre_dirs[@]}"
+  if [[ "${count}" -le "${KEEP_PREDEPLOY_COUNT}" ]]; then
+    return
+  fi
+  remove_count="$((count - KEEP_PREDEPLOY_COUNT))"
+  for d in "${pre_dirs[@]:0:${remove_count}}"; do
+    log "count prune remove ${d}"
+    rm -rf "${d}"
+  done
+}
+
+prune_daily_count() {
+  local count remove_count
+  mapfile -t daily_dirs < <(
+    find "${BACKUP_ROOT}/daily" -mindepth 2 -maxdepth 2 -type d -printf '%T@ %p\n' 2>/dev/null | sort -n | awk '{print $2}'
+  )
+  count="${#daily_dirs[@]}"
+  if [[ "${count}" -le "${KEEP_DAILY_COUNT}" ]]; then
+    return
+  fi
+  remove_count="$((count - KEEP_DAILY_COUNT))"
+  for d in "${daily_dirs[@]:0:${remove_count}}"; do
+    log "count prune remove ${d}"
+    rm -rf "${d}"
+  done
 }
 
 strip_quotes() {
@@ -208,5 +267,9 @@ if [[ "${MODE}" == "daily" ]]; then
 else
   find "${BACKUP_ROOT}/predeploy" -mindepth 1 -maxdepth 1 -type d -mtime "+${KEEP_DAYS_PREDEPLOY}" -exec rm -rf {} +
 fi
+
+prune_daily_count
+prune_predeploy_count
+prune_by_quota
 
 log "backup done"

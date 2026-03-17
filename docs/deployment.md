@@ -189,6 +189,17 @@ Daily schedule:
 - `03:30` server local time (`OnCalendar=*-*-* 03:30:00`)
 - with `Persistent=true` (missed runs execute after reboot)
 
+Retention and auto-cleanup:
+
+- Count-based cleanup:
+  - `KEEP_DAILY_COUNT` (keep latest N daily backups)
+  - `KEEP_PREDEPLOY_COUNT` (keep latest N predeploy backups)
+- Day-based cleanup:
+  - `KEEP_DAYS_DAILY`
+  - `KEEP_DAYS_PREDEPLOY`
+- Quota-based cleanup:
+  - `MAX_BACKUP_TOTAL_MB` (if total backup size exceeds this, delete oldest snapshots automatically)
+
 ### Upload backups to another Tencent Cloud server (SSH)
 
 Edit `/etc/default/gewujl-backup`:
