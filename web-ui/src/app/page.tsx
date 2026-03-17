@@ -5,9 +5,8 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Clock, FileText } from "lucide-react";
-import { searchAnnouncements } from "@/lib/api";
+import { useHomeAnnouncementsQuery } from "@/hooks/useSearch";
 
 if (typeof window !== "undefined") {
   gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -15,13 +14,9 @@ if (typeof window !== "undefined") {
 
 export default function HomePage() {
   const container = useRef<HTMLDivElement>(null);
-  const { data, isLoading } = useQuery({
-    queryKey: ["home", "announcements"],
-    queryFn: () =>
-      searchAnnouncements({
-        page: 1,
-        page_size: 6,
-      }),
+  const { data, isLoading } = useHomeAnnouncementsQuery({
+    page: 1,
+    page_size: 6,
   });
 
   useGSAP(

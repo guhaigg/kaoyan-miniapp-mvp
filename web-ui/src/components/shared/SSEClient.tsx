@@ -1,31 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useQueryClient } from "@tanstack/react-query";
 import { NotificationEventItem, notificationsStreamUrl } from "@/lib/api";
+import { mergeNoticeList, watchlistNoticeQueryKey } from "@/lib/notice-cache";
 import { useAppStore } from "@/lib/store";
-
-const MAX_NOTICE_CACHE = 80;
-
-function watchlistNoticeQueryKey(userId: string | undefined) {
-  return ["portal", "watchlistNotices", userId] as const;
-}
-
-function mergeNoticeIntoCache(
-  oldItems: NotificationEventItem[] | undefined,
-  item: NotificationEventItem,
-): NotificationEventItem[] {
-  const next = oldItems ? [...oldItems] : [];
-  if (next.some((x) => x.id === item.id)) {
-    return next;
-  }
-  next.unshift(item);
-  if (next.length > MAX_NOTICE_CACHE) {
-    next.length = MAX_NOTICE_CACHE;
-  }
-  return next;
-}
 
 function buildToastContent(item: NotificationEventItem) {
   const school = item.payload.school_name || "目标院校";
@@ -43,7 +23,6 @@ export default function SSEClient() {
   const portalAuth = useAppStore((state) => state.portalAuth);
   const logout = useAppStore((state) => state.logout);
   const showToast = useAppStore((state) => state.showToast);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const userId = portalAuth?.userId;
@@ -53,7 +32,6 @@ export default function SSEClient() {
     }
 
     const abortController = new AbortController();
-    abortControllerRef.current = abortController;
     const streamUrl = notificationsStreamUrl();
 
     void fetchEventSource(streamUrl, {
@@ -83,7 +61,7 @@ export default function SSEClient() {
 
           queryClient.setQueryData(
             watchlistNoticeQueryKey(userId),
-            (oldData: NotificationEventItem[] | undefined) => mergeNoticeIntoCache(oldData, item),
+            (oldData: NotificationEventItem[] | undefined) => mergeNoticeList(oldData, [item]),
           );
           const toast = buildToastContent(item);
           showToast(toast.toastTitle, toast.toastMessage, toast.toastType);

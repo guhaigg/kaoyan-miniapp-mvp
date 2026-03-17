@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, SlidersHorizontal, Target } from "lucide-react";
 import FilterDrawer, { type SchoolTier, type StudyMode } from "@/components/search/FilterDrawer";
 import FeedCard, { FeedCardSkeleton } from "@/components/shared/FeedCard";
-import { ApiError, SearchResponse, searchAdjustments, searchAnnouncements } from "@/lib/api";
+import { ApiError, SearchResponse } from "@/lib/api";
+import { useAdjustmentSearchMutation, useAnnouncementSearchMutation } from "@/hooks/useSearch";
 
 export default function SearchPage() {
   const [queryType, setQueryType] = useState<"announcements" | "adjustments">("announcements");
@@ -24,41 +24,8 @@ export default function SearchPage() {
   const [major, setMajor] = useState("");
   const [result, setResult] = useState<{ percent: number; text: string } | null>(null);
 
-  const searchMutation = useMutation({
-    mutationFn: async (page: number) => {
-      if (queryType === "announcements") {
-        return searchAnnouncements({
-          keywords: keywords.trim() || undefined,
-          school_name: schoolName.trim() || undefined,
-          page,
-          page_size: 12,
-        });
-      }
-      return searchAdjustments({
-        keywords: keywords.trim() || undefined,
-        school_name: schoolName.trim() || undefined,
-        major: majorFilter.trim() || undefined,
-        region: regionFilter.trim() || undefined,
-        page,
-        page_size: 12,
-      });
-    },
-    onSuccess: (payload) => {
-      setSearchResult(payload);
-      if (payload.total === 0) {
-        setMessage("未匹配到确切坐标，请尝试提取核心关键词。");
-      } else {
-        setMessage("");
-      }
-    },
-    onError: (error) => {
-      if (error instanceof ApiError) {
-        setMessage(`查询失败：${error.message}`);
-      } else {
-        setMessage("数据源响应超时，请稍后重连。");
-      }
-    },
-  });
+  const announcementMutation = useAnnouncementSearchMutation();
+  const adjustmentMutation = useAdjustmentSearchMutation();
 
   const filteredItems = useMemo(() => {
     if (!searchResult) return [];
@@ -89,10 +56,41 @@ export default function SearchPage() {
     });
   };
 
-  function triggerSearch(page = 1) {
+  async function triggerSearch(page = 1) {
     setMessage("");
-    searchMutation.mutate(page);
+    try {
+      const payload =
+        queryType === "announcements"
+          ? await announcementMutation.mutateAsync({
+              keywords: keywords.trim() || undefined,
+              school_name: schoolName.trim() || undefined,
+              page,
+              page_size: 12,
+            })
+          : await adjustmentMutation.mutateAsync({
+              keywords: keywords.trim() || undefined,
+              school_name: schoolName.trim() || undefined,
+              major: majorFilter.trim() || undefined,
+              region: regionFilter.trim() || undefined,
+              page,
+              page_size: 12,
+            });
+      setSearchResult(payload);
+      if (payload.total === 0) {
+        setMessage("未匹配到确切坐标，请尝试提取核心关键词。");
+      } else {
+        setMessage("");
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`查询失败：${error.message}`);
+      } else {
+        setMessage("数据源响应超时，请稍后重连。");
+      }
+    }
   }
+
+  const isSearching = announcementMutation.isPending || adjustmentMutation.isPending;
 
   return (
     <motion.div
@@ -148,10 +146,10 @@ export default function SearchPage() {
             <button
               type="button"
               onClick={() => triggerSearch(1)}
-              disabled={searchMutation.isPending}
+              disabled={isSearching}
               className="rounded-2xl bg-cyan-600 px-8 py-3 font-bold text-white transition-colors hover:bg-cyan-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {searchMutation.isPending ? "检索中..." : "检索"}
+              {isSearching ? "检索中..." : "检索"}
             </button>
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-4">
@@ -227,7 +225,7 @@ export default function SearchPage() {
       ) : null}
 
       <div className="mb-12 min-h-[400px] space-y-4">
-        {searchMutation.isPending ? (
+        {isSearching ? (
           <div className="grid gap-6 md:grid-cols-2">
             <FeedCardSkeleton />
             <FeedCardSkeleton />
@@ -291,14 +289,14 @@ export default function SearchPage() {
               </span>
               <div className="flex gap-2">
                 <button
-                  disabled={currentPage <= 1 || searchMutation.isPending}
+                  disabled={currentPage <= 1 || isSearching}
                   onClick={() => triggerSearch(currentPage - 1)}
                   className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   上一页
                 </button>
                 <button
-                  disabled={currentPage >= totalPages || searchMutation.isPending}
+                  disabled={currentPage >= totalPages || isSearching}
                   onClick={() => triggerSearch(currentPage + 1)}
                   className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >

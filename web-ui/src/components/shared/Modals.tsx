@@ -3,23 +3,23 @@
 import { FormEvent, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BellRing, Star, X } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   NotificationEventItem,
-  createSubscription,
-  deleteSubscription,
   getCurrentUser,
-  listPendingNotifications,
-  listSubscriptions,
   loginUser,
   logoutUser,
   registerUser,
 } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
+import {
+  useAddSubscriptionMutation,
+  useDeleteSubscriptionMutation,
+  useSubscriptionsQuery,
+} from "@/hooks/useSubscriptions";
+import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
 
 export default function Modals() {
-  const queryClient = useQueryClient();
   const {
     isAuthOpen,
     setAuthOpen,
@@ -43,53 +43,12 @@ export default function Modals() {
     () => (mode === "register" ? "创建账户并登录" : "确认授权"),
     [mode],
   );
-  const noticeQueryKey = useMemo(
-    () => ["portal", "watchlistNotices", portalAuth?.userId] as const,
-    [portalAuth?.userId],
-  );
 
-  const subscriptionsQuery = useQuery({
-    queryKey: ["portal", "subscriptions", portalAuth?.userId],
-    queryFn: () => listSubscriptions(portalAuth!.accessToken),
-    enabled: Boolean(portalAuth?.accessToken) && isWatchlistOpen,
-  });
+  const subscriptionsQuery = useSubscriptionsQuery(isWatchlistOpen);
+  const realtimeNoticesQuery = useWatchlistNoticesQuery(isWatchlistOpen);
 
-  const realtimeNoticesQuery = useQuery({
-    queryKey: noticeQueryKey,
-    queryFn: async () => {
-      if (!portalAuth?.accessToken) return [] as NotificationEventItem[];
-      const response = await listPendingNotifications(portalAuth.accessToken);
-      const existing = queryClient.getQueryData<NotificationEventItem[]>(noticeQueryKey) || [];
-      return mergeNoticeList(existing, response.items);
-    },
-    enabled: Boolean(portalAuth?.accessToken) && isWatchlistOpen,
-    refetchOnWindowFocus: false,
-  });
-
-  const createSubscriptionMutation = useMutation({
-    mutationFn: async (payload: { subscription_type: "school" | "major" | "keyword" | "region"; value: string }) => {
-      if (!portalAuth?.accessToken) {
-        throw new ApiError("请先登录后再添加关注", 401, null);
-      }
-      return createSubscription({ ...payload, category: "all" }, portalAuth.accessToken);
-    },
-    onSuccess: async () => {
-      setWatchValue("");
-      await queryClient.invalidateQueries({ queryKey: ["portal", "subscriptions", portalAuth?.userId] });
-    },
-  });
-
-  const deleteSubscriptionMutation = useMutation({
-    mutationFn: async (subscriptionId: string) => {
-      if (!portalAuth?.accessToken) {
-        throw new ApiError("请先登录后再管理关注库", 401, null);
-      }
-      return deleteSubscription(subscriptionId, portalAuth.accessToken);
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["portal", "subscriptions", portalAuth?.userId] });
-    },
-  });
+  const createSubscriptionMutation = useAddSubscriptionMutation();
+  const deleteSubscriptionMutation = useDeleteSubscriptionMutation();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -179,7 +138,9 @@ export default function Modals() {
       await createSubscriptionMutation.mutateAsync({
         subscription_type: watchType,
         value,
+        category: "all",
       });
+      setWatchValue("");
       setMessage("卡片已归档。");
     } catch (error) {
       if (error instanceof ApiError) {
@@ -503,20 +464,6 @@ function watchTypeLabel(type: string) {
   return "未知";
 }
 
-function mergeNoticeList(base: NotificationEventItem[], incoming: NotificationEventItem[]) {
-  const map = new Map<string, NotificationEventItem>();
-  for (const item of base) {
-    map.set(item.id, item);
-  }
-  for (const item of incoming) {
-    if (!map.has(item.id)) {
-      map.set(item.id, item);
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => {
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
-}
 
 function formatNoticeTitle(item: NotificationEventItem) {
   const school = item.payload.school_name || "未知院校";

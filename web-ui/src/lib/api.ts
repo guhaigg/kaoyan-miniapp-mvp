@@ -351,22 +351,6 @@ export function getCurrentUser(token: string) {
   });
 }
 
-export function searchAnnouncements(payload: SearchBaseRequest) {
-  return request<SearchResponse>({
-    url: "/search/announcements",
-    method: "POST",
-    data: payload,
-  });
-}
-
-export function searchAdjustments(payload: AdjustmentSearchRequest) {
-  return request<SearchResponse>({
-    url: "/search/adjustments",
-    method: "POST",
-    data: payload,
-  });
-}
-
 export function adminLogin(payload: { username: string; password: string }) {
   return request<AdminLoginResponse>({
     url: "/admin/auth/login",
@@ -425,54 +409,6 @@ export function healthCheck() {
   return request<HealthResponse>({
     url: "/health",
     method: "GET",
-  });
-}
-
-export function createSubscription(
-  payload: {
-    subscription_type: SubscriptionType;
-    value: string;
-    category?: SubscriptionCategory;
-  },
-  token: string,
-) {
-  return request<SubscriptionItem>({
-    url: "/subscriptions",
-    method: "POST",
-    data: payload,
-    headers: {
-      "X-User-Token": token,
-    },
-  });
-}
-
-export function listSubscriptions(token: string) {
-  return request<SubscriptionListResponse>({
-    url: "/subscriptions",
-    method: "GET",
-    headers: {
-      "X-User-Token": token,
-    },
-  });
-}
-
-export function deleteSubscription(subscriptionId: string, token: string) {
-  return request<{ status: "ok" }>({
-    url: `/subscriptions/${encodeURIComponent(subscriptionId)}`,
-    method: "DELETE",
-    headers: {
-      "X-User-Token": token,
-    },
-  });
-}
-
-export function listPendingNotifications(token: string) {
-  return request<NotificationPendingResponse>({
-    url: "/notifications/pending",
-    method: "GET",
-    headers: {
-      "X-User-Token": token,
-    },
   });
 }
 
