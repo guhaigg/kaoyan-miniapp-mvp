@@ -56,8 +56,13 @@ def create_subscription(payload: SubscriptionCreateRequest, request: Request, db
         db,
         request,
         "subscription.create",
-        user.id,
-        {"subscription_id": item.id, "type": item.subscription_type, "value": item.value},
+        None,
+        {
+            "subscription_id": item.id,
+            "type": item.subscription_type,
+            "value": item.value,
+            "portal_user_id": user.id,
+        },
     )
     return _to_subscription_item(item)
 
@@ -97,8 +102,8 @@ def delete_subscription(subscription_id: str, request: Request, db: Session = De
         db,
         request,
         "subscription.delete",
-        user.id,
-        {"subscription_id": subscription_id},
+        None,
+        {"subscription_id": subscription_id, "portal_user_id": user.id},
     )
     return {"status": "ok"}
 
