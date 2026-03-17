@@ -17,6 +17,7 @@ RCLONE_REMOTE="${RCLONE_REMOTE:-}"
 REMOTE_BACKUP_TARGET="${REMOTE_BACKUP_TARGET:-}"
 REMOTE_SSH_PORT="${REMOTE_SSH_PORT:-22}"
 REMOTE_SSH_KEY="${REMOTE_SSH_KEY:-}"
+DB_DUMP_REQUIRED="${DB_DUMP_REQUIRED:-false}"
 
 if [[ "${MODE}" != "daily" && "${MODE}" != "predeploy" ]]; then
   echo "Usage: $0 [daily|predeploy]"
@@ -25,6 +26,12 @@ fi
 
 log() {
   printf '[%s] %s\n' "$(date '+%F %T')" "$*"
+}
+
+warn() {
+  local msg="$*"
+  printf '[%s] WARN: %s\n' "$(date '+%F %T')" "${msg}"
+  printf '[%s] WARN: %s\n' "$(date '+%F %T')" "${msg}" >> "${run_dir}/WARNINGS.log"
 }
 
 upload_to_ssh_target() {
@@ -214,20 +221,28 @@ if [[ "${MODE}" == "daily" ]]; then
       db_name="${db_fields[4]}"
 
       log "dumping mysql db=${db_name} host=${db_host}:${db_port}"
-      MYSQL_PWD="${db_pass}" mysqldump \
+      if MYSQL_PWD="${db_pass}" mysqldump \
         --single-transaction \
         --quick \
         --default-character-set=utf8mb4 \
         -h "${db_host}" \
         -P "${db_port}" \
         -u "${db_user}" \
-        "${db_name}" > "${run_dir}/mysql.sql"
-      gzip -f "${run_dir}/mysql.sql"
+        "${db_name}" > "${run_dir}/mysql.sql"; then
+        gzip -f "${run_dir}/mysql.sql"
+      else
+        rm -f "${run_dir}/mysql.sql"
+        warn "mysqldump failed for ${db_name}"
+        if [[ "${DB_DUMP_REQUIRED}" == "true" ]]; then
+          log "DB_DUMP_REQUIRED=true, aborting backup"
+          exit 1
+        fi
+      fi
     else
-      log "DATABASE_URL is not a supported mysql url, skip db dump"
+      warn "DATABASE_URL is not a supported mysql url, skip db dump"
     fi
   else
-    log "DATABASE_URL not found in ${ENV_FILE}, skip db dump"
+    warn "DATABASE_URL not found in ${ENV_FILE}, skip db dump"
   fi
 fi
 

@@ -169,6 +169,8 @@ Backup assets:
 - Nginx config (`/etc/nginx`)
 - Systemd units (`kaoyan-backend.service`, `gewujl-backup.*`)
 - MySQL dump (auto-read from `DATABASE_URL` in backend `.env`, if MySQL URL)
+  - If dump fails and `DB_DUMP_REQUIRED=false`, backup continues with warning.
+  - If dump is mandatory, set `DB_DUMP_REQUIRED=true`.
 
 Files:
 
