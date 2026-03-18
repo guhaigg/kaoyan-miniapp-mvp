@@ -13,6 +13,7 @@ import {
   type SiteSectionListResponse,
   type SiteSectionSelectorPreviewResponse,
   type SiteSectionSelectorConfig,
+  type SchoolBulkImportResponse,
   adminCreateUserPaymentOrder,
   adminMarkPaymentOrderPaid,
   adminPaymentOrders,
@@ -119,3 +120,6 @@ export const fetchContentFiles = (params?: {
 
 export const retryContentFileParse = (contentFileId: string) =>
   api.post<ContentFileRetryParseResponse>(`/site-sections/content-files/${encodeURIComponent(contentFileId)}/retry-parse`).then((response) => response.data);
+
+export const importAdjustmentPriorityTargets = () =>
+  api.post<SchoolBulkImportResponse>("/schools/import/adjustment-priority-targets").then((response) => response.data);

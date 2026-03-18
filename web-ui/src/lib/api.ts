@@ -307,6 +307,14 @@ export type AdjustmentSearchRequest = SearchBaseRequest & {
   region?: string;
 };
 
+export type SchoolBulkImportResponse = {
+  total_rows: number;
+  created_schools: number;
+  existing_schools: number;
+  created_departments: number;
+  existing_departments: number;
+};
+
 export type AdminMeResponse = {
   username: string;
   authenticated: boolean;

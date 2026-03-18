@@ -22,6 +22,7 @@ import {
   useAdminContentFilesQuery,
   useAdminDemoteMutation,
   useAdminHealthQuery,
+  useAdminImportAdjustmentPriorityTargetsMutation,
   useAdminMarkPaymentOrderPaidMutation,
   useAdminMeQuery,
   useAdminPaymentOrdersQuery,
@@ -64,6 +65,7 @@ export default function AdminPage() {
   const [resettingPasswordUserId, setResettingPasswordUserId] = useState<string | null>(null);
   const [creatingPaymentOrderUserId, setCreatingPaymentOrderUserId] = useState<string | null>(null);
   const [markingPaymentOrderId, setMarkingPaymentOrderId] = useState<string | null>(null);
+  const [importingAdjustmentTargets, setImportingAdjustmentTargets] = useState(false);
   const [resolvingAdminRole, setResolvingAdminRole] = useState(false);
   const [selectorView, setSelectorView] = useState<"all" | "attention" | "preview-warning">("all");
   const roleRefreshAttemptedTokenRef = useRef<string | null>(null);
@@ -93,6 +95,7 @@ export default function AdminPage() {
   const demoteMutation = useAdminDemoteMutation();
   const resetPasswordMutation = useAdminResetPasswordMutation();
   const createPaymentOrderMutation = useAdminCreatePaymentOrderMutation();
+  const importAdjustmentTargetsMutation = useAdminImportAdjustmentPriorityTargetsMutation();
   const markPaymentOrderPaidMutation = useAdminMarkPaymentOrderPaidMutation();
   const updateSiteSectionMutation = useAdminSiteSectionUpdateMutation();
   const backfillSiteSectionMutation = useAdminSiteSectionBackfillMutation();
@@ -416,6 +419,25 @@ export default function AdminPage() {
       }
     } finally {
       setRetryingContentFileId(null);
+    }
+  }
+
+  async function handleImportAdjustmentPriorityTargets() {
+    setImportingAdjustmentTargets(true);
+    setMessage("");
+    try {
+      const response = await importAdjustmentTargetsMutation.mutateAsync();
+      setMessage(
+        `调剂统计 seed 已导入：学校新增 ${response.created_schools}，学校已存在 ${response.existing_schools}，院系新增 ${response.created_departments}。`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`导入调剂 seed 失败：${error.message}`);
+      } else {
+        setMessage("导入调剂 seed 失败，请稍后重试");
+      }
+    } finally {
+      setImportingAdjustmentTargets(false);
     }
   }
 
@@ -902,6 +924,23 @@ export default function AdminPage() {
                 先点“恢复推荐规则”，再点“测试提取”，确认命中后再保存。只有预览结果干净，Discovery 和 NLP 才会稳定。
               </p>
             </div>
+          </div>
+
+          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-emerald-100">调剂统计重点学校 seed</div>
+              <p className="mt-1 text-xs leading-6 text-emerald-50/80">
+                基于 23-25 调剂统计表生成的重点学校/学院清单导入到 `schools / departments`，后续可以直接围绕这些学校补 `site_sections`。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleImportAdjustmentPriorityTargets}
+              disabled={importingAdjustmentTargets}
+              className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-50 transition-colors hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {importingAdjustmentTargets ? "导入中..." : "导入调剂重点学校"}
+            </button>
           </div>
 
           <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3">

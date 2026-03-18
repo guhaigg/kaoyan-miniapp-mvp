@@ -12,6 +12,7 @@ import {
   fetchAdminPaymentOrders,
   fetchAdminUsers,
   fetchHealthStatus,
+  importAdjustmentPriorityTargets,
   fetchSiteSections,
   markAdminPaymentOrderPaid,
   previewSiteSectionSelectors,
@@ -223,6 +224,16 @@ export function useAdminCreatePaymentOrderMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.paymentOrders });
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.users });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
+    },
+  });
+}
+
+export function useAdminImportAdjustmentPriorityTargetsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: importAdjustmentPriorityTargets,
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
     },
   });
