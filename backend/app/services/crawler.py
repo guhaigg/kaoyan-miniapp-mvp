@@ -111,6 +111,27 @@ def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
 
+def _scope_meta_from_query(db: Session, query: dict[str, Any]) -> dict[str, str]:
+    meta: dict[str, str] = {}
+    school_id = str(query.get("school_id") or "").strip()
+    department_id = str(query.get("department_id") or "").strip()
+    site_section_id = str(query.get("site_section_id") or "").strip()
+
+    if school_id:
+        meta["school_id"] = school_id
+    if department_id:
+        meta["department_id"] = department_id
+    if site_section_id:
+        meta["site_section_id"] = site_section_id
+        section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+        if section is not None:
+            if section.school_id and "school_id" not in meta:
+                meta["school_id"] = section.school_id
+            if section.department_id and "department_id" not in meta:
+                meta["department_id"] = section.department_id
+    return meta
+
+
 class CrawlEngine:
     def process_job_batch(self) -> int:
         settings = get_settings()
@@ -317,6 +338,7 @@ class CrawlEngine:
         extra = dict(query.get("extra") or {})
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "url_fetch"
+        extra.update(_scope_meta_from_query(db, query))
 
         payload = ContentIn(
             category=job.category,
@@ -354,6 +376,7 @@ class CrawlEngine:
         extra = dict(content_data.get("extra") or {})
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "content_payload"
+        extra.update(_scope_meta_from_query(db, query))
 
         payload = ContentIn(
             category=category,
@@ -380,6 +403,7 @@ class CrawlEngine:
         extra = dict(query.get("extra") or {})
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "simulate"
+        extra.update(_scope_meta_from_query(db, query))
 
         payload = ContentIn(
             category=job.category,

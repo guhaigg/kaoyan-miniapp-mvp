@@ -29,6 +29,14 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `GET /api/v1/site-sections` (requires admin session or `X-Admin-Token`)
 - `POST /api/v1/site-sections/discover` (requires admin session or `X-Admin-Token`)
 - `GET /api/v1/site-sections/{id}/links` (requires admin session or `X-Admin-Token`)
+- `POST /api/v1/monitoring/targets` (Phase 1 contract: premium user/admin)
+- `GET /api/v1/monitoring/targets` (Phase 1 contract: premium user/admin, scoped to current user unless admin)
+- `PATCH /api/v1/monitoring/targets/{target_id}` (Phase 1 contract: premium user/admin)
+- `POST /api/v1/monitoring/targets/{target_id}/keywords` (Phase 1 contract: premium user/admin)
+- `GET /api/v1/monitoring/targets/{target_id}/keywords` (Phase 1 contract: premium user/admin)
+- `PATCH /api/v1/monitoring/keywords/{keyword_id}` (Phase 1 contract: premium user/admin)
+- `GET /api/v1/monitoring/hits` (Phase 1 contract: premium user/admin, current user scope)
+- `GET /api/v1/monitoring/admin/hits` (Phase 1 contract: admin only)
 - `GET /api/v1/health`
 
 ## 3) Database Naming Rules
@@ -50,6 +58,9 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `site_sections`: maintained section/list-page assets.
 - `site_section_links`: discovered detail/pdf links from section pages.
 - `content_files`: lightweight file records (currently PDF placeholder).
+- `portal_user_monitor_targets`: user-owned monitoring scopes (school/department/section), interval and status.
+- `portal_user_monitor_keywords`: per-target custom keywords.
+- `portal_user_monitor_hits`: user-target-content match records used by in-app/Bark delivery.
 - `users`: shadow accounts (`state=shadow`).
 - `user_events`: security and audit trail.
 
@@ -115,3 +126,28 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - `list_selector_config` is stored but not yet interpreted as strict CSS/XPath extraction rules.
   - No OCR/PDF text extraction yet; `content_files` only keeps file metadata placeholder.
   - Cross-section dedup (same URL across different sections) is not yet globally merged.
+
+## 9) Premium Monitoring Phase 1 Baseline (Implemented + Known Gaps)
+
+- Matching principle:
+  - System crawls section/list/detail once.
+  - User-level matching runs on shared `contents` results.
+  - Do not duplicate crawling per user.
+- Access principle:
+  - Regular user: cannot create premium monitoring target.
+  - Premium user: can create/list/update own targets and keywords.
+  - Admin (`PortalUser + AdminAccount`): full premium capability + backend hit view.
+- Observability principle:
+  - Keep hit records and notification delivery records queryable.
+  - Keep crawler failure traces in `crawl_errors`.
+- Current status note (2026-03-18):
+  - `/api/v1/monitoring/*` routes are mounted in `app.main`.
+  - `POST /api/v1/content` triggers monitor matching and writes `portal_user_monitor_hits` + `notification_outbox(event_type=monitor.hit)`.
+  - Coverage baseline is provided by `backend/tests/test_premium_monitoring_authz.py` and `backend/tests/test_premium_monitoring_targets.py`.
+- Known gaps:
+  - Admin API does not yet expose a dedicated field for toggling `premium_monitoring_enabled`; current tests toggle it through DB setup.
+- Intentional Phase 1 limits:
+  - No OCR.
+  - No full PDF text extraction.
+  - No complex NLP/ranking model.
+  - No per-user dedicated crawler workers.

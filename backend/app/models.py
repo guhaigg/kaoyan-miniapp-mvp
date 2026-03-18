@@ -224,12 +224,22 @@ class PortalUser(Base):
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
     notify_bark_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notify_bark_enabled: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    premium_monitoring_enabled: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     admin_account: Mapped["AdminAccount | None"] = relationship(back_populates="user", uselist=False)
     sessions: Mapped[list["PortalUserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     subscriptions: Mapped[list["PortalUserSubscription"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    monitor_targets: Mapped[list["PortalUserMonitorTarget"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    monitor_keywords: Mapped[list["PortalUserMonitorKeyword"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    monitor_hits: Mapped[list["PortalUserMonitorHit"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -281,6 +291,98 @@ class PortalUserSubscription(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     user: Mapped["PortalUser"] = relationship(back_populates="subscriptions")
+
+
+class PortalUserMonitorTarget(Base):
+    __tablename__ = "portal_user_monitor_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "scope_type",
+            "school_id",
+            "department_id",
+            "site_section_id",
+            name="uq_monitor_targets_user_scope_school_department_section",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)  # school|department|section
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    department_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), nullable=True, index=True)
+    site_section_id: Mapped[str | None] = mapped_column(ForeignKey("site_sections.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)  # active|paused|deleted
+    check_interval_minutes: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_hit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    user: Mapped["PortalUser"] = relationship(back_populates="monitor_targets")
+    school: Mapped["School | None"] = relationship()
+    department: Mapped["Department | None"] = relationship()
+    site_section: Mapped["SiteSection | None"] = relationship()
+    keywords: Mapped[list["PortalUserMonitorKeyword"]] = relationship(
+        back_populates="monitor_target", cascade="all, delete-orphan"
+    )
+    hits: Mapped[list["PortalUserMonitorHit"]] = relationship(
+        back_populates="monitor_target", cascade="all, delete-orphan"
+    )
+
+
+class PortalUserMonitorKeyword(Base):
+    __tablename__ = "portal_user_monitor_keywords"
+    __table_args__ = (
+        UniqueConstraint(
+            "monitor_target_id",
+            "keyword",
+            "match_mode",
+            name="uq_monitor_keywords_target_keyword_mode",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    monitor_target_id: Mapped[str] = mapped_column(ForeignKey("portal_user_monitor_targets.id"), nullable=False, index=True)
+    keyword: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    match_mode: Mapped[str] = mapped_column(String(32), default="contains", nullable=False, index=True)
+    weight: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    user: Mapped["PortalUser"] = relationship(back_populates="monitor_keywords")
+    monitor_target: Mapped["PortalUserMonitorTarget"] = relationship(back_populates="keywords")
+
+
+class PortalUserMonitorHit(Base):
+    __tablename__ = "portal_user_monitor_hits"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "monitor_target_id",
+            "content_id",
+            name="uq_monitor_hits_user_target_content",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    monitor_target_id: Mapped[str] = mapped_column(ForeignKey("portal_user_monitor_targets.id"), nullable=False, index=True)
+    content_id: Mapped[str] = mapped_column(ForeignKey("contents.id"), nullable=False, index=True)
+    site_section_id: Mapped[str | None] = mapped_column(ForeignKey("site_sections.id"), nullable=True, index=True)
+    matched_keywords: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    match_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    hit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pushed_inapp: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    pushed_bark: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+    user: Mapped["PortalUser"] = relationship(back_populates="monitor_hits")
+    monitor_target: Mapped["PortalUserMonitorTarget"] = relationship(back_populates="hits")
+    content: Mapped["Content"] = relationship()
+    site_section: Mapped["SiteSection | None"] = relationship()
 
 
 class NotificationOutbox(Base):

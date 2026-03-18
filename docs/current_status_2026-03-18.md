@@ -190,6 +190,16 @@
   - discovery 失败写 `crawl_errors`
   - `site_sections` 回写 `last_discovery_status / last_error`
 
+### 2.11 高级监控 Phase 1（当前分支收口状态）
+
+截至 2026-03-18，本分支高级监控 Phase 1 已具备最小可运行主链路：
+
+- 数据层：`portal_user_monitor_targets / portal_user_monitor_keywords / portal_user_monitor_hits` 已在模型中落地。
+- 接口层：`/api/v1/monitoring/*` 目标配置、关键词配置、命中查询、管理员命中查询接口已挂载。
+- 权限层：普通用户无权限；`premium_monitoring_enabled=1` 的 PortalUser 与管理员可访问高级监控接口。
+- 联动层：内容写入时会触发监控命中计算，并写入命中记录与 `notification_outbox(event_type=monitor.hit)`。
+- 测试与文档：已补充 `backend/tests/test_premium_monitoring_authz.py` 与 `backend/tests/test_premium_monitoring_targets.py`，并同步 backend/crawler 与需求文档。
+
 ## 3. 当前未完成 / 未收尾
 
 ### 3.1 微信小程序主流程尚未完成正式验收
@@ -265,6 +275,13 @@
 
 - checklist 文档已补
 - 还缺一次团队按文档实跑验证
+
+### 3.6 高级监控 Phase 1 仍待收尾项
+
+当前仍未闭环的关键点：
+
+- 管理员接口还没有“显式开通/关闭 premium 资格”的字段，当前主要通过数据层设置 `premium_monitoring_enabled`。
+- 命中策略目前仅 `contains`，尚未进入更复杂规则（regex/评分分层/高级排序）。
 
 ## 4. 当前技术状态判断
 

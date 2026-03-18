@@ -6,7 +6,7 @@ from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import PortalUser, User, UserEvent
+from .models import AdminAccount, PortalUser, User, UserEvent
 from .security import parse_visitor_token
 
 _in_memory_rate_limit: dict[str, tuple[int, int]] = defaultdict(lambda: (0, 0))
@@ -62,6 +62,41 @@ def get_portal_user_optional(request: Request, db: Session) -> PortalUser | None
     if user is None or user.status != "active":
         return None
     return user
+
+
+def require_portal_user(request: Request, db: Session) -> PortalUser:
+    user = get_portal_user_optional(request, db)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user login required")
+    return user
+
+
+def is_portal_admin(db: Session, portal_user_id: str) -> bool:
+    count = (
+        db.query(AdminAccount.id)
+        .filter(
+            AdminAccount.user_id == portal_user_id,
+            AdminAccount.status == "active",
+        )
+        .count()
+    )
+    return count > 0
+
+
+def has_premium_monitoring_access(db: Session, user: PortalUser) -> bool:
+    if is_portal_admin(db, user.id):
+        return True
+    return bool(user.premium_monitoring_enabled)
+
+
+def require_premium_or_admin(request: Request, db: Session) -> PortalUser:
+    user = require_portal_user(request, db)
+    if has_premium_monitoring_access(db, user):
+        return user
+    # Backward-compatible path: allow access when request carries valid admin auth.
+    if is_admin_request(request):
+        return user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="premium monitoring required")
 
 
 def enforce_rate_limit(request: Request, identity: str) -> None:

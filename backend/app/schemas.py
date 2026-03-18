@@ -294,6 +294,105 @@ class SiteSectionLinkListResponse(BaseModel):
     items: list[SiteSectionLinkItem]
 
 
+class MonitorTargetCreateRequest(BaseModel):
+    scope_type: Literal["school", "department", "section"]
+    school_id: str | None = None
+    school_name: str | None = Field(default=None, max_length=255)
+    department_id: str | None = None
+    department_name: str | None = Field(default=None, max_length=255)
+    site_section_id: str | None = None
+    status: Literal["active", "paused", "deleted"] | None = None
+    check_interval_minutes: int = Field(default=60, ge=5, le=10080)
+
+
+class MonitorTargetUpdateRequest(BaseModel):
+    scope_type: Literal["school", "department", "section"] | None = None
+    school_id: str | None = None
+    school_name: str | None = Field(default=None, max_length=255)
+    department_id: str | None = None
+    department_name: str | None = Field(default=None, max_length=255)
+    site_section_id: str | None = None
+    status: Literal["active", "paused", "deleted"] | None = None
+    check_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
+
+
+class MonitorTargetItem(BaseModel):
+    id: str
+    user_id: str
+    scope_type: str
+    school_id: str | None
+    department_id: str | None
+    site_section_id: str | None
+    status: str
+    check_interval_minutes: int
+    last_checked_at: datetime | None
+    last_hit_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MonitorTargetListResponse(BaseModel):
+    total: int
+    items: list[MonitorTargetItem]
+
+
+class MonitorKeywordCreateRequest(BaseModel):
+    keyword: str = Field(min_length=1, max_length=255)
+    match_mode: Literal["contains"] = "contains"
+    weight: int = Field(default=1, ge=1, le=100)
+
+
+class MonitorKeywordBatchCreateRequest(BaseModel):
+    keywords: list[str] = Field(default_factory=list)
+    match_mode: Literal["contains"] = "contains"
+    weight: int = Field(default=1, ge=1, le=100)
+
+
+class MonitorKeywordUpdateRequest(BaseModel):
+    status: Literal["active", "disabled"] | None = None
+    weight: int | None = Field(default=None, ge=1, le=100)
+
+
+class MonitorKeywordItem(BaseModel):
+    id: str
+    user_id: str
+    monitor_target_id: str
+    keyword: str
+    match_mode: str
+    weight: int
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MonitorKeywordListResponse(BaseModel):
+    total: int
+    items: list[MonitorKeywordItem]
+
+
+class MonitorHitItem(BaseModel):
+    id: str
+    user_id: str
+    monitor_target_id: str
+    content_id: str
+    site_section_id: str | None
+    matched_keywords: list[str]
+    match_score: int
+    hit_reason: str | None
+    pushed_inapp: bool
+    pushed_bark: bool
+    created_at: datetime
+    content_title: str | None = None
+    content_category: str | None = None
+
+
+class MonitorHitListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[MonitorHitItem]
+
+
 class SearchBaseRequest(BaseModel):
     school_name: str | None = None
     keywords: str | None = None

@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import init_db
-from .routers import admin, auth, content, crawl, health, notifications, schools, search, site_sections, subscriptions
+from .routers import admin, auth, content, crawl, health, monitoring, notifications, schools, search, site_sections, subscriptions
 from .routers import console
 from .services.crawler import crawl_engine
 from .services.notifications import notification_engine
@@ -100,6 +100,7 @@ app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(content.router, prefix=settings.api_prefix)
 app.include_router(crawl.router, prefix=settings.api_prefix)
 app.include_router(site_sections.router, prefix=settings.api_prefix)
+app.include_router(monitoring.router, prefix=settings.api_prefix)
 app.include_router(subscriptions.router, prefix=settings.api_prefix)
 app.include_router(notifications.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)

@@ -36,6 +36,9 @@ Production currently uses:
 ## Working Rules
 
 - Default to Simplified Chinese for user-facing communication, status updates, summaries, and step-by-step progress reports unless the user explicitly asks for another language.
+- Multiple subagents may be used for larger tasks, but the main thread must always own final integration, final edits, validation, commit, deploy, and the user-facing summary.
+- Do not let multiple subagents modify the same files at the same time.
+- When using subagents, define clear ownership boundaries first, then report progress step by step from the main thread.
 - Do not redesign the frontend without explicit approval.
 - For UI changes, preserve the current visual language and interaction patterns unless the user asks for a redesign.
 - For larger frontend changes, prefer targeted edits over broad refactors.

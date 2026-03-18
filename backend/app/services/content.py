@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Content, ContentSnapshot, NotificationOutbox, School, utcnow
 from ..schemas import ContentIn
+from .premium_monitoring import evaluate_content_for_premium_monitoring
 
 
 def _resolve_school(db: Session, school_name: str | None) -> School | None:
@@ -39,7 +40,10 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     content.published_at = payload.published_at
     content.region = payload.region
     content.major = payload.major
-    content.extra = payload.extra or {}
+    incoming_extra = dict(payload.extra or {})
+    existing_extra = dict(existing.extra or {}) if existing and existing.extra else {}
+    existing_extra.update(incoming_extra)
+    content.extra = existing_extra
 
     if existing is None:
         db.add(content)
@@ -48,6 +52,8 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     if payload.raw_html:
         snapshot = ContentSnapshot(content_id=content.id, raw_html=payload.raw_html, raw_text=payload.body, snapshot_meta={})
         db.add(snapshot)
+
+    evaluate_content_for_premium_monitoring(db, content, trigger_status=status)
 
     outbox = NotificationOutbox(
         content_id=content.id,

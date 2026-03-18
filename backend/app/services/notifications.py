@@ -185,9 +185,8 @@ class NotificationEngine:
                 if outbox is None:
                     continue
                 try:
-                    self._matcher.refresh_if_needed(db)
                     payload = dict(outbox.payload or {})
-                    user_ids = self._matcher.match_user_ids(payload)
+                    user_ids = self._resolve_outbox_user_ids(db, outbox=outbox, payload=payload)
                     self._enqueue_deliveries(db, outbox_id=outbox.id, payload=payload, user_ids=user_ids)
 
                     outbox.status = "done"
@@ -200,6 +199,14 @@ class NotificationEngine:
                     db.rollback()
                     self._handle_outbox_error(outbox_id, str(exc))
         return processed
+
+    def _resolve_outbox_user_ids(self, db: Session, *, outbox: NotificationOutbox, payload: dict[str, Any]) -> set[str]:
+        if (outbox.event_type or "").strip().lower() == "monitor.hit":
+            user_id = str(payload.get("user_id") or "").strip()
+            return {user_id} if user_id else set()
+
+        self._matcher.refresh_if_needed(db)
+        return self._matcher.match_user_ids(payload)
 
     def process_delivery_batch(self) -> int:
         settings = get_settings()
