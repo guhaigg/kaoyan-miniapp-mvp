@@ -13,7 +13,7 @@
 - 当前仍是主账号表。
 - 承载业务身份、监控配置、订阅和通知配置。
 - 当前保留 `username/password_hash` 作为网站账号基础字段。
-- `premium_*` 旧字段已经退出运行时并已进入物理清理阶段。
+- `premium_*` 旧字段已经退出运行时，并已从生产库物理删除。
 
 ### `account_identities`
 
@@ -118,4 +118,4 @@
 - 支持 `unionid` 做跨 app 账号归并。
 - 首次微信登录直接创建主账号，而不是只保留 shadow。
 - 接第三方支付网关到 `account_payment_orders -> account_entitlements` 链路。
-- 管理员二次登录最终只保留角色账号 + root 救援入口。
+- 最终评估并清理 `users` 微信影子表。

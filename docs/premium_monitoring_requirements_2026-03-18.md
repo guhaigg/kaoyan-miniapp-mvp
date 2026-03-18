@@ -66,15 +66,15 @@ Planned（Phase 1 目标但在部分分支仍待接线）：
 - 高级监控功能的核心拥有者应为 `PortalUser`
 - 所有监控目标、关键词规则、推送偏好，都挂在 `PortalUser` 维度
 
-### 2.3 `AdminAccount`
+### 2.3 `account_roles(admin)`
 
 当前含义：
 
-- `PortalUser` 的 1:1 管理员扩展表
+- `portal_users` 的管理员角色授权
 
 建议：
 
-- `AdminAccount` 用户自动拥有全部高级监控权限
+- `account_roles(role_code=admin)` 用户自动拥有全部高级监控权限
 - 管理员不受普通用户配额限制
 - 管理员可查看后台监控数据、任务状态、监控命中结果和运行健康状态
 
@@ -382,7 +382,7 @@ Planned（Phase 1 目标但在部分分支仍待接线）：
 - 不要把学校/学院写死在代码里
 - 不要把“用户监控目标”和“站点资产”混成一张表
 - 不要为每个用户重复抓相同网站
-- 不要把管理员特权做成单独平行体系，优先复用 `PortalUser + AdminAccount`
+- 不要把管理员特权做成单独平行体系，优先复用 `portal_users + account_roles`
 - 不要跳过 docs、测试、部署验证
 
 ## 10. 一句话定义

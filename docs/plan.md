@@ -1,69 +1,263 @@
-# 格物简录 Development Plan
+# 格物简录主路线图
 
-This document is the execution plan for the current MVP repository.
-It converts the existing specs into concrete, trackable work.
+最近更新：`2026-03-19`
 
-## Current Baseline (2026-03-15)
+本文档是当前主路线图，回答 4 个问题：
 
-- Frontend miniapp pages are present: `home`, `announcements`, `adjustments`, `detail`, `status`.
-- Backend FastAPI routers are present and wired under `/api/v1`.
-- CI workflow exists for backend tests (`pytest -q`).
-- Deployment and workflow docs exist, but no explicit plan file existed before this document.
+1. 现在已经做了什么
+2. 当前主要缺口是什么
+3. 最近阶段目标是什么
+4. 未来产品终态是什么
 
-## Phase 0: Configuration Hardening
+与其他文档的边界：
 
-Goal: make local/dev/prod configuration explicit and safe.
+- `docs/plan.md`：主路线图，负责阶段目标和执行顺序
+- `docs/current_status_2026-03-18.md`：当前现状快照，负责记录事实状态
+- `docs/README.md`：文档索引，不重复写实现细节
 
-- [x] Replace miniapp hardcoded API base URL with environment-aware config.
-- [x] Replace `touristappid` with real WeChat appid in non-local environments.
-- [x] Define and document `USE_MOCK_WECHAT` policy per environment.
-- [x] Restrict CORS for non-dev environments.
-- [x] Standardize app naming across backend env defaults and docs (格物简录 / 格物简).
+## 1. 项目当前定位
 
-Done when:
-- Miniapp can switch API base URL without code edits.
-- Backend starts with `.env` and no placeholder secrets in runtime config.
+当前项目不是从 0 到 1 的草稿状态，而是已经具备可运行底座的 Web 产品雏形。
 
-## Phase 1: Product Loop Completion (MVP)
+已经具备的基础：
 
-Goal: guarantee end-to-end user flow from open app to viewing content.
+- Web 端公开站点、账号中心、管理后台
+- 主账号体系、角色体系、权益体系、订单账本
+- 公告查询、调剂查询、收藏与会员门槛
+- 栏目发现、详情抓取、PDF 文本提取、链接型公告处理
+- 站内通知、Bark 通道、SSE 实时推送
+- 生产部署、系统服务托管、回滚与备份文档
 
-- [ ] Validate silent login fallback path (wx.login success/failure both usable).
-- [ ] Confirm announcements and adjustments search filters work as expected.
-- [ ] Ensure detail page schema handles missing fields safely.
-- [ ] Normalize user-facing error messages on status page.
+当前主目标不是“同时把网站、小程序、支付、OCR、全自动发现一次性做完”，而是：
 
-Done when:
-- A user can complete search -> list -> detail flow without blockers.
-- Failure paths route to status page with stable, readable messages.
+- 先把 `Web 正式可运营` 做扎实
+- 再推进小程序正式化和多端统一
 
-## Phase 2: Data Pipeline and Operations
+## 2. 已实现能力
 
-Goal: stabilize data ingestion and admin operation lifecycle.
+### 2.1 Web 产品面
 
-- [ ] Implement or wire crawler refresh job flow against `crawl_jobs`.
-- [ ] Validate dedup strategy based on `source_url`.
-- [ ] Keep raw snapshots and parse-error records for post-mortem.
-- [ ] Verify manual entry and offline flow from admin endpoint.
+网站已形成稳定页面结构：
 
-Done when:
-- New content can be ingested and queried in a repeatable way.
-- Parse failures are observable without breaking ingestion.
+- 首页：品牌与入口页
+- 登录 / 注册
+- 查询导航页
+- 公告 / 调剂检索页
+- 账号中心
+- 安全设置
+- 会员与支付页
+- 通知中心
+- 管理后台
 
-## Phase 3: Quality Gate and Release Readiness
+当前 Web 已实现：
 
-Goal: make daily iteration and release low-risk.
+- 登录、注册、退出、会话恢复
+- 用户中心从弹窗拆出，改为应用式页面
+- 管理后台改为固定 dashboard/settings 框架
+- 未登录用户只能查看公告前 2 条预览
+- 调剂、收藏、深度功能受登录和会员门槛控制
 
-- [ ] Ensure local backend test command works in project bootstrap docs.
-- [ ] Add miniapp smoke checklist for page routes and API interactions.
-- [ ] Add release checklist for env, migration, backup, rollback validation.
+### 2.2 账号与会员体系
 
-Done when:
-- Team can run a reproducible pre-release checklist in under 20 minutes.
-- Rollback path is documented and tested.
+主路径已经切到：
 
-## Immediate Next Sprint (Suggested)
+- `portal_users`
+- `account_identities`
+- `account_roles`
+- `account_entitlements`
+- `account_payment_orders`
 
-1. Finish Phase 0 configuration hardening.
-2. Run one full miniapp + backend link test pass.
-3. Lock a v0.1.0 MVP release checklist.
+当前已经实现：
+
+- 网站密码登录主路径
+- 管理员角色与会员权益独立于主账号
+- 网站侧订单创建、订单查看、管理员确认发放权益
+- 管理员后台直接复用门户管理员登录态
+
+### 2.3 内容生产与查询
+
+当前已经实现：
+
+- `crawl_jobs` 驱动的抓取任务流
+- `site_sections` / `site_section_links` 站点资产层
+- selector 配置、推荐规则、预览和回填
+- 详情页正文双通道提取：selector + readability
+- 文字型 PDF 提取
+- 扫描型 PDF 标记 `needs_ocr`
+- 链接型公告补充说明与目标链接保留
+- `content_fingerprint` 去重
+- 搜索前两页 TTL 缓存
+- `jieba` 标签提取与领域词增强
+
+### 2.4 通知与运维
+
+当前已经实现：
+
+- `notification_outbox` + `notification_deliveries`
+- SSE 站内实时通知
+- Bark 外部通道
+- 生产服务器路径与部署方式收口
+- systemd/SSE 关闭与重启稳定性优化
+- 服务器仓库已对齐到 `origin/main`
+
+## 3. 当前缺憾
+
+以下缺口按“阻碍 Web 正式运营”的优先级排序：
+
+### 3.1 数据质量仍依赖人工治理
+
+- 公告查询主链路已经可用，但质量仍受栏目资产质量影响
+- 部分学校栏目 selector 仍未调准，结果中仍可能混入弱相关内容
+- Discovery 的“候选栏目自动发现”还没有形成稳定运营流
+
+### 3.2 调剂查询成熟度低于公告查询
+
+- 目前更多是基于 `adjustment` 内容和全文规则筛选
+- 还没有形成强结构化的调剂数据库
+- 专业代码、学习方式、调剂名额等结构化能力不足
+
+### 3.3 支付闭环仍是内部账本模式
+
+- 当前可创建会员订单、后台确认支付、发放权益
+- 但还没有接真实支付回调
+- 订单状态文案和用户路径仍偏“内部工具化”
+
+### 3.4 小程序仍处于过渡状态
+
+- 服务端接口与绑定链路已保留
+- 但小程序还不是当前正式交付主线
+- `unionid`、正式绑定/解绑、正式发布验收仍未完成
+
+### 3.5 Redis 仍未启用
+
+- 当前主链路可降级运行
+- 但 Redis 长期 `down` 不适合继续无限拖延
+- 后续限流、共享缓存、更多异步能力都会受影响
+
+### 3.6 文档虽然已收口一轮，但仍需持续约束
+
+- 现有文档已经按主文档 / 条件文档 / 历史文档分层
+- 但后续如果继续新增 dated 文档，仍可能再次失控
+- 必须坚持“README 做索引，plan 做路线图，current_status 做现状”
+
+## 4. 当前阶段目标：Web 正式可运营
+
+当前阶段的验收目标不是功能数量，而是运营可用性。
+
+达到该阶段时，应满足：
+
+- 网站用户能稳定完成：
+  - 注册
+  - 登录
+  - 公告检索
+  - 收藏院校
+  - 开通高级会员
+  - 接收站内/外部通知
+- 管理员能稳定完成：
+  - 用户管理
+  - 会员发放
+  - 栏目治理
+  - 解析任务观测
+  - 基础健康排障
+- 公告查询质量达到“可以面向真实用户使用”
+- 支付从“内部订单 + 手工确认”升级到“真实支付确认”
+- 发布、回滚、服务器目录和服务重启流程稳定，不依赖临时记忆
+
+## 5. 执行阶段
+
+### Stage A：数据质量与搜索质量
+
+目标：把“能查”提升到“查出来的内容可用”。
+
+核心工作：
+
+- 持续治理重点学校 `site_sections` 和 selector
+- 增强 selector 预览、错误提示和推荐规则
+- 优化调剂分类规则与标签噪音清洗
+- 补齐重点学校/学院站点资产
+- 持续压缩公告库中的弱相关噪音内容
+
+完成标志：
+
+- 重点学校公告结果基本不再混入明显无关内容
+- 调剂查询的命中质量显著高于当前全文筛选水平
+
+### Stage B：会员与支付闭环
+
+目标：把“内部账本”提升到“可真实收费”。
+
+核心工作：
+
+- 订单状态与会员文案产品化
+- 接入真实支付回调
+- 支持支付成功后自动发放权益
+- 支持权益续期、到期和账本留痕
+- 清理当前偏测试态的支付路径
+
+完成标志：
+
+- 用户可独立完成购买并自动获得会员权益
+- 管理员不再需要手工确认每一笔正常支付
+
+### Stage C：运营后台收口
+
+目标：让后台从“能用”变成“可日常运营”。
+
+核心工作：
+
+- 统一用户管理、角色、权益和订单视图
+- 强化栏目治理、selector 预览、解析文件管理
+- 强化审计日志、健康面板、失败任务观测
+- 收口后台信息架构，减少页面内散乱块状工具
+- 完善后台的反馈文案与错误提示
+
+完成标志：
+
+- 管理员可稳定处理用户、会员、栏目、解析、排障四类工作
+
+### Stage D：小程序正式接入
+
+目标：在 Web 可运营之后，再把小程序纳入正式产品主线。
+
+这不是当前主目标，但必须保留接口位和后续路线。
+
+核心工作：
+
+- 小程序绑定 UI 收口
+- `unionid` 归并
+- 正式绑定 / 换绑 / 解绑路径
+- 小程序端到端验收与发布流程
+
+完成标志：
+
+- 网站与小程序共享同一主账号和权益体系
+
+## 6. 未来达到什么
+
+### 6.1 近期终态
+
+- Web 可稳定运营
+- 可收费
+- 可手工运营
+- 可稳定发布和回滚
+
+### 6.2 中期终态
+
+- 公告与调剂情报质量稳定
+- 会员权益、通知和后台运营形成日常闭环
+- 内容生产链路足够稳定，可持续扩学校范围
+
+### 6.3 远期终态
+
+- 网站与小程序共享同一主账号与权益
+- 形成真正的多端产品
+- 数据采集、支付、通知、运营后台都进入可规模化迭代状态
+
+## 7. 当前执行原则
+
+后续实现时，优先遵守以下原则：
+
+- 先 Web 可运营，再扩小程序正式化
+- 先收口主路径，再考虑补边缘能力
+- 文档只保留一个主路线图和一个主现状文档
+- 不为了“看起来完整”而同时开太多战线

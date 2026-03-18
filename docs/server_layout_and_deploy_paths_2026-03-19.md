@@ -16,7 +16,7 @@
 
 - 分支：`main`
 - 状态：工作区干净
-- HEAD：`17fdbe43725b1b522de62ee7ccf2454d661fcd46`
+- HEAD：应与 `origin/main` 保持一致
 
 ### 1.2 后端运行目录
 

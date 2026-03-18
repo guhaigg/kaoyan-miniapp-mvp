@@ -166,7 +166,8 @@ Recommended static-site Nginx behavior:
 
 - For the exported Next site, prefer `try_files $uri $uri/ =404;`
 - Do not use `try_files ... /index.html;` unless the exported frontend intentionally relies on SPA fallback routing
-- This prevents removed legacy paths such as `/about/`, `/query/`, or `/register/` from appearing to still exist
+- This prevents genuinely removed legacy paths such as historical `/about/` pages from appearing to still exist
+- Current live routes such as `/login/`, `/register/`, `/query/`, `/search/`, `/account/`, `/admin/` should continue to resolve from exported static files
 
 ## 7) Fully Automated Backups
 

@@ -17,18 +17,27 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 ## 2) API List (MVP)
 
 - `POST /api/v1/auth/silent-login`
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
 - `POST /api/v1/search/announcements`
 - `POST /api/v1/search/adjustments`
 - `GET /api/v1/schools/suggest`
 - `POST /api/v1/content` (requires `X-Admin-Token`)
 - `POST /api/v1/admin/manual-entry`
-- `POST /api/v1/crawl-jobs` (requires admin session or `X-Admin-Token`)
-- `GET /api/v1/crawl-jobs` (requires admin session or `X-Admin-Token`)
-- `GET /api/v1/crawl-jobs/{job_id}` (requires admin session or `X-Admin-Token`)
-- `POST /api/v1/site-sections` (requires admin session or `X-Admin-Token`)
-- `GET /api/v1/site-sections` (requires admin session or `X-Admin-Token`)
-- `POST /api/v1/site-sections/discover` (requires admin session or `X-Admin-Token`)
-- `GET /api/v1/site-sections/{id}/links` (requires admin session or `X-Admin-Token`)
+- `POST /api/v1/crawl-jobs` (requires portal admin token)
+- `GET /api/v1/crawl-jobs` (requires portal admin token)
+- `GET /api/v1/crawl-jobs/{job_id}` (requires portal admin token)
+- `POST /api/v1/site-sections` (requires portal admin token)
+- `GET /api/v1/site-sections` (requires portal admin token)
+- `PATCH /api/v1/site-sections/{id}` (requires portal admin token)
+- `POST /api/v1/site-sections/discover` (requires portal admin token)
+- `GET /api/v1/site-sections/{id}/links` (requires portal admin token)
+- `POST /api/v1/site-sections/{id}/preview-selectors` (requires portal admin token)
+- `GET /api/v1/site-sections/content-files` (requires portal admin token)
+- `POST /api/v1/site-sections/content-files/{content_file_id}/retry-parse` (requires portal admin token)
 - `POST /api/v1/monitoring/targets` (Phase 1 contract: premium user/admin)
 - `GET /api/v1/monitoring/targets` (Phase 1 contract: premium user/admin, scoped to current user unless admin)
 - `PATCH /api/v1/monitoring/targets/{target_id}` (Phase 1 contract: premium user/admin)
@@ -63,6 +72,10 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `portal_user_monitor_hits`: user-target-content match records used by in-app/Bark delivery.
 - `users`: shadow accounts (`state=shadow`).
 - `user_events`: security and audit trail.
+- `account_identities`: login identities (`password`, `wechat_miniapp`).
+- `account_roles`: role grants (`admin`).
+- `account_entitlements`: runtime entitlements (`premium_monitoring`).
+- `account_payment_orders`: billing ledger for premium orders.
 
 ## 5) Silent Shadow Account Rules
 
@@ -83,7 +96,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - Per source default max rate: <= 2 requests/sec per IP.
   - Per source concurrency: start with 2, tune after observing anti-bot behavior.
 - Data quality:
-  - Deduplicate by `source_url` unique key.
+  - Deduplicate by `content_fingerprint`, with `source_url` as a second guard.
   - Keep raw snapshot for post-mortem.
 
 ## 6.1) MVP Crawl Job Worker (Task Pack A Baseline)
@@ -121,6 +134,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - New PDF links are saved to `site_section_links`, recorded to `content_files`, and enqueued as `job_kind=file_parse`.
   - Detail page ingestion prefers `detail_selector_config`, falls back to `readability-lxml`, then finally to plain text extraction.
   - PDF file ingestion prefers direct text extraction from text-based PDF; if extracted text is too short, create a placeholder content row and mark the file as `needs_ocr`.
+  - Link-only notices generate explanatory placeholder content plus extracted outbound links, rather than exposing raw “click to view” filler text.
   - Extracted content is tagged with domain keywords via `jieba`, and tags are stored in `contents.extra.tags`.
 - Observability:
   - Section rows keep `last_discovered_at / last_discovery_status / last_error`.
@@ -138,7 +152,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Access principle:
   - Regular user: cannot create premium monitoring target.
   - Premium user: can create/list/update own targets and keywords.
-  - Admin (`PortalUser + AdminAccount`): full premium capability + backend hit view.
+  - Admin (`portal_users` + `account_roles`): full premium capability + backend hit view.
 - Observability principle:
   - Keep hit records and notification delivery records queryable.
   - Keep crawler failure traces in `crawl_errors`.
@@ -147,7 +161,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - `POST /api/v1/content` triggers monitor matching and writes `portal_user_monitor_hits` + `notification_outbox(event_type=monitor.hit)`.
   - Coverage baseline is provided by `backend/tests/test_premium_monitoring_authz.py` and `backend/tests/test_premium_monitoring_targets.py`.
 - Known gaps:
-  - Admin API does not yet expose a dedicated field for toggling `premium_monitoring_enabled`; current tests toggle it through DB setup.
+  - Monitoring query and hit ranking still rely on rules/tags, not richer structured extraction.
 - Intentional Phase 1 limits:
   - No OCR.
   - Text-based PDF extraction is supported, but scanned/image PDF still requires a later OCR stage.

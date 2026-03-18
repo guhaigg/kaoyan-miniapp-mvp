@@ -1,6 +1,12 @@
 # 格物简录当前进度（2026-03-18）
 
-本文档用于记录 2026-03-18 时点的实际开发状态，帮助后续继续开发、排障、部署与任务拆解。
+最近更新：`2026-03-19`
+
+本文档是当前现状主文档，用于记录真实开发状态，帮助后续继续开发、排障、部署与任务拆解。
+
+未来目标、阶段路线和执行顺序请看：
+
+- `docs/plan.md`
 
 ## 1. 当前总体判断
 
@@ -11,12 +17,13 @@
 - `账号体系已打通`
 - `实时通知底座已接通`
 - `香港服务器线上可运行`
+- `网站侧用户中心与管理后台框架已成型`
 
 但还没有到“可稳定运营的完整产品”阶段。当前最大未完成项不在视觉层，而在：
 
 - 数据采集与内容生产链路
 - 微信小程序端到端验收
-- 外部通知渠道
+- 第三方支付闭环
 - 发布质量门槛与回滚流程
 
 ## 2. 当前已完成
@@ -26,7 +33,14 @@
 当前 Web UI 已具备以下页面与主链路：
 
 - 官网首页：`web-ui/src/app/page.tsx`
+- 登录页：`web-ui/src/app/login/page.tsx`
+- 注册页：`web-ui/src/app/register/page.tsx`
+- 查询导航页：`web-ui/src/app/query/page.tsx`
 - 查询页：`web-ui/src/app/search/page.tsx`
+- 账号中心：`web-ui/src/app/account/page.tsx`
+- 账号安全：`web-ui/src/app/account/security/page.tsx`
+- 会员与支付：`web-ui/src/app/account/billing/page.tsx`
+- 通知中心：`web-ui/src/app/account/notifications/page.tsx`
 - 管理页：`web-ui/src/app/admin/page.tsx`
 
 已完成的关键能力：
@@ -35,8 +49,11 @@
 - 查询页已接真实后端接口
 - 管理页已接真实数据层
 - 登录/注册/退出/会话恢复已接通
+- 用户中心已从弹窗中拆出，改为独立应用式页面
+- 管理后台已改成稳定 dashboard/settings 框架，而不是临时表单堆叠
 - 关注抽屉、Toast、实时通知动画已落地
 - 数据层已统一到 Axios 网关 + thin wrappers + hooks 的方向
+- 未登录用户只能查看公告检索前 2 条预览；调剂、收藏、深度功能需要登录或会员
 
 ### 2.2 Portal 用户体系
 
@@ -70,12 +87,13 @@
   - 高级会员只认 `account_entitlements`
   - 旧 `admin_accounts / premium_*` 已不再参与放权
 - 遗留物理清理：
-  - 已补 MySQL / SQLite DDL，用于删除 `admin_accounts` 与 `portal_users.premium_*`
+  - `admin_accounts` 与 `portal_users.premium_*` 已从生产库物理删除
   - `users` 微信影子表保留，等待小程序正式切换后再处理
 - 网站侧账号闭环已上线：
   - 用户可查看账号总览、通知历史、会员订单并自助改密
   - 用户可创建网站会员订单
   - 管理员可查看订单账本并确认支付发放权益
+- 管理员后台已直接复用门户管理员登录态，不再要求后台二次登录
 - 微信身份接口已保留在 `account_identities(wechat_miniapp)` 路径上
 
 ### 2.3 通知实时链路
@@ -102,13 +120,18 @@
 
 当前管理端已有：
 
-- 管理员登录
+- 门户管理员直接进入后台
 - 用户列表
 - 提升管理员
+- 降级普通/高级用户
+- 内容指纹覆盖率面板
+- 会员订单账本
+- 栏目选择器编辑与 selector 预览
+- PDF 解析队列与重试入口
 - 审计日志基础能力
 - 健康状态展示
 
-管理页已完成从页面内散乱请求向 hooks / API wrapper 的迁移。
+管理页已完成从页面内散乱请求向 hooks / API wrapper 的迁移，并已重构为应用式固定侧栏框架。
 
 ### 2.5 服务器与部署
 
@@ -135,6 +158,7 @@
 - 生产机源码仓库位于 `/root/code/kaoyan-miniapp-mvp`
 - 后端真实运行目录位于 `/root/code/kaoyan-miniapp-mvp/backend`
 - 前端真实站点目录位于 `/var/www/html`
+- 服务器仓库已收敛到与 `origin/main` 一致
 - 详细说明见：
   - `docs/server_layout_and_deploy_paths_2026-03-19.md`
 
@@ -216,9 +240,42 @@
   - PDF 链接写入 `content_files` 并排入 `file_parse` 子任务
   - 文字型 PDF 自动提取正文并入库
   - 扫描型/低文本 PDF 标记为 `needs_ocr`，生成原文件占位内容
+  - 链接型公告会生成补充说明与目标链接，不再把“点击查看/详见附件”原样丢给用户
 - 失败可观测：
   - discovery 失败写 `crawl_errors`
   - `site_sections` 回写 `last_discovery_status / last_error`
+
+### 2.10.2 Selector 治理工具
+
+管理员后台现已支持：
+
+- 编辑 `list_selector_config`
+- 编辑 `detail_selector_config`
+- 查看推荐规则
+- 恢复推荐规则
+- 实时预览列表提取结果
+- 实时预览详情正文抽取结果与 warning
+
+这部分的实际价值是：
+
+- 控制 discovery 抓取范围
+- 控制正文抽取范围
+- 把“全页扫描”的噪音栏目收敛成可运营栏目
+
+### 2.10.3 数据去重与搜索缓存
+
+当前内容链路已经补齐：
+
+- `content_fingerprint` 幂等去重
+- MySQL / SQLite 迁移脚本
+- 历史内容指纹回填
+- 搜索前两页 TTL 缓存
+- 内容更新后搜索缓存失效
+
+当前判断：
+
+- 公告检索已经进入“可用但仍需治理数据质量”的阶段
+- 调剂检索主链路可用，但业务成熟度仍低于公告检索
 
 ### 2.10.1 正文抽取与标签化增强
 
@@ -240,7 +297,7 @@
 
 - 数据层：`portal_user_monitor_targets / portal_user_monitor_keywords / portal_user_monitor_hits` 已在模型中落地。
 - 接口层：`/api/v1/monitoring/*` 目标配置、关键词配置、命中查询、管理员命中查询接口已挂载。
-- 权限层：普通用户无权限；高级会员权益优先从 `account_entitlements(premium_monitoring)` 读取，管理员优先从 `account_roles(admin)` 读取，旧字段继续兼容。
+- 权限层：普通用户无权限；高级会员权益从 `account_entitlements(premium_monitoring)` 读取，管理员从 `account_roles(admin)` 读取。
 - 联动层：内容写入时会触发监控命中计算，并写入命中记录与 `notification_outbox(event_type=monitor.hit)`。
 - 测试与文档：已补充 `backend/tests/test_premium_monitoring_authz.py` 与 `backend/tests/test_premium_monitoring_targets.py`，并同步 backend/crawler 与需求文档。
 
@@ -248,7 +305,7 @@
 
 ### 3.1 微信小程序主流程尚未完成正式验收
 
-`docs/plan.md` 中的 Phase 1 仍有未收尾项：
+当前主路线图里，小程序仍被放在 Web 正式可运营之后的后续阶段。当前未收尾项主要是：
 
 - 静默登录 fallback 还未做完整验收
 - 查询筛选链路还未完成小程序端到端确认
@@ -307,7 +364,7 @@
 
 ### 3.5 质量门槛与发布规范尚未完全成型
 
-`docs/plan.md` 中的 Phase 3 仍未完成：
+当前仍未完全做实的部分：
 
 - 统一 release checklist
 - miniapp smoke checklist
@@ -323,7 +380,7 @@
 
 当前仍未闭环的关键点：
 
-- 管理员接口还没有“显式开通/关闭 premium 资格”的字段，当前主要通过数据层设置 `premium_monitoring_enabled`。
+- 管理员侧虽然已有提权/降级路径，但高级监控与会员权益的产品化控制仍可继续收口。
 - 命中策略目前仅 `contains`，尚未进入更复杂规则（regex/评分分层/高级排序）。
 
 ## 4. 当前技术状态判断
