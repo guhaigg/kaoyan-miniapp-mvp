@@ -130,6 +130,14 @@
 - 但主链路不依赖 Redis，当前系统可降级运行
 - Redis 主要用于限流增强和未来扩展，不阻塞当前 MVP
 
+补充：
+
+- 生产机源码仓库位于 `/root/code/kaoyan-miniapp-mvp`
+- 后端真实运行目录位于 `/root/code/kaoyan-miniapp-mvp/backend`
+- 前端真实站点目录位于 `/var/www/html`
+- 详细说明见：
+  - `docs/server_layout_and_deploy_paths_2026-03-19.md`
+
 ### 2.6 抓取任务流最小闭环（Task Pack A）
 
 已新增最小可运行抓取任务链路：

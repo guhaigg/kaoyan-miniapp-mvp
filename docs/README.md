@@ -44,6 +44,7 @@ npm run dev:backend
 - [Development Protocol](./development_protocol.md)
 - [Development Plan](./plan.md)
 - [当前进度（2026-03-18）](./current_status_2026-03-18.md)
+- [服务器目录与部署路径说明（2026-03-19）](./server_layout_and_deploy_paths_2026-03-19.md)
 - [账号体系过渡与上线实施方案（2026-03-18）](./account_system_transition_plan_2026-03-18.md)
 - [账号体系总结（2026-03-18）](./account_system_summary_2026-03-18.md)
 - [AI 协作工作流与近期执行计划（2026-03-18）](./ai_workflow_and_execution_plan_2026-03-18.md)
