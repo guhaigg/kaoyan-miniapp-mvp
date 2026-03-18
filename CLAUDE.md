@@ -168,7 +168,7 @@ Must ask before proceeding if the action is high risk:
 
 - Behavior/process rules: `docs/development_protocol.md`
 - Deployment/runtime changes: `docs/deployment.md`
-- UI architecture or execution baseline: `docs/ui_rebuild_execution_baseline.md`
+- UI architecture or execution baseline: `docs/archive/ui_rebuild_execution_baseline.md`
 - API/UI alignment: `docs/web_ui_api_alignment_2026-03-17.md`
 - Realtime notifications: `docs/notification_realtime_architecture_2026-03-17.md`
 

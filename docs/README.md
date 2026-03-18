@@ -75,13 +75,13 @@
 
 这组文档保留是为了追溯，不建议作为当前开发入口。
 
-- [服务器版本记录（2026-03-17）](./server_release_2026-03-17.md)
-- [AI 协作工作流与近期执行计划（2026-03-18）](./ai_workflow_and_execution_plan_2026-03-18.md)
-- [UI Rebuild Execution Baseline](./ui_rebuild_execution_baseline.md)
-- [Website UI Backup (2026-03-17)](./ui_backup_2026-03-17.md)
-- [Ubuntu 全新环境部署 Clash（Mihomo）代理指南](./ubuntu_clash_proxy_deploy.md)
+- [服务器版本记录（2026-03-17）](./archive/server_release_2026-03-17.md)
+- [AI 协作工作流与近期执行计划（2026-03-18）](./archive/ai_workflow_and_execution_plan_2026-03-18.md)
+- [UI Rebuild Execution Baseline](./archive/ui_rebuild_execution_baseline.md)
+- [Website UI Backup (2026-03-17)](./archive/ui_backup_2026-03-17.md)
+- [Ubuntu 全新环境部署 Clash（Mihomo）代理指南](./archive/ubuntu_clash_proxy_deploy.md)
 - [Development Plan](./plan.md)
-- [Claude Quickstart](./claude_quickstart.md)
+- [Claude Quickstart](./archive/claude_quickstart.md)
 
 说明：
 

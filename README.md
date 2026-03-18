@@ -53,13 +53,13 @@ npm run test:backend
 ## Project Docs
 
 - [Claude Project Guide](./CLAUDE.md)
-- [Claude Quickstart](./docs/claude_quickstart.md)
+- [Claude Quickstart](./docs/archive/claude_quickstart.md)
 - [Docs Index](./docs/README.md)
 - [Current Status (2026-03-18)](./docs/current_status_2026-03-18.md)
 - [Development Protocol](./docs/development_protocol.md)
 - [Git Workflow](./docs/git_workflow.md)
 - [Deployment Handbook](./docs/deployment.md)
-- [Server Release Record (2026-03-17)](./docs/server_release_2026-03-17.md)
+- [Server Release Record (2026-03-17)](./docs/archive/server_release_2026-03-17.md)
 - [Web UI API Alignment (2026-03-17)](./docs/web_ui_api_alignment_2026-03-17.md)
 - [Notification Realtime Architecture (2026-03-17)](./docs/notification_realtime_architecture_2026-03-17.md)
 
