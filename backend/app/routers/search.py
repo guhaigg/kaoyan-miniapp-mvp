@@ -48,6 +48,8 @@ def _to_response(
     serialized = []
     for row in items:
         school_name = row.school.name if row.school else None
+        extra = dict(row.extra or {})
+        adjustment_meta = dict(extra.get("adjustment_meta") or {})
         serialized.append(
             SearchItem(
                 id=row.id,
@@ -55,14 +57,25 @@ def _to_response(
                 school_name=school_name,
                 title=row.title,
                 summary=row.summary,
-                tags=[str(tag) for tag in (dict(row.extra or {}).get("tags") or []) if str(tag or "").strip()],
-                notice_kind=str((dict(row.extra or {}).get("notice_kind") or "")).strip() or None,
-                pdf_parse_status=str((dict(row.extra or {}).get("pdf_parse_status") or "")).strip() or None,
+                tags=[str(tag) for tag in (extra.get("tags") or []) if str(tag or "").strip()],
+                notice_kind=str((extra.get("notice_kind") or "")).strip() or None,
+                pdf_parse_status=str((extra.get("pdf_parse_status") or "")).strip() or None,
                 source_url=row.source_url,
                 source_type=row.source_type,
                 published_at=row.published_at,
                 region=row.region,
                 major=row.major,
+                adjustment_major_codes=[
+                    str(code) for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()
+                ],
+                adjustment_study_modes=[
+                    str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()
+                ],
+                adjustment_has_vacancy=(
+                    bool(adjustment_meta.get("has_vacancy"))
+                    if "has_vacancy" in adjustment_meta
+                    else None
+                ),
                 updated_at=row.updated_at,
             )
         )

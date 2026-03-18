@@ -271,6 +271,9 @@ export type SearchItem = {
   published_at: string | null;
   region: string | null;
   major: string | null;
+  adjustment_major_codes: string[];
+  adjustment_study_modes: string[];
+  adjustment_has_vacancy: boolean | null;
   updated_at: string;
 };
 

@@ -1,4 +1,4 @@
-from app.services.nlp import extract_domain_tags, infer_content_category, keyword_matches_content
+from app.services.nlp import extract_adjustment_meta, extract_domain_tags, infer_content_category, keyword_matches_content
 
 
 def test_extract_domain_tags_filters_ascii_url_noise_and_keeps_domain_terms():
@@ -47,3 +47,16 @@ def test_infer_content_category_keeps_regular_notice_as_announcement():
     )
 
     assert category == "announcement"
+
+
+def test_extract_adjustment_meta_collects_major_codes_study_mode_and_vacancy():
+    meta = extract_adjustment_meta(
+        title="XX大学085400电子信息专业2026年调剂公告",
+        summary="非全日制硕士研究生调剂缺额信息",
+        body="该专业存在调剂缺额，欢迎考生填报。",
+        tags=["调剂", "缺额", "非全日制", "0854"],
+    )
+
+    assert meta["major_codes"] == ["085400"]
+    assert meta["study_modes"] == ["parttime"]
+    assert meta["has_vacancy"] is True

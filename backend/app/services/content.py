@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Content, ContentSnapshot, NotificationOutbox, School, utcnow
 from ..schemas import ContentIn
-from .nlp import extract_domain_tags, infer_content_category
+from .nlp import extract_adjustment_meta, extract_domain_tags, infer_content_category
 from .premium_monitoring import evaluate_content_for_premium_monitoring
 from .search_cache import search_response_cache
 
@@ -102,6 +102,15 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
         tags=incoming_extra.get("tags") or [],
         existing_category=payload.category,
     )
+    if resolved_category == "adjustment":
+        incoming_extra["adjustment_meta"] = extract_adjustment_meta(
+            title=payload.title,
+            summary=payload.summary,
+            body=payload.body,
+            tags=incoming_extra.get("tags") or [],
+        )
+    else:
+        incoming_extra.pop("adjustment_meta", None)
     school = _resolve_school(db, payload.school_name)
     content_fingerprint = _build_content_fingerprint(
         payload,

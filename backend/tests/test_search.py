@@ -84,6 +84,38 @@ def test_adjustment_search_can_find_content_promoted_by_classifier(client):
     payload = search.json()
     assert payload["total"] == 1
     assert payload["items"][0]["category"] == "adjustment"
+    assert payload["items"][0]["adjustment_major_codes"] == []
+    assert payload["items"][0]["adjustment_has_vacancy"] is True
+
+
+def test_adjustment_search_exposes_structured_adjustment_meta(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "XX大学085400电子信息非全日制调剂通知",
+            "body": "现有调剂缺额，欢迎考生填报调剂系统。",
+            "school_name": "XX大学",
+            "major": "电子信息",
+            "region": "上海",
+            "source_type": "crawler",
+            "source_url": "https://example.com/adjustment-meta-1",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+
+    token = _register_and_login(client, "adjustment_search_meta_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"major": "电子信息", "region": "上海"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    item = search.json()["items"][0]
+    assert item["adjustment_major_codes"] == ["085400"]
+    assert item["adjustment_study_modes"] == ["parttime"]
+    assert item["adjustment_has_vacancy"] is True
 
 
 def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):

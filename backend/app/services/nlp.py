@@ -61,7 +61,7 @@ _SYSTEM_KEYWORD_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
     "非全日制": (re.compile(r"非全日制"),),
     "全日制": (
-        re.compile(r"全日制"),
+        re.compile(r"(?<!非)全日制"),
         re.compile(r"全日制专业"),
     ),
     "专硕": (
@@ -173,6 +173,7 @@ _PATH_RE = re.compile(r"\b[a-zA-Z0-9_-]+\.(?:html?|pdf|docx?|xlsx?|jsp|php)\b")
 _MULTISPACE_RE = re.compile(r"\s+")
 _ASCII_WORD_RE = re.compile(r"^[a-zA-Z]+$")
 _ALNUM_WORD_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+_MAJOR_CODE_RE = re.compile(r"(?<!\d)(0\d{3,5})(?!\d)")
 
 for _word in _DOMAIN_WORDS:
     jieba.add_word(_word, freq=10_000)
@@ -323,3 +324,47 @@ def infer_content_category(
     if score >= 2:
         return "adjustment"
     return "announcement"
+
+
+def extract_adjustment_meta(
+    *,
+    title: str,
+    summary: str | None = None,
+    body: str,
+    tags: list[str] | tuple[str, ...] | set[str] | None = None,
+) -> dict[str, object]:
+    normalized_text = clean_text_for_tagging(" ".join(part for part in [title, summary or "", body] if part))
+    normalized_tags = {normalize_tag(tag) for tag in (tags or []) if normalize_tag(tag)}
+
+    major_codes: list[str] = []
+    for matched in _MAJOR_CODE_RE.findall(normalized_text):
+        if matched not in major_codes:
+            major_codes.append(matched)
+        if len(major_codes) >= 5:
+            break
+
+    study_modes: list[str] = []
+    has_parttime = "非全日制" in normalized_text or "非全日制" in normalized_tags
+    has_fulltime = (
+        "全日制" in normalized_tags
+        or ("全日制" in normalized_text and "非全日制" not in normalized_text)
+    )
+    if has_fulltime:
+        study_modes.append("fulltime")
+    if has_parttime:
+        study_modes.append("parttime")
+
+    has_vacancy = False
+    if (
+        "缺额" in normalized_text
+        or "调剂缺额" in normalized_text
+        or "缺额" in normalized_tags
+        or "调剂" in normalized_tags
+    ):
+        has_vacancy = True
+
+    return {
+        "major_codes": major_codes,
+        "study_modes": study_modes,
+        "has_vacancy": has_vacancy,
+    }

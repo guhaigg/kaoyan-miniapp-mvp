@@ -43,7 +43,7 @@ export default function SearchPage() {
       const text = [item.school_name, item.title, item.summary, item.major].filter(Boolean).join(" ");
       const matchesTier =
         schoolTiers.length === 0 || schoolTiers.some((tier) => matchesSchoolTier(tier, text));
-      const matchesMode = matchesStudyMode(studyMode, text);
+      const matchesMode = matchesStudyMode(studyMode, text, item.adjustment_study_modes);
       return matchesTier && matchesMode;
     });
   }, [schoolTiers, searchResult, studyMode]);
@@ -400,6 +400,18 @@ export default function SearchPage() {
                         ...(item.pdf_parse_status === "needs_ocr"
                           ? [{ label: "扫描件待查看", tone: "amber" as const }]
                           : []),
+                        ...(item.category === "adjustment" && item.adjustment_has_vacancy
+                          ? [{ label: "有缺额信号", tone: "amber" as const }]
+                          : []),
+                        ...(item.category === "adjustment" && item.adjustment_study_modes.includes("fulltime")
+                          ? [{ label: "全日制", tone: "sky" as const }]
+                          : []),
+                        ...(item.category === "adjustment" && item.adjustment_study_modes.includes("parttime")
+                          ? [{ label: "非全日制", tone: "sky" as const }]
+                          : []),
+                        ...(item.category === "adjustment" && item.adjustment_major_codes.length > 0
+                          ? [{ label: `专业代码 ${item.adjustment_major_codes[0]}`, tone: "sky" as const }]
+                          : []),
                       ],
                       publishTime: item.published_at || item.updated_at,
                       href: item.source_url,
@@ -566,8 +578,10 @@ function matchesSchoolTier(tier: SchoolTier, text: string) {
   return ruleMap[tier].test(text);
 }
 
-function matchesStudyMode(mode: StudyMode, text: string) {
+function matchesStudyMode(mode: StudyMode, text: string, structuredModes: string[] = []) {
   if (mode === "all") return true;
-  if (mode === "fulltime") return /(全日制|full-time|fulltime)/i.test(text);
-  return /(非全日制|兼职|part-time|parttime)/i.test(text);
+  if (mode === "fulltime") {
+    return structuredModes.includes("fulltime") || /(全日制|full-time|fulltime)/i.test(text);
+  }
+  return structuredModes.includes("parttime") || /(非全日制|兼职|part-time|parttime)/i.test(text);
 }

@@ -747,6 +747,9 @@ class SearchItem(BaseModel):
     published_at: datetime | None
     region: str | None
     major: str | None
+    adjustment_major_codes: list[str] = Field(default_factory=list)
+    adjustment_study_modes: list[str] = Field(default_factory=list)
+    adjustment_has_vacancy: bool | None = None
     updated_at: datetime
 
 
