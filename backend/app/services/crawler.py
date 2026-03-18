@@ -249,6 +249,7 @@ class CrawlEngine:
                 file_record = ContentFile(
                     site_section_link_id=link.id,
                     file_url=absolute_url,
+                    file_url_hash=_url_hash(absolute_url),
                     file_type="pdf",
                     mime_type="application/pdf",
                     parse_status="pending",

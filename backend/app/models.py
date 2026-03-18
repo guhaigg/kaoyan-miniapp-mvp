@@ -115,12 +115,13 @@ class SiteSectionLink(Base):
 
 class ContentFile(Base):
     __tablename__ = "content_files"
-    __table_args__ = (UniqueConstraint("site_section_link_id", "file_url", name="uq_content_files_link_file_url"),)
+    __table_args__ = (UniqueConstraint("site_section_link_id", "file_url_hash", name="uq_content_files_link_file_url_hash"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     content_id: Mapped[str | None] = mapped_column(ForeignKey("contents.id"), nullable=True, index=True)
     site_section_link_id: Mapped[str | None] = mapped_column(ForeignKey("site_section_links.id"), nullable=True, index=True)
     file_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    file_url_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     file_type: Mapped[str] = mapped_column(String(32), default="pdf", nullable=False, index=True)
     mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text_extracted: Mapped[str | None] = mapped_column(Text, nullable=True)
