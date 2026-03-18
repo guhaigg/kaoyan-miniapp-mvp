@@ -1,6 +1,11 @@
-# Claude Project Guide
+# Codex Project Guide
 
-This file is the fast-start guide for Claude Code when working in this repository.
+This file is the fast-start guide for Codex when working in this repository.
+
+Compatibility note:
+
+- The filename remains `CLAUDE.md` because some repository tooling still looks for this path.
+- In current project usage, this document should be treated as the Codex project guide.
 
 ## Read First
 
@@ -133,7 +138,7 @@ systemctl reload nginx
 
 ## Remote Server Permission
 
-Claude may directly use SSH to operate the deployment server for this project when needed for development, debugging, deployment, verification, or log inspection.
+Codex may directly use SSH to operate the deployment server for this project when needed for development, debugging, deployment, verification, or log inspection.
 
 Allowed without extra confirmation:
 

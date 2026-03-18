@@ -52,8 +52,8 @@ npm run test:backend
 
 ## Project Docs
 
-- [Claude Project Guide](./CLAUDE.md)
-- [Claude Quickstart](./docs/archive/claude_quickstart.md)
+- [Codex Project Guide](./CLAUDE.md)
+- [Legacy Claude Quickstart](./docs/archive/claude_quickstart.md)
 - [Docs Index](./docs/README.md)
 - [Current Status (2026-03-18)](./docs/current_status_2026-03-18.md)
 - [Development Protocol](./docs/development_protocol.md)

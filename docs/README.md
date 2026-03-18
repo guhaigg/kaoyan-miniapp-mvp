@@ -81,7 +81,7 @@
 - [Website UI Backup (2026-03-17)](./archive/ui_backup_2026-03-17.md)
 - [Ubuntu 全新环境部署 Clash（Mihomo）代理指南](./archive/ubuntu_clash_proxy_deploy.md)
 - [Development Plan](./plan.md)
-- [Claude Quickstart](./archive/claude_quickstart.md)
+- [Legacy Claude Quickstart](./archive/claude_quickstart.md)
 
 说明：
 
