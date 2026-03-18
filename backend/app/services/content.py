@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Content, ContentSnapshot, NotificationOutbox, School, utcnow
 from ..schemas import ContentIn
-from .nlp import extract_domain_tags
+from .nlp import extract_domain_tags, infer_content_category
 from .premium_monitoring import evaluate_content_for_premium_monitoring
 from .search_cache import search_response_cache
 
@@ -36,7 +36,7 @@ def _normalize_fingerprint_part(value: str | None, *, strip_all_spaces: bool = F
     return re.sub(r"\s+", " ", text)
 
 
-def _build_content_fingerprint(payload: ContentIn, school_name: str | None) -> str:
+def _build_content_fingerprint(payload: ContentIn, school_name: str | None, *, category: str) -> str:
     title = _normalize_fingerprint_part(payload.title, strip_all_spaces=True)
     school = _normalize_fingerprint_part(school_name, strip_all_spaces=True)
     body_teaser = _normalize_fingerprint_part(payload.body, strip_all_spaces=True)[:240]
@@ -49,7 +49,7 @@ def _build_content_fingerprint(payload: ContentIn, school_name: str | None) -> s
         published = "none"
     region = _normalize_fingerprint_part(payload.region, strip_all_spaces=True)
     major = _normalize_fingerprint_part(payload.major, strip_all_spaces=True)
-    raw = "|".join([payload.category, school, title, published, major, region, body_teaser])
+    raw = "|".join([category, school, title, published, major, region, body_teaser])
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -57,11 +57,12 @@ def _apply_payload_to_content(
     content: Content,
     payload: ContentIn,
     *,
+    category: str,
     school_id: str | None,
     merged_extra: dict,
     content_fingerprint: str,
 ) -> None:
-    content.category = payload.category
+    content.category = category
     content.title = payload.title
     content.body = payload.body
     content.summary = payload.summary
@@ -91,18 +92,28 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     incoming_extra = dict(payload.extra or {})
     if not incoming_extra.get("tags"):
         incoming_extra["tags"] = extract_domain_tags(
-            " ".join(
-                part for part in [payload.title, payload.summary or "", payload.body] if part
-            ),
+            " ".join(part for part in [payload.title, payload.summary or "", payload.body] if part),
             top_k=5,
         )
+    resolved_category = infer_content_category(
+        title=payload.title,
+        summary=payload.summary,
+        body=payload.body,
+        tags=incoming_extra.get("tags") or [],
+        existing_category=payload.category,
+    )
     school = _resolve_school(db, payload.school_name)
-    content_fingerprint = _build_content_fingerprint(payload, school.name if school else payload.school_name)
+    content_fingerprint = _build_content_fingerprint(
+        payload,
+        school.name if school else payload.school_name,
+        category=resolved_category,
+    )
     content = Content()
     merged_extra = dict(incoming_extra)
     _apply_payload_to_content(
         content,
         payload,
+        category=resolved_category,
         school_id=school.id if school else None,
         merged_extra=merged_extra,
         content_fingerprint=content_fingerprint,
@@ -122,6 +133,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
         _apply_payload_to_content(
             existing,
             payload,
+            category=resolved_category,
             school_id=school.id if school else None,
             merged_extra=merged_extra,
             content_fingerprint=content_fingerprint,

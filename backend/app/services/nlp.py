@@ -76,6 +76,21 @@ _SYSTEM_KEYWORD_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "0854": (re.compile(r"\b0854(?:00)?\b"),),
 }
 
+_ADJUSTMENT_SIGNAL_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"调剂"),
+    re.compile(r"接收调剂"),
+    re.compile(r"接受调剂"),
+    re.compile(r"调剂系统"),
+    re.compile(r"调剂公告"),
+    re.compile(r"调剂通知"),
+    re.compile(r"调剂复试"),
+    re.compile(r"调剂考生"),
+    re.compile(r"调剂志愿"),
+    re.compile(r"调剂缺额"),
+    re.compile(r"缺额(信息|计划|人数|名额)?"),
+    re.compile(r"意向采集"),
+)
+
 _ALIAS_TO_CANONICAL = {
     alias.strip().lower(): canonical
     for canonical, aliases in _SYSTEM_KEYWORD_ALIASES.items()
@@ -275,3 +290,36 @@ def keyword_matches_content(keyword: str, content_text: str, content_tags: list[
             return True
 
     return False
+
+
+def infer_content_category(
+    *,
+    title: str,
+    summary: str | None = None,
+    body: str,
+    tags: list[str] | tuple[str, ...] | set[str] | None = None,
+    existing_category: str | None = None,
+) -> str:
+    normalized_existing = str(existing_category or "").strip().lower()
+    if normalized_existing == "adjustment":
+        return "adjustment"
+
+    normalized_text = clean_text_for_tagging(" ".join(part for part in [title, summary or "", body] if part))
+    normalized_tags = {normalize_tag(tag) for tag in (tags or []) if normalize_tag(tag)}
+    system_keywords = set(extract_system_keywords(normalized_text))
+
+    score = 0
+    if "调剂" in normalized_tags or "调剂" in system_keywords:
+        score += 3
+    if "缺额" in normalized_tags or "缺额" in system_keywords:
+        score += 2
+
+    if any(pattern.search(normalized_text) for pattern in _ADJUSTMENT_SIGNAL_PATTERNS):
+        score += 2
+
+    if "调剂" in normalized_text and ("复试" in normalized_text or "缺额" in normalized_text):
+        score += 1
+
+    if score >= 2:
+        return "adjustment"
+    return "announcement"

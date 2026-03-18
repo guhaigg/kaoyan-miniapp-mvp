@@ -466,6 +466,7 @@ export type SiteSectionSelectorPreviewResponse = {
   detail_excerpt: string | null;
   detail_extraction_method: "selector" | "readability" | "plain_text" | null;
   warnings: string[];
+  suggestions: string[];
 };
 
 export type ContentFileItem = {

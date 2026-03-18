@@ -833,6 +833,7 @@ def test_site_section_selector_preview_returns_list_and_detail_preview(client, m
     assert payload["detail_extraction_method"] == "selector"
     assert "这里是需要保留的正文内容" in payload["detail_excerpt"]
     assert payload["warnings"] == []
+    assert payload["suggestions"] == []
 
 
 def test_site_section_selector_preview_warns_when_no_list_match(client, monkeypatch):
@@ -869,3 +870,4 @@ def test_site_section_selector_preview_warns_when_no_list_match(client, monkeypa
     assert payload["list_match_count"] == 0
     assert payload["list_preview_items"] == []
     assert "当前规则没有匹配到可用列表链接。" in payload["warnings"]
+    assert any("列表规则当前没有命中任何公告链接" in item for item in payload["suggestions"])

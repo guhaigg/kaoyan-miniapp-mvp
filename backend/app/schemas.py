@@ -561,6 +561,7 @@ class SiteSectionSelectorPreviewResponse(BaseModel):
     detail_excerpt: str | None
     detail_extraction_method: Literal["selector", "readability", "plain_text"] | None
     warnings: list[str]
+    suggestions: list[str]
 
 
 class SiteSectionLinkItem(BaseModel):

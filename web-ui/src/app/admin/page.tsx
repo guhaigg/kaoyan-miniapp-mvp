@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Activity, CreditCard, ExternalLink, FileSearch, LayoutDashboard, RotateCcw, ScrollText, Settings2, TestTube2, TriangleAlert, UserCog } from "lucide-react";
+import { Activity, CreditCard, ExternalLink, FileSearch, LayoutDashboard, RotateCcw, ScrollText, Settings2, TestTube2, TriangleAlert, UserCog, WandSparkles } from "lucide-react";
 import ActivityChart from "@/components/admin/ActivityChart";
 import { useDocumentVisibility } from "@/hooks/useDocumentVisibility";
 import {
@@ -1153,6 +1153,19 @@ export default function AdminPage() {
                             <ul className="space-y-1 text-xs leading-6 text-amber-50/85">
                               {preview.warnings.map((warning, index) => (
                                 <li key={`${warning}:${index}`}>- {warning}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        {preview.suggestions.length > 0 ? (
+                          <div className="space-y-2 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3">
+                            <div className="flex items-center gap-2 text-sm font-medium text-cyan-100">
+                              <WandSparkles size={14} />
+                              建议修复
+                            </div>
+                            <ul className="space-y-1 text-xs leading-6 text-cyan-50/90">
+                              {preview.suggestions.map((suggestion, index) => (
+                                <li key={`${suggestion}:${index}`}>- {suggestion}</li>
                               ))}
                             </ul>
                           </div>

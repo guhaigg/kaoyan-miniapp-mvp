@@ -57,6 +57,35 @@ def test_search_announcements_and_adjustments(client):
     assert denied_adjustments.status_code == 401
 
 
+def test_adjustment_search_can_find_content_promoted_by_classifier(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "XX大学电子信息专业2026年硕士研究生调剂公告",
+            "body": "现公布调剂缺额信息，请通过全国硕士生招生调剂系统填报。",
+            "school_name": "XX大学",
+            "major": "电子信息",
+            "region": "北京",
+            "source_type": "crawler",
+            "source_url": "https://example.com/adjustment-promoted-1",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+
+    token = _register_and_login(client, "adjustment_search_logged_in")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"major": "电子信息", "region": "北京"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["category"] == "adjustment"
+
+
 def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):
     response = client.post(
         "/api/v1/content",

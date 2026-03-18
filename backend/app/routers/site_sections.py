@@ -31,6 +31,39 @@ from ..services.crawler import build_site_section_detail_selector_config, build_
 router = APIRouter(prefix="/site-sections", tags=["site-sections"])
 
 
+def _build_selector_preview_suggestions(
+    *,
+    list_match_count: int,
+    detail_preview_url: str | None,
+    detail_excerpt: str | None,
+    detail_method: str | None,
+    used_fallback_links: bool,
+    list_config: dict,
+    detail_config: dict,
+) -> list[str]:
+    suggestions: list[str] = []
+
+    if list_match_count == 0:
+        if list_config.get("css_selector") or list_config.get("xpath"):
+            suggestions.append("列表规则当前没有命中任何公告链接。先用浏览器定位真实公告列表容器，再把选择器收窄到该区域下的 <a>。")
+        else:
+            suggestions.append("先补一个列表页规则。优先填写公告列表容器的 CSS Selector，例如 `.news-list a`。")
+    elif used_fallback_links:
+        suggestions.append("当前命中依赖全页链接扫描。建议补齐列表页 CSS/XPath，把范围限制在公告列表区域，避免抓到导航和页脚。")
+
+    if detail_preview_url and detail_preview_url.lower().endswith(".pdf"):
+        suggestions.append("当前样本是 PDF。详情正文预览只适合 HTML 页面，先改用一条 HTML 公告链接测试正文选择器。")
+    elif detail_preview_url and not detail_excerpt:
+        if detail_config.get("css_selector") or detail_config.get("xpath"):
+            suggestions.append("详情规则没有抽到正文。检查选择器是否直接指向正文容器，而不是整页 wrapper、面包屑或附件区域。")
+        else:
+            suggestions.append("先补一个详情页正文规则。优先填写公告正文容器的 CSS Selector，例如 `.article-content`。")
+    elif detail_preview_url and detail_method == "readability":
+        suggestions.append("当前正文是 Readability 兜底抽出来的。为了稳定抓取，建议补一个精确的正文容器选择器。")
+
+    return suggestions
+
+
 def _resolve_school(db: Session, school_name: str | None) -> School | None:
     name = (school_name or "").strip()
     if not name:
@@ -443,6 +476,16 @@ def preview_site_section_selectors(
             except Exception as exc:
                 warnings.append(f"详情页预览失败：{exc}")
 
+    suggestions = _build_selector_preview_suggestions(
+        list_match_count=len(preview_items),
+        detail_preview_url=detail_preview_url,
+        detail_excerpt=detail_excerpt,
+        detail_method=detail_method,
+        used_fallback_links=used_fallback_links,
+        list_config=list_config,
+        detail_config=detail_config,
+    )
+
     audit_event(db, request, "site_section.preview_selector_config", None, {"site_section_id": section.id})
     return SiteSectionSelectorPreviewResponse(
         section_url=section_url,
@@ -455,6 +498,7 @@ def preview_site_section_selectors(
         detail_excerpt=detail_excerpt,
         detail_extraction_method=detail_method,
         warnings=warnings,
+        suggestions=suggestions,
     )
 
 
