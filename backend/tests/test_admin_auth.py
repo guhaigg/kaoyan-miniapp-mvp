@@ -327,11 +327,12 @@ def test_admin_can_view_school_import_seed_summaries(client):
     response = client.get("/api/v1/schools/import/seed-summaries", headers=admin_headers)
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["items"]) >= 3
+    assert len(payload["items"]) >= 4
 
     source_keys = {item["source_key"] for item in payload["items"]}
     assert "adjustment_stats_2023_2025" in source_keys
     assert "adjustment_supplemental_2024_2025" in source_keys
+    assert "adjustment_landing_2025" in source_keys
     assert "mentor_reviews" in source_keys
 
 

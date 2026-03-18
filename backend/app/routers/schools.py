@@ -44,6 +44,10 @@ def _mentor_review_summary_path() -> Path:
     return Path(__file__).resolve().parents[3] / "docs" / "data" / "mentor_review_summary.json"
 
 
+def _adjustment_landing_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_landing_2025_summary.json"
+
+
 def _department_type_for_name(name: str) -> str:
     return "graduate_school" if "研究生院" in name else "college"
 
@@ -144,6 +148,7 @@ def _load_school_import_seed_summaries() -> list[SchoolImportSeedSummaryItem]:
     adjustment_2024 = json.loads(_adjustment_2024_summary_path().read_text(encoding="utf-8"))
     adjustment_2025 = json.loads(_adjustment_2025_summary_path().read_text(encoding="utf-8"))
     supplemental_targets = json.loads(_adjustment_supplemental_targets_path().read_text(encoding="utf-8"))
+    landing_summary = json.loads(_adjustment_landing_summary_path().read_text(encoding="utf-8"))
     mentor_reviews = json.loads(_mentor_review_summary_path().read_text(encoding="utf-8"))
 
     return [
@@ -174,6 +179,19 @@ def _load_school_import_seed_summaries() -> list[SchoolImportSeedSummaryItem]:
                 f"2025 快照：{adjustment_2025['total_rows']} 条，学校 {adjustment_2025['unique_schools']} 所",
             ],
             top_schools=_summary_top_school_items(adjustment_2025.get("top_schools", [])),
+        ),
+        SchoolImportSeedSummaryItem(
+            source_key="adjustment_landing_2025",
+            title="25 调剂上岸结果画像",
+            description="用于辅助判断哪些学校/学院在调剂结果层面持续活跃，适合做学校优先级和调剂画像，不直接导入学校主库。",
+            total_rows=int(landing_summary["total_rows"]),
+            unique_schools=int(landing_summary["unique_schools"]),
+            import_endpoint=None,
+            highlights=[
+                f"院校层级：{', '.join(f'{k} {v}' for k, v in list(landing_summary.get('category_counts', {}).items())[:4])}",
+                f"学习形式：{', '.join(f'{k} {v}' for k, v in list(landing_summary.get('study_mode_counts', {}).items())[:3])}",
+            ],
+            top_schools=_summary_top_school_items(landing_summary.get("top_schools", [])),
         ),
         SchoolImportSeedSummaryItem(
             source_key="mentor_reviews",

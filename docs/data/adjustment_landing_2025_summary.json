@@ -1,0 +1,502 @@
+{
+  "source_file": "/Users/guhai/Downloads/25考研调剂上岸名单.xlsx",
+  "sheet_name": "总表",
+  "total_rows": 257765,
+  "unique_schools": 717,
+  "category_counts": {
+    "普本": 202081,
+    "211": 35839,
+    "双一流": 9713,
+    "985": 6494,
+    "研究所": 2871,
+    "党校": 332,
+    "军校": 207,
+    "院校类别": 193
+  },
+  "study_mode_counts": {
+    "全日制": 233522,
+    "非全日制": 24050,
+    "学习形式": 193
+  },
+  "score_bucket_counts": {
+    "300-324": 55337,
+    "325-349": 53253,
+    "275-299": 51888,
+    "350-374": 35581,
+    "250-274": 28367,
+    "375-399": 10347,
+    "150-174": 8599,
+    "175-199": 5075,
+    "200-224": 2489,
+    "225-249": 2071,
+    "125-149": 967,
+    "400-424": 571,
+    "425-449": 11,
+    "100-124": 5,
+    "33675-33699": 1
+  },
+  "top_first_choices": [
+    {
+      "school_name": "无法确定",
+      "count": 4874
+    },
+    {
+      "school_name": "郑州大学",
+      "count": 4377
+    },
+    {
+      "school_name": "吉林大学",
+      "count": 3423
+    },
+    {
+      "school_name": "武汉理工大学",
+      "count": 3134
+    },
+    {
+      "school_name": "东北大学",
+      "count": 2807
+    },
+    {
+      "school_name": "长安大学",
+      "count": 2781
+    },
+    {
+      "school_name": "西安交通大学",
+      "count": 2773
+    },
+    {
+      "school_name": "南京大学",
+      "count": 2713
+    },
+    {
+      "school_name": "四川大学",
+      "count": 2712
+    },
+    {
+      "school_name": "南昌大学",
+      "count": 2688
+    }
+  ],
+  "top_schools": [
+    {
+      "rank": 1,
+      "school_code": "10075",
+      "school_name": "河北大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 2650,
+      "top_departments": [
+        {
+          "department_name": "生命科学学院",
+          "count": 286
+        },
+        {
+          "department_name": "物理科学与技术学院",
+          "count": 250
+        },
+        {
+          "department_name": "化学与材料科学学院",
+          "count": 238
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "school_code": "10674",
+      "school_name": "昆明理工大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 2192,
+      "top_departments": [
+        {
+          "department_name": "冶金与能源工程学院",
+          "count": 279
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 235
+        },
+        {
+          "department_name": "国土资源工程学院",
+          "count": 206
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "school_code": "10593",
+      "school_name": "广西大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 2177,
+      "top_departments": [
+        {
+          "department_name": "资源环境与材料",
+          "count": 281
+        },
+        {
+          "department_name": "轻工与食品工程",
+          "count": 177
+        },
+        {
+          "department_name": "农学院",
+          "count": 169
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "school_code": "10730",
+      "school_name": "兰州大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 2057,
+      "top_departments": [
+        {
+          "department_name": "管理学院",
+          "count": 214
+        },
+        {
+          "department_name": "资源环境学院",
+          "count": 189
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 165
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "school_code": "11065",
+      "school_name": "青岛大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 2007,
+      "top_departments": [
+        {
+          "department_name": "医学部",
+          "count": 272
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 184
+        },
+        {
+          "department_name": "医学部第一临床医学院(青岛大学附属医院)",
+          "count": 171
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "school_code": "10270",
+      "school_name": "上海师范大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1997,
+      "top_departments": [
+        {
+          "department_name": "哲学与法政学院",
+          "count": 359
+        },
+        {
+          "department_name": "化学与材料科学学院",
+          "count": 224
+        },
+        {
+          "department_name": "生命科学学院",
+          "count": 223
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "school_code": "10216",
+      "school_name": "燕山大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1987,
+      "top_departments": [
+        {
+          "department_name": "机械工程学院",
+          "count": 374
+        },
+        {
+          "department_name": "电气工程学院",
+          "count": 309
+        },
+        {
+          "department_name": "信息科学与工程学院",
+          "count": 295
+        }
+      ]
+    },
+    {
+      "rank": 8,
+      "school_code": "10299",
+      "school_name": "江苏大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1874,
+      "top_departments": [
+        {
+          "department_name": "管理学院",
+          "count": 137
+        },
+        {
+          "department_name": "流体机械工程技术研究中心",
+          "count": 135
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 121
+        }
+      ]
+    },
+    {
+      "rank": 9,
+      "school_code": "10217",
+      "school_name": "哈尔滨工程大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1814,
+      "top_departments": [
+        {
+          "department_name": "烟台研究院",
+          "count": 521
+        },
+        {
+          "department_name": "船舶工程学院",
+          "count": 242
+        },
+        {
+          "department_name": "智能科学与工程学院",
+          "count": 157
+        }
+      ]
+    },
+    {
+      "rank": 10,
+      "school_code": "10755",
+      "school_name": "新疆大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1682,
+      "top_departments": [
+        {
+          "department_name": "化工学院",
+          "count": 162
+        },
+        {
+          "department_name": "数学与系统科学学院",
+          "count": 145
+        },
+        {
+          "department_name": "建筑工程学院",
+          "count": 125
+        }
+      ]
+    },
+    {
+      "rank": 11,
+      "school_code": "10731",
+      "school_name": "兰州理工大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1608,
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 301
+        },
+        {
+          "department_name": "MBA教育中心",
+          "count": 229
+        },
+        {
+          "department_name": "土木工程学院",
+          "count": 199
+        }
+      ]
+    },
+    {
+      "rank": 12,
+      "school_code": "10732",
+      "school_name": "兰州交通大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1602,
+      "top_departments": [
+        {
+          "department_name": "经济管理学院",
+          "count": 238
+        },
+        {
+          "department_name": "土木工程学院",
+          "count": 173
+        },
+        {
+          "department_name": "环境与市政工程学院",
+          "count": 149
+        }
+      ]
+    },
+    {
+      "rank": 13,
+      "school_code": "10389",
+      "school_name": "福建农林大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1582,
+      "top_departments": [
+        {
+          "department_name": "未来技术学院(海峡联合研究院)",
+          "count": 223
+        },
+        {
+          "department_name": "生命科学学院",
+          "count": 147
+        },
+        {
+          "department_name": "经济与管理学院",
+          "count": 133
+        }
+      ]
+    },
+    {
+      "rank": 14,
+      "school_code": "10602",
+      "school_name": "广西师范大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1536,
+      "top_departments": [
+        {
+          "department_name": "化学与药学学院",
+          "count": 183
+        },
+        {
+          "department_name": "经济管理学院",
+          "count": 177
+        },
+        {
+          "department_name": "法学院(律师学院)",
+          "count": 160
+        }
+      ]
+    },
+    {
+      "rank": 15,
+      "school_code": "10596",
+      "school_name": "桂林理工大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1528,
+      "top_departments": [
+        {
+          "department_name": "环境科学与工程学院",
+          "count": 227
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 223
+        },
+        {
+          "department_name": "化学与生物工程学院",
+          "count": 141
+        }
+      ]
+    },
+    {
+      "rank": 16,
+      "school_code": "10595",
+      "school_name": "桂林电子科技大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1451,
+      "top_departments": [
+        {
+          "department_name": "南宁研究院",
+          "count": 311
+        },
+        {
+          "department_name": "计算机与信息安全学院",
+          "count": 133
+        },
+        {
+          "department_name": "信息与通信学院",
+          "count": 126
+        }
+      ]
+    },
+    {
+      "rank": 17,
+      "school_code": "10856",
+      "school_name": "上海工程技术大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1447,
+      "top_departments": [
+        {
+          "department_name": "管理学院",
+          "count": 273
+        },
+        {
+          "department_name": "机械与汽车工程学院",
+          "count": 227
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 211
+        }
+      ]
+    },
+    {
+      "rank": 18,
+      "school_code": "10364",
+      "school_name": "安徽农业大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1401,
+      "top_departments": [
+        {
+          "department_name": "工学院",
+          "count": 174
+        },
+        {
+          "department_name": "资源与环境学院",
+          "count": 172
+        },
+        {
+          "department_name": "新农村发展研究院",
+          "count": 124
+        }
+      ]
+    },
+    {
+      "rank": 19,
+      "school_code": "10475",
+      "school_name": "河南大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1320,
+      "top_departments": [
+        {
+          "department_name": "省部共建作物逆境适应与改良国家重点实验室",
+          "count": 118
+        },
+        {
+          "department_name": "未来技术学院",
+          "count": 112
+        },
+        {
+          "department_name": "化学与分子科学学院",
+          "count": 103
+        }
+      ]
+    },
+    {
+      "rank": 20,
+      "school_code": "10127",
+      "school_name": "内蒙古科技大学",
+      "school_category": "2025调剂上岸名单",
+      "adjustment_count": 1270,
+      "top_departments": [
+        {
+          "department_name": "包头医学院",
+          "count": 201
+        },
+        {
+          "department_name": "文法学院",
+          "count": 126
+        },
+        {
+          "department_name": "稀土产业学院(稀土工程技术学院)",
+          "count": 124
+        }
+      ]
+    }
+  ]
+}

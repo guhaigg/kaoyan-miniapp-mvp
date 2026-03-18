@@ -59,6 +59,7 @@
 - [docs/data/adjustment_priority_school_targets_2023_2025.json](./data/adjustment_priority_school_targets_2023_2025.json)
 - [docs/data/adjustment_opportunity_2024_summary.json](./data/adjustment_opportunity_2024_summary.json)
 - [docs/data/adjustment_opportunity_2025_snapshot_summary.json](./data/adjustment_opportunity_2025_snapshot_summary.json)
+- [docs/data/adjustment_landing_2025_summary.json](./data/adjustment_landing_2025_summary.json)
 - [docs/data/adjustment_supplemental_priority_targets_2024_2025.json](./data/adjustment_supplemental_priority_targets_2024_2025.json)
 - [docs/data/mentor_review_summary.json](./data/mentor_review_summary.json)
 
