@@ -1,29 +1,31 @@
-from pathlib import Path
-
 from fastapi import APIRouter
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
+
+from ..config import get_settings
 
 router = APIRouter(tags=["console"])
 
-_STATIC_ROOT = Path(__file__).resolve().parent.parent / "static" / "console"
-_ADMIN_FILE = _STATIC_ROOT / "admin.html"
+
+def _admin_redirect() -> RedirectResponse:
+    settings = get_settings()
+    return RedirectResponse(url=f"{settings.web_base_url.rstrip('/')}/admin/", status_code=307)
 
 
 @router.get("/console", include_in_schema=False)
 def console_root() -> RedirectResponse:
-    return RedirectResponse(url="/admin/", status_code=307)
+    return _admin_redirect()
 
 
 @router.get("/console/", include_in_schema=False)
 def console_page() -> RedirectResponse:
-    return RedirectResponse(url="/admin/", status_code=307)
+    return _admin_redirect()
 
 
 @router.get("/admin", include_in_schema=False)
 def admin_root() -> RedirectResponse:
-    return RedirectResponse(url="/admin/", status_code=307)
+    return _admin_redirect()
 
 
 @router.get("/admin/", include_in_schema=False)
-def admin_page() -> FileResponse:
-    return FileResponse(_ADMIN_FILE)
+def admin_page() -> RedirectResponse:
+    return _admin_redirect()

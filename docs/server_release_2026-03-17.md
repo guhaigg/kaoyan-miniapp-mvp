@@ -1,5 +1,10 @@
 # 服务器版本记录（2026-03-17）
 
+> Legacy note (2026-03-18):
+> This record describes the older static-site release flow based on `infra/nginx/*`.
+> It is kept only as historical context.
+> The current production web deploy must use `web-ui/out` instead of copying `infra/nginx` pages into `/var/www/html`.
+
 ## 1) 本次目标
 
 - 将当前线上可用版本的页面与后台静态文件回收进仓库。

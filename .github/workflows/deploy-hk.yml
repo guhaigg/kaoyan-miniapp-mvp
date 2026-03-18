@@ -13,6 +13,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Validate required secrets
         env:
           HK_HOST: ${{ secrets.HK_HOST }}
@@ -36,6 +39,35 @@ jobs:
           printf "%s\n" "$HK_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 600 "$HOME/.ssh/id_ed25519"
           ssh-keyscan -p "$PORT" "$HK_HOST" >> "$HOME/.ssh/known_hosts"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+
+      - name: Build web-ui static export
+        run: |
+          set -euo pipefail
+          cd web-ui
+          npm ci
+          npm run build
+          test -f out/index.html
+          test -f out/search/index.html
+          test -f out/admin/index.html
+
+      - name: Upload web bundle to server
+        env:
+          HK_HOST: ${{ secrets.HK_HOST }}
+          HK_PORT: ${{ secrets.HK_SSH_PORT }}
+          HK_USER: ${{ secrets.HK_USER }}
+        run: |
+          set -euo pipefail
+          PORT="${HK_PORT:-22}"
+          TARGET="${HK_USER}@${HK_HOST}"
+          tar -czf /tmp/gewujl-web-ui.tgz -C web-ui/out .
+          scp -P "$PORT" /tmp/gewujl-web-ui.tgz "$TARGET:/tmp/gewujl-web-ui.tgz"
 
       - name: Deploy to Hong Kong server
         env:
@@ -80,10 +112,9 @@ jobs:
           git pull --ff-only origin main
 
           install -d "$WEB_ROOT"
-          rsync -a --exclude 'gewujl.conf' infra/nginx/ "$WEB_ROOT/"
-          install -d "$WEB_ROOT/register"
-          cp infra/nginx/register.html "$WEB_ROOT/register.html"
-          cp infra/nginx/register.html "$WEB_ROOT/register/index.html"
+          find "$WEB_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          tar -xzf /tmp/gewujl-web-ui.tgz -C "$WEB_ROOT"
+          find "$WEB_ROOT" -name '._*' -type f -delete
 
           install -m 750 infra/backup/gewujl-backup.sh /usr/local/bin/gewujl-backup
           install -m 644 infra/systemd/gewujl-backup.service /etc/systemd/system/gewujl-backup.service

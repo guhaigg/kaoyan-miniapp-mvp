@@ -152,9 +152,15 @@ def test_admin_audits_endpoint(client):
 def test_console_requires_admin_login(client):
     response = client.get("/console/", follow_redirects=False)
     assert response.status_code == 307
-    assert response.headers["location"] == "/admin/"
+    assert response.headers["location"] == "https://gewujl.cloud/admin/"
 
     _admin_login(client)
     response_after_login = client.get("/console/", follow_redirects=False)
     assert response_after_login.status_code == 307
-    assert response_after_login.headers["location"] == "/admin/"
+    assert response_after_login.headers["location"] == "https://gewujl.cloud/admin/"
+
+
+def test_admin_page_redirects_to_web_console(client):
+    response = client.get("/admin/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://gewujl.cloud/admin/"

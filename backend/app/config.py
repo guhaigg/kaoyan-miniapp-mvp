@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     admin_login_fail_limit: int = 5
     admin_login_lock_seconds: int = 15 * 60
     user_refresh_ttl_seconds: int = 30 * 24 * 60 * 60
+    web_base_url: str = "https://gewujl.cloud"
     rate_limit_per_minute: int = 120
     enable_notification_worker: bool = True
     notification_batch_size: int = 100

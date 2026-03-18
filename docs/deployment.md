@@ -12,14 +12,18 @@ If you run tests with Python 3.9, you may hit compatibility errors such as `date
 - Static web root: `/var/www/html`
 - Backend repo root: `/root/code/kaoyan-miniapp-mvp`
 - Admin static files: `/root/code/kaoyan-miniapp-mvp/backend/app/static/console`
+- Web build source: `/root/code/kaoyan-miniapp-mvp/web-ui/out`
 
 Version-controlled source mapping:
 
-- `/var/www/html/index.html`  <- `infra/nginx/index.html`
-- `/var/www/html/register.html` + `/var/www/html/register/index.html` <- `infra/nginx/register.html`
-- `/var/www/html/query/index.html` <- `infra/nginx/query/index.html`
-- `/var/www/html/assets/brand/gw-mark.svg` <- `infra/nginx/assets/brand/gw-mark.svg`
+- `/var/www/html/*`  <- `web-ui/out/*`
 - `/root/code/kaoyan-miniapp-mvp/backend/app/static/console/*` <- `backend/app/static/console/*`
+
+Important:
+
+- `infra/nginx/` still contains historical static files from an older site iteration.
+- Those files are no longer the source of truth for the production web UI.
+- Do not sync `infra/nginx/` into `/var/www/html` during normal deployment.
 
 ## 1) Environment Variables
 
@@ -149,16 +153,20 @@ Deploy actions on server:
 
 1. Create pre-deploy snapshot under `/root/backups/predeploy/<timestamp>/`
 2. `git pull --ff-only origin main` in repo path
-3. Sync static pages to web root:
-   - `index.html`
-   - `register.html`
-   - `register/index.html`
-   - `query/index.html`
-   - `assets/brand/gw-mark.svg`
-4. Install/enable backup automation (`gewujl-backup.timer`)
-5. Install backend dependencies if `.venv/bin/pip` exists
-6. Restart backend service if `HK_BACKEND_SERVICE` is configured
-7. `nginx -t` and `systemctl reload nginx`
+3. Build `web-ui` in GitHub Actions and upload `web-ui/out` as a tarball to the server
+4. Replace the web root with the extracted `web-ui/out` bundle
+   - remove stale old files before extraction
+   - clean accidental macOS `._*` metadata files after extraction
+5. Install/enable backup automation (`gewujl-backup.timer`)
+6. Install backend dependencies if `.venv/bin/pip` exists
+7. Restart backend service if `HK_BACKEND_SERVICE` is configured
+8. `nginx -t` and `systemctl reload nginx`
+
+Recommended static-site Nginx behavior:
+
+- For the exported Next site, prefer `try_files $uri $uri/ =404;`
+- Do not use `try_files ... /index.html;` unless the exported frontend intentionally relies on SPA fallback routing
+- This prevents removed legacy paths such as `/about/`, `/query/`, or `/register/` from appearing to still exist
 
 ## 7) Fully Automated Backups
 
