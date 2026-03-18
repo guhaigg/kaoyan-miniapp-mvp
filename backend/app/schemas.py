@@ -65,6 +65,17 @@ class UserMeResponse(BaseModel):
     status: str
 
 
+class BarkNotificationSettingsRequest(BaseModel):
+    enabled: bool = True
+    bark_key: str | None = Field(default=None, max_length=255)
+
+
+class BarkNotificationSettingsResponse(BaseModel):
+    enabled: bool
+    bark_key_configured: bool
+    bark_endpoint: str | None
+
+
 class SubscriptionCreateRequest(BaseModel):
     subscription_type: Literal["school", "major", "keyword", "region"] = "school"
     value: str = Field(min_length=1, max_length=255)
@@ -185,6 +196,35 @@ class ManualEntryRequest(BaseModel):
     content: ContentIn | None = None
     content_id: str | None = None
     reason: str | None = None
+
+
+class CrawlJobCreateRequest(BaseModel):
+    category: Literal["announcement", "adjustment"]
+    query: dict[str, Any] = Field(default_factory=dict)
+
+
+class CrawlJobCreateResponse(BaseModel):
+    job_id: str
+    status: Literal["pending"]
+
+
+class CrawlJobItem(BaseModel):
+    id: str
+    category: str
+    query: dict[str, Any]
+    status: Literal["pending", "running", "done", "failed"]
+    message: str | None
+    requested_by_user_id: str | None
+    requested_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class CrawlJobListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[CrawlJobItem]
 
 
 class SearchBaseRequest(BaseModel):

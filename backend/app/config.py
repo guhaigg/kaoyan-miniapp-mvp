@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     notification_max_attempts: int = 5
     notification_processing_timeout_seconds: int = 120
     notification_sse_poll_seconds: float = 1.0
+    enable_bark_notifications: bool = False
+    bark_server_url: str = "https://api.day.app"
+    bark_push_group: str = "gewujl"
+    bark_push_sound: str = ""
+    enable_crawl_worker: bool = True
+    crawl_batch_size: int = 20
+    crawl_poll_interval_seconds: float = 1.0
     cors_allow_origins: str = ",".join(
         [
             "http://localhost:3000",

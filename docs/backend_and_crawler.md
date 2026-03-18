@@ -22,6 +22,9 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `GET /api/v1/schools/suggest`
 - `POST /api/v1/content` (requires `X-Admin-Token`)
 - `POST /api/v1/admin/manual-entry`
+- `POST /api/v1/crawl-jobs` (requires admin session or `X-Admin-Token`)
+- `GET /api/v1/crawl-jobs` (requires admin session or `X-Admin-Token`)
+- `GET /api/v1/crawl-jobs/{job_id}` (requires admin session or `X-Admin-Token`)
 - `GET /api/v1/health`
 
 ## 3) Database Naming Rules
@@ -63,6 +66,22 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Data quality:
   - Deduplicate by `source_url` unique key.
   - Keep raw snapshot for post-mortem.
+
+## 6.1) MVP Crawl Job Worker (Task Pack A Baseline)
+
+- Job lifecycle:
+  - `pending -> running -> done|failed`
+- Worker behavior (minimal):
+  - Consume `pending` rows from `crawl_jobs`.
+  - If `query.source_url` exists: fetch URL, parse minimal text, upsert to `contents`.
+  - If `query.content` exists: upsert the provided payload directly.
+  - If `query.simulate=true`: create a simulated content row for end-to-end validation.
+  - If no executable payload exists: mark as `done(noop)` to keep refresh queue observable.
+- Snapshot policy:
+  - Successful upsert with `raw_html` writes one row to `content_snapshots`.
+- Failure policy:
+  - Any crawl/parse/upsert exception writes one row to `crawl_errors`.
+  - Failed job status is set to `failed` with truncated error message in `crawl_jobs.message`.
 
 ## 7) Error Handling Baseline
 

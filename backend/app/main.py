@@ -8,8 +8,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import init_db
-from .routers import admin, auth, content, health, notifications, schools, search, subscriptions
+from .routers import admin, auth, content, crawl, health, notifications, schools, search, subscriptions
 from .routers import console
+from .services.crawler import crawl_engine
 from .services.notifications import notification_engine
 
 
@@ -18,7 +19,22 @@ async def _notification_worker_loop():
     sleep_seconds = max(0.2, float(settings.notification_poll_interval_seconds))
     while True:
         try:
-            processed = await asyncio.to_thread(notification_engine.process_outbox_batch)
+            processed = await asyncio.to_thread(notification_engine.process_batch)
+        except Exception:
+            processed = 0
+
+        if processed <= 0:
+            await asyncio.sleep(sleep_seconds)
+        else:
+            await asyncio.sleep(0.05)
+
+
+async def _crawl_worker_loop():
+    settings = get_settings()
+    sleep_seconds = max(0.2, float(settings.crawl_poll_interval_seconds))
+    while True:
+        try:
+            processed = await asyncio.to_thread(crawl_engine.process_job_batch)
         except Exception:
             processed = 0
 
@@ -42,10 +58,18 @@ async def lifespan(app: FastAPI):
         redis_client = None
     app.state.redis = redis_client
     notification_task = None
+    crawl_task = None
     if settings.enable_notification_worker:
         notification_task = asyncio.create_task(_notification_worker_loop())
+    if settings.enable_crawl_worker:
+        crawl_task = asyncio.create_task(_crawl_worker_loop())
     app.state.notification_task = notification_task
+    app.state.crawl_task = crawl_task
     yield
+    if crawl_task is not None:
+        crawl_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await crawl_task
     if notification_task is not None:
         notification_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -74,6 +98,7 @@ app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(schools.router, prefix=settings.api_prefix)
 app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(content.router, prefix=settings.api_prefix)
+app.include_router(crawl.router, prefix=settings.api_prefix)
 app.include_router(subscriptions.router, prefix=settings.api_prefix)
 app.include_router(notifications.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)

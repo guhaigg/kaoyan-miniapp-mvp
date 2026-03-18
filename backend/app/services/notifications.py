@@ -2,13 +2,15 @@ import threading
 from contextlib import suppress
 from datetime import timedelta
 from typing import Any
+from urllib.parse import quote
 
+import httpx
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import SessionLocal
-from ..models import NotificationDelivery, NotificationOutbox, PortalUserSubscription, utcnow
+from ..models import NotificationDelivery, NotificationOutbox, PortalUser, PortalUserSubscription, utcnow
 
 with suppress(Exception):
     import ahocorasick  # type: ignore
@@ -167,6 +169,9 @@ class NotificationEngine:
     def __init__(self) -> None:
         self._matcher = NotificationMatcher()
 
+    def process_batch(self) -> int:
+        return self.process_outbox_batch() + self.process_delivery_batch()
+
     def process_outbox_batch(self) -> int:
         settings = get_settings()
         locked_ids = self._lock_pending_rows(settings.notification_batch_size)
@@ -183,28 +188,7 @@ class NotificationEngine:
                     self._matcher.refresh_if_needed(db)
                     payload = dict(outbox.payload or {})
                     user_ids = self._matcher.match_user_ids(payload)
-                    deliver_after = utcnow() + timedelta(seconds=settings.notification_inapp_delay_seconds)
-                    for user_id in user_ids:
-                        exists = (
-                            db.query(NotificationDelivery.id)
-                            .filter(
-                                NotificationDelivery.outbox_id == outbox.id,
-                                NotificationDelivery.user_id == user_id,
-                            )
-                            .first()
-                        )
-                        if exists:
-                            continue
-                        db.add(
-                            NotificationDelivery(
-                                outbox_id=outbox.id,
-                                user_id=user_id,
-                                channel="inapp",
-                                payload=payload,
-                                status="pending",
-                                deliver_after=deliver_after,
-                            )
-                        )
+                    self._enqueue_deliveries(db, outbox_id=outbox.id, payload=payload, user_ids=user_ids)
 
                     outbox.status = "done"
                     outbox.processed_at = utcnow()
@@ -215,6 +199,32 @@ class NotificationEngine:
                 except Exception as exc:
                     db.rollback()
                     self._handle_outbox_error(outbox_id, str(exc))
+        return processed
+
+    def process_delivery_batch(self) -> int:
+        settings = get_settings()
+        locked_ids = self._lock_pending_delivery_rows(settings.notification_batch_size)
+        if not locked_ids:
+            return 0
+
+        processed = 0
+        for delivery_id in locked_ids:
+            with SessionLocal() as db:
+                delivery = db.query(NotificationDelivery).filter(NotificationDelivery.id == delivery_id).one_or_none()
+                if delivery is None:
+                    continue
+                try:
+                    self._deliver_external_notification(delivery)
+                    delivery.status = "sent"
+                    delivery.sent_at = utcnow()
+                    delivery.processing_started_at = None
+                    delivery.last_error = None
+                    db.commit()
+                    processed += 1
+                except Exception as exc:
+                    db.rollback()
+                    self._handle_delivery_error(delivery_id, str(exc))
+                    processed += 1
         return processed
 
     def fetch_and_mark_user_deliveries(self, user_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
@@ -251,6 +261,78 @@ class NotificationEngine:
             db.commit()
             return items
 
+    def _enqueue_deliveries(self, db: Session, *, outbox_id: str, payload: dict[str, Any], user_ids: set[str]) -> None:
+        if not user_ids:
+            return
+
+        settings = get_settings()
+        now = utcnow()
+        inapp_deliver_after = now + timedelta(seconds=settings.notification_inapp_delay_seconds)
+        bark_deliver_after = now + timedelta(seconds=settings.notification_batch_window_seconds)
+        portal_users = (
+            db.query(PortalUser)
+            .filter(PortalUser.id.in_(list(user_ids)))
+            .all()
+        )
+        user_map = {user.id: user for user in portal_users}
+
+        for user_id in user_ids:
+            self._ensure_delivery(
+                db,
+                outbox_id=outbox_id,
+                user_id=user_id,
+                channel="inapp",
+                payload=payload,
+                deliver_after=inapp_deliver_after,
+            )
+
+            user = user_map.get(user_id)
+            if not settings.enable_bark_notifications or user is None:
+                continue
+            bark_key = (user.notify_bark_key or "").strip()
+            if not bark_key or not bool(user.notify_bark_enabled):
+                continue
+            self._ensure_delivery(
+                db,
+                outbox_id=outbox_id,
+                user_id=user_id,
+                channel="bark",
+                payload=payload,
+                deliver_after=bark_deliver_after,
+            )
+
+    def _ensure_delivery(
+        self,
+        db: Session,
+        *,
+        outbox_id: str,
+        user_id: str,
+        channel: str,
+        payload: dict[str, Any],
+        deliver_after,
+    ) -> None:
+        exists = (
+            db.query(NotificationDelivery.id)
+            .filter(
+                NotificationDelivery.outbox_id == outbox_id,
+                NotificationDelivery.user_id == user_id,
+                NotificationDelivery.channel == channel,
+            )
+            .first()
+        )
+        if exists:
+            return
+        db.add(
+            NotificationDelivery(
+                outbox_id=outbox_id,
+                user_id=user_id,
+                channel=channel,
+                payload=payload,
+                status="pending",
+                deliver_after=deliver_after,
+            )
+        )
+
     def _lock_pending_rows(self, batch_size: int) -> list[str]:
         settings = get_settings()
         with SessionLocal() as db:
@@ -262,6 +344,36 @@ class NotificationEngine:
                     NotificationOutbox.available_at <= utcnow(),
                 )
                 .order_by(NotificationOutbox.created_at.asc())
+                .limit(batch_size)
+            )
+            dialect_name = (db.bind.dialect.name if db.bind else "").lower()
+            if dialect_name != "sqlite":
+                query = query.with_for_update(skip_locked=True)
+            rows = query.all()
+            if not rows:
+                return []
+
+            now = utcnow()
+            for row in rows:
+                row.status = "processing"
+                row.attempts = (row.attempts or 0) + 1
+                row.processing_started_at = now
+                row.last_error = None
+            db.commit()
+            return [row.id for row in rows]
+
+    def _lock_pending_delivery_rows(self, batch_size: int) -> list[str]:
+        settings = get_settings()
+        with SessionLocal() as db:
+            self._requeue_stale_delivery_rows(db)
+            query = (
+                db.query(NotificationDelivery)
+                .filter(
+                    NotificationDelivery.channel != "inapp",
+                    NotificationDelivery.status == "pending",
+                    NotificationDelivery.deliver_after <= utcnow(),
+                )
+                .order_by(NotificationDelivery.created_at.asc())
                 .limit(batch_size)
             )
             dialect_name = (db.bind.dialect.name if db.bind else "").lower()
@@ -301,6 +413,28 @@ class NotificationEngine:
             row.last_error = "requeued stale processing row"
         db.commit()
 
+    def _requeue_stale_delivery_rows(self, db: Session) -> None:
+        settings = get_settings()
+        stale_cutoff = utcnow() - timedelta(seconds=settings.notification_processing_timeout_seconds)
+        rows = (
+            db.query(NotificationDelivery)
+            .filter(
+                NotificationDelivery.channel != "inapp",
+                NotificationDelivery.status == "processing",
+                NotificationDelivery.processing_started_at.is_not(None),
+                NotificationDelivery.processing_started_at <= stale_cutoff,
+            )
+            .all()
+        )
+        if not rows:
+            return
+        for row in rows:
+            row.status = "pending"
+            row.processing_started_at = None
+            row.deliver_after = utcnow()
+            row.last_error = "requeued stale delivery row"
+        db.commit()
+
     def _handle_outbox_error(self, outbox_id: str, error_message: str) -> None:
         settings = get_settings()
         with SessionLocal() as db:
@@ -316,6 +450,53 @@ class NotificationEngine:
                 row.status = "pending"
                 row.available_at = utcnow() + timedelta(seconds=settings.notification_retry_delay_seconds)
             db.commit()
+
+    def _handle_delivery_error(self, delivery_id: str, error_message: str) -> None:
+        settings = get_settings()
+        with SessionLocal() as db:
+            row = db.query(NotificationDelivery).filter(NotificationDelivery.id == delivery_id).one_or_none()
+            if row is None:
+                return
+
+            row.last_error = error_message[:1000]
+            row.processing_started_at = None
+            if row.attempts >= settings.notification_max_attempts:
+                row.status = "failed"
+            else:
+                row.status = "pending"
+                row.deliver_after = utcnow() + timedelta(seconds=settings.notification_retry_delay_seconds)
+            db.commit()
+
+    def _deliver_external_notification(self, delivery: NotificationDelivery) -> None:
+        if delivery.channel == "bark":
+            self._send_bark_delivery(delivery)
+            return
+        raise ValueError(f"unsupported delivery channel: {delivery.channel}")
+
+    def _send_bark_delivery(self, delivery: NotificationDelivery) -> None:
+        settings = get_settings()
+        bark_key = ((delivery.user.notify_bark_key if delivery.user else None) or "").strip()
+        if not bark_key:
+            raise ValueError("bark key not configured")
+
+        payload = dict(delivery.payload or {})
+        title = str(payload.get("title") or "格物简录通知").strip() or "格物简录通知"
+        body = (
+            str(payload.get("summary") or "").strip()
+            or str(payload.get("body") or "").strip()
+            or "有新的关注内容，请进入系统查看。"
+        )
+        url = f"{settings.bark_server_url.rstrip('/')}/{quote(bark_key, safe='')}/{quote(title, safe='')}/{quote(body[:512], safe='')}"
+        params = {}
+        source_url = str(payload.get("source_url") or "").strip()
+        if source_url:
+            params["url"] = source_url
+        if settings.bark_push_group.strip():
+            params["group"] = settings.bark_push_group.strip()
+        if settings.bark_push_sound.strip():
+            params["sound"] = settings.bark_push_sound.strip()
+        response = httpx.get(url, params=params, timeout=10.0)
+        response.raise_for_status()
 
     def reset_for_tests(self) -> None:
         self._matcher.reset()

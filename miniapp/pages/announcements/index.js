@@ -47,7 +47,7 @@ Page({
         lastQueryAt: new Date().toLocaleString(),
       });
     } catch (err) {
-      goStatus("公告查询失败", err, "请稍后重试，或缩小查询范围");
+      goStatus("公告查询失败", err, "请稍后重试，或缩小查询范围", { action: "back", source: "announcements" });
     } finally {
       this.setData({ loading: false });
     }
@@ -56,7 +56,7 @@ Page({
   openDetail(e) {
     const item = e.currentTarget.dataset.item;
     if (!item) {
-      goStatus("详情加载失败", null, "未找到可查看的数据，请刷新后重试");
+      goStatus("详情加载失败", null, "未找到可查看的数据，请刷新后重试", { action: "back", source: "announcements" });
       return;
     }
     wx.navigateTo({ url: `/pages/detail/index?payload=${encodeURIComponent(JSON.stringify(item))}` });

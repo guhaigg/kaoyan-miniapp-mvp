@@ -9,6 +9,8 @@ from ..db import get_db
 from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional
 from ..models import PortalUser, PortalUserSession, User, utcnow
 from ..schemas import (
+    BarkNotificationSettingsRequest,
+    BarkNotificationSettingsResponse,
     SilentLoginRequest,
     SilentLoginResponse,
     UserLoginRequest,
@@ -86,6 +88,17 @@ def _as_utc(dt):
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _build_bark_settings_response(user: PortalUser) -> BarkNotificationSettingsResponse:
+    settings = get_settings()
+    bark_key = (user.notify_bark_key or "").strip()
+    bark_endpoint = f"{settings.bark_server_url.rstrip('/')}/{bark_key}" if bark_key else None
+    return BarkNotificationSettingsResponse(
+        enabled=bool(user.notify_bark_enabled) and bool(bark_key),
+        bark_key_configured=bool(bark_key),
+        bark_endpoint=bark_endpoint,
+    )
 
 
 @router.post("/silent-login", response_model=SilentLoginResponse)
@@ -251,3 +264,43 @@ def current_user_profile(request: Request, db: Session = Depends(get_db)) -> Use
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user login required")
     return UserMeResponse(user_id=user.id, username=user.username, nickname=user.nickname, status=user.status)
+
+
+@router.get("/me/notifications/bark", response_model=BarkNotificationSettingsResponse)
+def get_bark_notification_settings(request: Request, db: Session = Depends(get_db)) -> BarkNotificationSettingsResponse:
+    user = get_portal_user_optional(request, db)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user login required")
+    return _build_bark_settings_response(user)
+
+
+@router.put("/me/notifications/bark", response_model=BarkNotificationSettingsResponse)
+def update_bark_notification_settings(
+    payload: BarkNotificationSettingsRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> BarkNotificationSettingsResponse:
+    user = get_portal_user_optional(request, db)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user login required")
+
+    next_key = user.notify_bark_key
+    if payload.bark_key is not None:
+        candidate = payload.bark_key.strip()
+        next_key = candidate or None
+
+    if payload.enabled and not next_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bark key required when enabling Bark")
+
+    user.notify_bark_key = next_key
+    user.notify_bark_enabled = 1 if (payload.enabled and next_key) else 0
+    db.commit()
+    db.refresh(user)
+    audit_event(
+        db,
+        request,
+        "auth.bark_notification_settings.update",
+        None,
+        {"portal_user_id": user.id, "enabled": bool(user.notify_bark_enabled)},
+    )
+    return _build_bark_settings_response(user)

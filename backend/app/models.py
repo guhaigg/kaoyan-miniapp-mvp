@@ -134,6 +134,8 @@ class PortalUser(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     nickname: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    notify_bark_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notify_bark_enabled: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -214,7 +216,7 @@ class NotificationOutbox(Base):
 class NotificationDelivery(Base):
     __tablename__ = "notification_deliveries"
     __table_args__ = (
-        UniqueConstraint("outbox_id", "user_id", name="uq_notification_deliveries_outbox_user"),
+        UniqueConstraint("outbox_id", "user_id", "channel", name="uq_notification_deliveries_outbox_user_channel"),
         Index("ix_delivery_user_status_channel", "user_id", "status", "channel"),
     )
 
@@ -226,6 +228,7 @@ class NotificationDelivery(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
     deliver_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)

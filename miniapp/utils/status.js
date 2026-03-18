@@ -28,14 +28,31 @@ function extractErrorMessage(err, fallbackMessage = "服务暂时不可用，请
   return fallbackMessage;
 }
 
-function goStatus(title, err, fallbackMessage = "服务暂时不可用，请稍后重试") {
+function normalizeStatusTitle(title) {
+  if (typeof title !== "string") {
+    return "状态";
+  }
+  const value = title.trim();
+  return value || "状态";
+}
+
+function goStatus(title, err, fallbackMessage = "服务暂时不可用，请稍后重试", options = {}) {
   const message = extractErrorMessage(err, fallbackMessage);
+  const action = typeof options.action === "string" ? options.action.trim() : "";
+  const actionText = typeof options.actionText === "string" ? options.actionText.trim() : "";
+  const source = typeof options.source === "string" ? options.source.trim() : "";
   wx.navigateTo({
-    url: `/pages/status/index?title=${encodeURIComponent(title)}&message=${encodeURIComponent(message)}`,
+    url:
+      `/pages/status/index?title=${encodeURIComponent(normalizeStatusTitle(title))}` +
+      `&message=${encodeURIComponent(message)}` +
+      `&action=${encodeURIComponent(action)}` +
+      `&actionText=${encodeURIComponent(actionText)}` +
+      `&source=${encodeURIComponent(source)}`,
   });
 }
 
 module.exports = {
   extractErrorMessage,
   goStatus,
+  normalizeStatusTitle,
 };
