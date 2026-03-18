@@ -65,6 +65,7 @@ export default function AdminPage() {
   const [creatingPaymentOrderUserId, setCreatingPaymentOrderUserId] = useState<string | null>(null);
   const [markingPaymentOrderId, setMarkingPaymentOrderId] = useState<string | null>(null);
   const [resolvingAdminRole, setResolvingAdminRole] = useState(false);
+  const [selectorView, setSelectorView] = useState<"all" | "attention" | "preview-warning">("all");
   const roleRefreshAttemptedTokenRef = useRef<string | null>(null);
   const isDocumentVisible = useDocumentVisibility();
   const portalAuth = useAppStore((state) => state.portalAuth);
@@ -117,6 +118,40 @@ export default function AdminPage() {
       trend,
     };
   }, [auditsQuery.data, healthQuery.data]);
+
+  const selectorSummary = useMemo(() => {
+    const items = siteSectionsQuery.data?.items || [];
+    let attention = 0;
+    let previewWarning = 0;
+    for (const item of items) {
+      const preview = siteSectionPreviews[item.id];
+      if (hasSelectorAttention(item, preview)) {
+        attention += 1;
+      }
+      if ((preview?.warnings.length || 0) > 0) {
+        previewWarning += 1;
+      }
+    }
+    return {
+      total: items.length,
+      attention,
+      previewWarning,
+    };
+  }, [siteSectionPreviews, siteSectionsQuery.data?.items]);
+
+  const visibleSiteSections = useMemo(() => {
+    const items = siteSectionsQuery.data?.items || [];
+    return items.filter((item) => {
+      const preview = siteSectionPreviews[item.id];
+      if (selectorView === "attention") {
+        return hasSelectorAttention(item, preview);
+      }
+      if (selectorView === "preview-warning") {
+        return (preview?.warnings.length || 0) > 0;
+      }
+      return true;
+    });
+  }, [selectorView, siteSectionPreviews, siteSectionsQuery.data?.items]);
 
   useEffect(() => {
     const items = siteSectionsQuery.data?.items || [];
@@ -321,7 +356,7 @@ export default function AdminPage() {
     setMessage(`栏目「${item.name}」已恢复到推荐规则，确认预览后再保存。`);
   }
 
-  async function handlePreviewSiteSection(item: SiteSectionItem) {
+  async function handlePreviewSiteSection(item: SiteSectionItem, sampleLinkUrl?: string | null) {
     const draft = siteSectionEdits[item.id] || buildSelectorDraft(item);
     setSiteSectionPreviewingId(item.id);
     setMessage("");
@@ -330,9 +365,14 @@ export default function AdminPage() {
         siteSectionId: item.id,
         listSelectorConfig: buildListSelectorConfig(item, draft),
         detailSelectorConfig: buildDetailSelectorConfig(item, draft),
+        sampleLinkUrl: sampleLinkUrl ?? null,
       });
       setSiteSectionPreviews((current) => ({ ...current, [item.id]: response }));
-      setMessage(`栏目「${item.name}」预览已刷新，可直接检查列表命中和正文抽取效果。`);
+      setMessage(
+        sampleLinkUrl
+          ? `栏目「${item.name}」已切换详情样本，可直接检查该链接的正文抽取效果。`
+          : `栏目「${item.name}」预览已刷新，可直接检查列表命中和正文抽取效果。`,
+      );
     } catch (error) {
       if (error instanceof ApiError) {
         setMessage(`预览失败：${error.message}`);
@@ -864,15 +904,75 @@ export default function AdminPage() {
             </div>
           </div>
 
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <span className="text-xs uppercase tracking-[0.22em] text-slate-500">栏目视图</span>
+            <button
+              type="button"
+              onClick={() => setSelectorView("all")}
+              className={`rounded-lg px-3 py-2 text-sm transition-colors ${
+                selectorView === "all"
+                  ? "bg-cyan-500 text-white"
+                  : "border border-white/10 bg-black/20 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              全部栏目 {selectorSummary.total}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectorView("attention")}
+              className={`rounded-lg px-3 py-2 text-sm transition-colors ${
+                selectorView === "attention"
+                  ? "bg-amber-500 text-slate-950"
+                  : "border border-white/10 bg-black/20 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              异常栏目 {selectorSummary.attention}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectorView("preview-warning")}
+              className={`rounded-lg px-3 py-2 text-sm transition-colors ${
+                selectorView === "preview-warning"
+                  ? "bg-fuchsia-500 text-white"
+                  : "border border-white/10 bg-black/20 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              预览有警告 {selectorSummary.previewWarning}
+            </button>
+            <span className="ml-auto text-xs text-slate-500">
+              “异常栏目”包含发现失败、最近有错或预览出现 warning 的栏目。
+            </span>
+          </div>
+
           <div className="space-y-4">
-            {(siteSectionsQuery.data?.items || []).map((item) => {
+            {visibleSiteSections.map((item) => {
               const draft = siteSectionEdits[item.id] || buildSelectorDraft(item);
               const preview = siteSectionPreviews[item.id];
+              const hasAttention = hasSelectorAttention(item, preview);
               return (
-                <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div
+                  key={item.id}
+                  className={`rounded-2xl border p-4 ${
+                    hasAttention
+                      ? "border-amber-500/25 bg-amber-500/[0.06]"
+                      : "border-white/10 bg-white/[0.03]"
+                  }`}
+                >
                   <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <div className="text-base font-semibold text-white">{item.name}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-base font-semibold text-white">{item.name}</div>
+                        {hasAttention ? (
+                          <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-amber-200">
+                            需要处理
+                          </span>
+                        ) : null}
+                        {(preview?.warnings.length || 0) > 0 ? (
+                          <span className="rounded-md border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1 text-[11px] uppercase tracking-wide text-fuchsia-200">
+                            预览警告 {preview?.warnings.length}
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="text-xs text-slate-400">
                         {item.school_name || "未绑定学校"} · {item.department_name || "未绑定院系"} · {item.section_type}
                       </div>
@@ -996,6 +1096,22 @@ export default function AdminPage() {
                                   <ExternalLink size={12} />
                                   {link.url}
                                 </a>
+                                {link.link_type === "html" ? (
+                                  <div className="mt-3 flex items-center justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePreviewSiteSection(item, link.url)}
+                                      disabled={siteSectionPreviewingId === item.id}
+                                      className={`rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                                        preview.detail_preview_url === link.url
+                                          ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                                          : "border border-white/10 bg-black/20 text-slate-200 hover:bg-white/10"
+                                      } disabled:cursor-not-allowed disabled:opacity-70`}
+                                    >
+                                      {preview.detail_preview_url === link.url ? "当前详情样本" : "用这条重测正文"}
+                                    </button>
+                                  </div>
+                                ) : null}
                               </div>
                             ))
                           ) : (
@@ -1047,6 +1163,11 @@ export default function AdminPage() {
                 </div>
               );
             })}
+            {isAuthenticated && !siteSectionsQuery.isLoading && visibleSiteSections.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-sm text-slate-400">
+                当前筛选条件下没有栏目。先运行一次“测试提取”，再切到“预览有警告”会更有意义。
+              </div>
+            ) : null}
             {isAuthenticated && siteSectionsQuery.isLoading ? (
               <div className="text-sm text-slate-400">正在加载栏目列表...</div>
             ) : null}
@@ -1231,6 +1352,14 @@ function buildChartPoints(
   });
 
   return buckets.map((value, index) => value * 18 + 18 + index * 2);
+}
+
+function hasSelectorAttention(item: SiteSectionItem, preview?: SiteSectionSelectorPreviewResponse) {
+  return Boolean(
+    item.last_error ||
+      (item.last_discovery_status && item.last_discovery_status !== "done") ||
+      ((preview?.warnings.length || 0) > 0),
+  );
 }
 
 function average(values: number[]) {
