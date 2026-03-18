@@ -43,6 +43,8 @@ npm run dev:backend
 
 - [Development Protocol](./development_protocol.md)
 - [Development Plan](./plan.md)
+- [当前进度（2026-03-18）](./current_status_2026-03-18.md)
+- [AI 协作工作流与近期执行计划（2026-03-18）](./ai_workflow_and_execution_plan_2026-03-18.md)
 - [Backend and Crawler Spec](./backend_and_crawler.md)
 - [Frontend and Design Spec](./frontend_and_design.md)
 - [Deployment Handbook](./deployment.md)
