@@ -11,12 +11,23 @@ from ..schemas import CrawlJobCreateRequest, CrawlJobCreateResponse, CrawlJobIte
 router = APIRouter(prefix="/crawl-jobs", tags=["crawl"])
 
 
+def _normalize_job_status(status_value: str | None) -> str:
+    value = (status_value or "").strip().lower()
+    if value in {"pending", "running", "done", "failed"}:
+        return value
+    if value in {"completed", "success"}:
+        return "done"
+    if value in {"error"}:
+        return "failed"
+    return "failed"
+
+
 def _to_job_item(job: CrawlJob) -> CrawlJobItem:
     return CrawlJobItem(
         id=job.id,
         category=job.category,
         query=job.query or {},
-        status=job.status,
+        status=_normalize_job_status(job.status),
         message=job.message,
         requested_by_user_id=job.requested_by_user_id,
         requested_at=job.requested_at,

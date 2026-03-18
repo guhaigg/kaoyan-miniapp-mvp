@@ -88,3 +88,22 @@ def test_crawl_worker_failure_writes_crawl_error(client):
         errors = db.query(CrawlError).filter(CrawlError.error_type.is_not(None)).all()
         assert len(errors) == 1
         assert errors[0].payload.get("crawl_job_id") == job_id
+
+
+def test_crawl_job_list_handles_legacy_completed_status(client):
+    with SessionLocal() as db:
+        legacy = CrawlJob(
+            category="announcement",
+            query={"source_url": "https://example.com/legacy"},
+            status="completed",
+            message="legacy row",
+        )
+        db.add(legacy)
+        db.commit()
+        db.refresh(legacy)
+        legacy_id = legacy.id
+
+    resp = client.get("/api/v1/crawl-jobs?page=1&page_size=10", headers=_admin_headers())
+    assert resp.status_code == 200
+    item = next(x for x in resp.json()["items"] if x["id"] == legacy_id)
+    assert item["status"] == "done"
