@@ -1,0 +1,673 @@
+{
+  "source_file": "/Users/guhai/Downloads/25年4月9日20时03分07秒调剂信息汇总.xlsx",
+  "sheet_name": "2025年2025年04月09日18时03分07秒最新调剂信息",
+  "total_rows": 23494,
+  "unique_schools": 636,
+  "validation_state_counts": {
+    "官网": 18040,
+    "来源于官网": 4934,
+    "未知": 17
+  },
+  "top_schools": [
+    {
+      "rank": 1,
+      "school_name": "青岛大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 416,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "100210 外科学",
+          "count": 11
+        },
+        {
+          "major": "105111 外科学",
+          "count": 9
+        },
+        {
+          "major": "100201 内科学",
+          "count": 9
+        }
+      ],
+      "top_url": "https://grad.qdu.edu.cn/info/1118/4026.htm"
+    },
+    {
+      "rank": 2,
+      "school_name": "云南大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 256,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "135600 美术与书法",
+          "count": 6
+        },
+        {
+          "major": "135700 设计",
+          "count": 5
+        },
+        {
+          "major": "095131 农艺与种业",
+          "count": 5
+        }
+      ],
+      "top_url": "http://www.grs.ynu.edu.cn/info/1008/4962.htm"
+    },
+    {
+      "rank": 3,
+      "school_name": "兰州大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 245,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "086000 生物与医药",
+          "count": 4
+        },
+        {
+          "major": "030300 社会学",
+          "count": 3
+        },
+        {
+          "major": "010100 哲学",
+          "count": 3
+        }
+      ],
+      "top_url": "https://yz.lzu.edu.cn/shuoshishengzhaosheng/shuoshikaoshi/2025/0401/295343.html"
+    },
+    {
+      "rank": 4,
+      "school_name": "安徽医科大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 231,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "105101 内科学",
+          "count": 13
+        },
+        {
+          "major": "105104 神经病学",
+          "count": 10
+        },
+        {
+          "major": "105115 妇产科学",
+          "count": 9
+        }
+      ],
+      "top_url": "https://yjsxy.ahmu.edu.cn/2025/0403/c7773a175327/page.htm"
+    },
+    {
+      "rank": 5,
+      "school_name": "河北大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 229,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "86000 生物与医药",
+          "count": 5
+        },
+        {
+          "major": "85700 资源与环境",
+          "count": 2
+        },
+        {
+          "major": "86100 交通运输",
+          "count": 2
+        }
+      ],
+      "top_url": "https://yjsy.hbu.edu.cn/info/1159/3853.htm"
+    },
+    {
+      "rank": 6,
+      "school_name": "安徽农业大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 194,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "095131 农艺与种业",
+          "count": 16
+        },
+        {
+          "major": "095132 资源利用与植物保护",
+          "count": 10
+        },
+        {
+          "major": "095136 农业工程与信息技术",
+          "count": 10
+        }
+      ],
+      "top_url": "http://yjs.ahau.edu.cn/info/1171/42634.htm"
+    },
+    {
+      "rank": 7,
+      "school_name": "广西大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 194,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "050200 外国语言文学",
+          "count": 6
+        },
+        {
+          "major": "025100 金融",
+          "count": 4
+        },
+        {
+          "major": "050100 中国语言文学",
+          "count": 4
+        }
+      ],
+      "top_url": "https://yjsc.gxu.edu.cn/info/1007/3718.htm"
+    },
+    {
+      "rank": 8,
+      "school_name": "北京科技大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 191,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "080600 冶金工程",
+          "count": 15
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 15
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 15
+        }
+      ],
+      "top_url": "https://ncms.ustb.edu.cn/rcpy/tzgg/3e28202c559c4611a8562d4cc9b603a1.htm"
+    },
+    {
+      "rank": 9,
+      "school_name": "安徽理工大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 183,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "080200 机械工程",
+          "count": 8
+        },
+        {
+          "major": "085702 安全工程",
+          "count": 7
+        },
+        {
+          "major": "083700 安全科学与工程",
+          "count": 7
+        }
+      ],
+      "top_url": "https://yjszs.aust.edu.cn/info/1013/1599.htm"
+    },
+    {
+      "rank": 10,
+      "school_name": "山东师范大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 181,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "040102 课程与教学论",
+          "count": 6
+        },
+        {
+          "major": "060200 中国史",
+          "count": 4
+        },
+        {
+          "major": "130100 艺术学",
+          "count": 4
+        }
+      ],
+      "top_url": "http://www.yjszs.sdnu.edu.cn/info/1026/4405.htm"
+    },
+    {
+      "rank": 11,
+      "school_name": "新疆医科大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 174,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "105120 临床检验诊断学",
+          "count": 9
+        },
+        {
+          "major": "105104 神经病学",
+          "count": 8
+        },
+        {
+          "major": "105109 全科医学",
+          "count": 7
+        }
+      ],
+      "top_url": "https://yjsxy.xjmu.edu.cn/info/1113/2578.htm"
+    },
+    {
+      "rank": 12,
+      "school_name": "哈尔滨医科大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 174,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "100210 外科学",
+          "count": 11
+        },
+        {
+          "major": "105101 内科学",
+          "count": 11
+        },
+        {
+          "major": "100201 内科学",
+          "count": 9
+        }
+      ],
+      "top_url": "https://yjsy.hrbmu.edu.cn/info/1024/2863.htm"
+    },
+    {
+      "rank": 13,
+      "school_name": "西南民族大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 170,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "105600 中药",
+          "count": 2
+        },
+        {
+          "major": "095200 兽医",
+          "count": 2
+        },
+        {
+          "major": "095133 畜牧",
+          "count": 2
+        }
+      ],
+      "top_url": "http://yjsglxt.swun.edu.cn:8080/002/89446.jhtml"
+    },
+    {
+      "rank": 14,
+      "school_name": "燕山大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 169,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "085802 动力工程",
+          "count": 4
+        },
+        {
+          "major": "045202 运动训练",
+          "count": 2
+        },
+        {
+          "major": "045201 体育教学",
+          "count": 2
+        }
+      ],
+      "top_url": "https://zsjyc.ysu.edu.cn/info/1254/6396.htm"
+    },
+    {
+      "rank": 15,
+      "school_name": "杭州师范大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 168,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "045400 应用心理",
+          "count": 7
+        },
+        {
+          "major": "071300 生态学",
+          "count": 5
+        },
+        {
+          "major": "040200 心理学",
+          "count": 4
+        }
+      ],
+      "top_url": "https://yjs.hznu.edu.cn/c/2025-04-03/3069525.shtml"
+    },
+    {
+      "rank": 16,
+      "school_name": "上海大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 161,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "125300 会计（非全日制）",
+          "count": 6
+        },
+        {
+          "major": "025100 金融（非全日制）",
+          "count": 6
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 6
+        }
+      ],
+      "top_url": "https://yjszs.shu.edu.cn/info/1004/7894.htm"
+    },
+    {
+      "rank": 17,
+      "school_name": "桂林理工大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 158,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "085800 能源动力",
+          "count": 6
+        },
+        {
+          "major": "081400 土木工程",
+          "count": 6
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 6
+        }
+      ],
+      "top_url": "https://yjsy.glut.edu.cn/guilinligongdaxue2025niangezhuanyenizhaoshengjihuayue.pdf"
+    },
+    {
+      "rank": 18,
+      "school_name": "石河子大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 155,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "025800 数字经济",
+          "count": 4
+        },
+        {
+          "major": "025400 国际商务",
+          "count": 4
+        },
+        {
+          "major": "025200 应用统计",
+          "count": 4
+        }
+      ],
+      "top_url": "https://yz.shzu.edu.cn/2025/0401/c6938a217502/page.htm"
+    },
+    {
+      "rank": 19,
+      "school_name": "大连民族大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 142,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "083600 生物工程",
+          "count": 7
+        },
+        {
+          "major": "095400 林业",
+          "count": 6
+        },
+        {
+          "major": "091000 水土保持与荒漠化防治学",
+          "count": 6
+        }
+      ],
+      "top_url": "https://gd.dlnu.edu.cn/zs/tzgg/118957.htm"
+    },
+    {
+      "rank": 20,
+      "school_name": "南京医科大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 140,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "105800 医学技术",
+          "count": 13
+        },
+        {
+          "major": "100706 药理学",
+          "count": 6
+        },
+        {
+          "major": "1001J4 生殖医学",
+          "count": 5
+        }
+      ],
+      "top_url": "https://yjszs.njmu.edu.cn/2025/0405/c10171a283086/page.htm"
+    },
+    {
+      "rank": 21,
+      "school_name": "山东第一医科大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 140,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "105120 临床检验诊断学",
+          "count": 6
+        },
+        {
+          "major": "105115 妇产科学",
+          "count": 6
+        },
+        {
+          "major": "105111 外科学",
+          "count": 5
+        }
+      ],
+      "top_url": "https://yz.sdfmu.edu.cn/info/1019/3065.htm"
+    },
+    {
+      "rank": 22,
+      "school_name": "绍兴文理学院",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 139,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "085400 电子信息",
+          "count": 6
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 6
+        },
+        {
+          "major": "085501 机械工程",
+          "count": 3
+        }
+      ],
+      "top_url": "https://yjsc.usx.edu.cn/info/1186/5411.htm"
+    },
+    {
+      "rank": 23,
+      "school_name": "齐齐哈尔大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 137,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 6
+        },
+        {
+          "major": "130100 艺术学",
+          "count": 5
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 5
+        }
+      ],
+      "top_url": "https://yjs.qqhru.edu.cn/info/1065/1773.htm"
+    },
+    {
+      "rank": 24,
+      "school_name": "陕西师范大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 136,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "040102 课程与教学论",
+          "count": 6
+        },
+        {
+          "major": "070300 化学",
+          "count": 4
+        },
+        {
+          "major": "086000 生物与医药",
+          "count": 3
+        }
+      ],
+      "top_url": "http://edu.snnu.edu.cn/info/1070/14404.htm"
+    },
+    {
+      "rank": 25,
+      "school_name": "广东海洋大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 135,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "135200 音乐",
+          "count": 6
+        },
+        {
+          "major": "070700 海洋科学",
+          "count": 6
+        },
+        {
+          "major": "125200 公共管理",
+          "count": 6
+        }
+      ],
+      "top_url": "https://grs.gdou.edu.cn/info/1029/7051.htm"
+    },
+    {
+      "rank": 26,
+      "school_name": "扬州大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 132,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "085601 材料工程",
+          "count": 3
+        },
+        {
+          "major": "120100 管理科学与工程",
+          "count": 3
+        },
+        {
+          "major": "095131 农艺与种业（非全日制）",
+          "count": 3
+        }
+      ],
+      "top_url": "https://yjszs.yzu.edu.cn/info/1018/2315.htm"
+    },
+    {
+      "rank": 27,
+      "school_name": "重庆医科大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 131,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "100201 内科学",
+          "count": 19
+        },
+        {
+          "major": "105800 医学技术",
+          "count": 13
+        },
+        {
+          "major": "100210 外科学",
+          "count": 12
+        }
+      ],
+      "top_url": "https://yjszs.cqmu.edu.cn/info/1119/2658.htm"
+    },
+    {
+      "rank": 28,
+      "school_name": "延安大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 129,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "100100 基础医学",
+          "count": 15
+        },
+        {
+          "major": "071000 生物学",
+          "count": 9
+        },
+        {
+          "major": "020200 应用经济学",
+          "count": 8
+        }
+      ],
+      "top_url": "https://yjsc.yau.edu.cn/info/1025/21300.htm"
+    },
+    {
+      "rank": 29,
+      "school_name": "哈尔滨师范大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 128,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "040102 课程与教学论",
+          "count": 4
+        },
+        {
+          "major": "050211 外国语言学及应用语言学",
+          "count": 4
+        },
+        {
+          "major": "045103 学科教学（语文）",
+          "count": 3
+        }
+      ],
+      "top_url": "http://yjsxy.hrbnu.edu.cn/info/1045/24290.htm"
+    },
+    {
+      "rank": 30,
+      "school_name": "江西理工大学",
+      "school_category": "2025调剂信息快照",
+      "adjustment_count": 127,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "080500 材料科学与工程",
+          "count": 6
+        },
+        {
+          "major": "*085601 材料工程",
+          "count": 5
+        },
+        {
+          "major": "120100 管理科学与工程",
+          "count": 4
+        }
+      ],
+      "top_url": "https://yz.jxust.edu.cn/info/1266/2615.htm"
+    }
+  ]
+}

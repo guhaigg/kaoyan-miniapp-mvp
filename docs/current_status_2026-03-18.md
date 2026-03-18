@@ -26,6 +26,12 @@
 - 第三方支付闭环
 - 发布质量门槛与回滚流程
 
+新增的数据资产补充：
+
+- `23-25 调剂统计表` 已转成重点学校/学院 seed
+- `2024 调剂余额表` 和 `2025 调剂信息快照表` 已转成补充 seed 与摘要 JSON
+- `导师公开评价汇总表` 已转成只读摘要 JSON，当前作为独立情报源保留，未混入主搜索
+
 ## 2. 当前已完成
 
 ### 2.1 Web UI
@@ -116,6 +122,23 @@
 - SSE 流接口
 - 前端缓存合并、Toast、关注抽屉联动
 
+### 2.3.1 调剂补充数据资产
+
+本地 Excel 补充数据已经转成仓库内可追踪的数据资产：
+
+- `docs/data/adjustment_priority_school_targets_2023_2025.json`
+- `docs/data/adjustment_opportunity_2024_summary.json`
+- `docs/data/adjustment_opportunity_2025_snapshot_summary.json`
+- `docs/data/adjustment_supplemental_priority_targets_2024_2025.json`
+- `docs/data/mentor_review_summary.json`
+
+当前用途分层：
+
+- `23-25 调剂统计`：主力学校/学院 seed
+- `2024 调剂余额表`：补充学校/学院优先级
+- `2025 调剂快照`：补充近期高频调剂学校
+- `导师评价汇总`：先做独立摘要，不进入公告/调剂主搜索
+
 ### 2.4 管理端
 
 当前管理端已有：
@@ -127,6 +150,7 @@
 - 内容指纹覆盖率面板
 - 会员订单账本
 - 栏目选择器编辑与 selector 预览
+- 调剂 seed 摘要、24/25 补充 seed 摘要、导师评价补充摘要
 - PDF 解析队列与重试入口
 - 审计日志基础能力
 - 健康状态展示

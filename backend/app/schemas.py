@@ -786,6 +786,32 @@ class SchoolBulkImportResponse(BaseModel):
     existing_departments: int
 
 
+class SchoolImportSeedSchoolItem(BaseModel):
+    rank: int | None = None
+    school_code: str | None = None
+    school_name: str
+    region_name: str | None = None
+    school_category: str | None = None
+    adjustment_count: int | None = None
+    top_departments: list[str] = Field(default_factory=list)
+
+
+class SchoolImportSeedSummaryItem(BaseModel):
+    source_key: str
+    title: str
+    description: str
+    total_rows: int
+    target_rows: int | None = None
+    unique_schools: int | None = None
+    import_endpoint: str | None = None
+    highlights: list[str] = Field(default_factory=list)
+    top_schools: list[SchoolImportSeedSchoolItem] = Field(default_factory=list)
+
+
+class SchoolImportSeedSummaryListResponse(BaseModel):
+    items: list[SchoolImportSeedSummaryItem] = Field(default_factory=list)
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     app_env: str

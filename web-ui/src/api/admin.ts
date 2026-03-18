@@ -14,6 +14,7 @@ import {
   type SiteSectionSelectorPreviewResponse,
   type SiteSectionSelectorConfig,
   type SchoolBulkImportResponse,
+  type SchoolImportSeedSummaryListResponse,
   adminCreateUserPaymentOrder,
   adminMarkPaymentOrderPaid,
   adminPaymentOrders,
@@ -121,5 +122,11 @@ export const fetchContentFiles = (params?: {
 export const retryContentFileParse = (contentFileId: string) =>
   api.post<ContentFileRetryParseResponse>(`/site-sections/content-files/${encodeURIComponent(contentFileId)}/retry-parse`).then((response) => response.data);
 
+export const fetchSchoolImportSeedSummaries = () =>
+  api.get<SchoolImportSeedSummaryListResponse>("/schools/import/seed-summaries").then((response) => response.data);
+
 export const importAdjustmentPriorityTargets = () =>
   api.post<SchoolBulkImportResponse>("/schools/import/adjustment-priority-targets").then((response) => response.data);
+
+export const importAdjustmentSupplementalTargets = () =>
+  api.post<SchoolBulkImportResponse>("/schools/import/adjustment-supplemental-targets").then((response) => response.data);

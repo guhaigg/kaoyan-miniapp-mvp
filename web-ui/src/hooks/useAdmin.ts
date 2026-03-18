@@ -10,9 +10,11 @@ import {
   fetchAdminAudits,
   fetchAdminMe,
   fetchAdminPaymentOrders,
+  fetchSchoolImportSeedSummaries,
   fetchAdminUsers,
   fetchHealthStatus,
   importAdjustmentPriorityTargets,
+  importAdjustmentSupplementalTargets,
   fetchSiteSections,
   markAdminPaymentOrderPaid,
   previewSiteSectionSelectors,
@@ -31,6 +33,7 @@ const adminQueryKeys = {
   paymentOrders: ["admin", "payment-orders"] as const,
   siteSections: ["admin", "site-sections"] as const,
   contentFiles: ["admin", "content-files"] as const,
+  schoolImportSeeds: ["admin", "school-import-seeds"] as const,
 };
 
 export function useAdminMeQuery(enabled: boolean = true) {
@@ -98,6 +101,14 @@ export function useAdminContentFilesQuery(enabled: boolean, refetchEnabled: bool
     queryFn: () => fetchContentFiles({ file_type: "pdf", page_size: 20 }),
     enabled,
     refetchInterval: enabled && refetchEnabled ? 20_000 : false,
+  });
+}
+
+export function useAdminSchoolImportSeedSummariesQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: adminQueryKeys.schoolImportSeeds,
+    queryFn: fetchSchoolImportSeedSummaries,
+    enabled,
   });
 }
 
@@ -235,6 +246,18 @@ export function useAdminImportAdjustmentPriorityTargetsMutation() {
     mutationFn: importAdjustmentPriorityTargets,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.schoolImportSeeds });
+    },
+  });
+}
+
+export function useAdminImportAdjustmentSupplementalTargetsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: importAdjustmentSupplementalTargets,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.schoolImportSeeds });
     },
   });
 }

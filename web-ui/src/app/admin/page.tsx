@@ -23,11 +23,13 @@ import {
   useAdminDemoteMutation,
   useAdminHealthQuery,
   useAdminImportAdjustmentPriorityTargetsMutation,
+  useAdminImportAdjustmentSupplementalTargetsMutation,
   useAdminMarkPaymentOrderPaidMutation,
   useAdminMeQuery,
   useAdminPaymentOrdersQuery,
   useAdminPromoteMutation,
   useAdminResetPasswordMutation,
+  useAdminSchoolImportSeedSummariesQuery,
   useAdminSiteSectionBackfillMutation,
   useAdminSiteSectionPreviewMutation,
   useAdminSiteSectionUpdateMutation,
@@ -66,6 +68,7 @@ export default function AdminPage() {
   const [creatingPaymentOrderUserId, setCreatingPaymentOrderUserId] = useState<string | null>(null);
   const [markingPaymentOrderId, setMarkingPaymentOrderId] = useState<string | null>(null);
   const [importingAdjustmentTargets, setImportingAdjustmentTargets] = useState(false);
+  const [importingSupplementalTargets, setImportingSupplementalTargets] = useState(false);
   const [resolvingAdminRole, setResolvingAdminRole] = useState(false);
   const [selectorView, setSelectorView] = useState<"all" | "attention" | "preview-warning">("all");
   const roleRefreshAttemptedTokenRef = useRef<string | null>(null);
@@ -90,12 +93,14 @@ export default function AdminPage() {
   const paymentOrdersQuery = useAdminPaymentOrdersQuery(isAuthenticated, isDocumentVisible);
   const siteSectionsQuery = useAdminSiteSectionsQuery(isAuthenticated);
   const contentFilesQuery = useAdminContentFilesQuery(isAuthenticated, isDocumentVisible);
+  const schoolImportSeedsQuery = useAdminSchoolImportSeedSummariesQuery(isAuthenticated);
 
   const promoteMutation = useAdminPromoteMutation();
   const demoteMutation = useAdminDemoteMutation();
   const resetPasswordMutation = useAdminResetPasswordMutation();
   const createPaymentOrderMutation = useAdminCreatePaymentOrderMutation();
   const importAdjustmentTargetsMutation = useAdminImportAdjustmentPriorityTargetsMutation();
+  const importAdjustmentSupplementalTargetsMutation = useAdminImportAdjustmentSupplementalTargetsMutation();
   const markPaymentOrderPaidMutation = useAdminMarkPaymentOrderPaidMutation();
   const updateSiteSectionMutation = useAdminSiteSectionUpdateMutation();
   const backfillSiteSectionMutation = useAdminSiteSectionBackfillMutation();
@@ -438,6 +443,25 @@ export default function AdminPage() {
       }
     } finally {
       setImportingAdjustmentTargets(false);
+    }
+  }
+
+  async function handleImportAdjustmentSupplementalTargets() {
+    setImportingSupplementalTargets(true);
+    setMessage("");
+    try {
+      const result = await importAdjustmentSupplementalTargetsMutation.mutateAsync();
+      setMessage(
+        `24/25 调剂补充 seed 已导入：学校新增 ${result.created_schools}，学校已存在 ${result.existing_schools}，院系新增 ${result.created_departments}。`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`导入 24/25 调剂补充 seed 失败：${error.message}`);
+      } else {
+        setMessage("导入 24/25 调剂补充 seed 失败，请稍后重试");
+      }
+    } finally {
+      setImportingSupplementalTargets(false);
     }
   }
 
@@ -926,21 +950,95 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-emerald-100">调剂统计重点学校 seed</div>
-              <p className="mt-1 text-xs leading-6 text-emerald-50/80">
-                基于 23-25 调剂统计表生成的重点学校/学院清单导入到 `schools / departments`，后续可以直接围绕这些学校补 `site_sections`。
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleImportAdjustmentPriorityTargets}
-              disabled={importingAdjustmentTargets}
-              className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-50 transition-colors hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {importingAdjustmentTargets ? "导入中..." : "导入调剂重点学校"}
-            </button>
+          <div className="mb-6 grid gap-4 xl:grid-cols-3">
+            {(schoolImportSeedsQuery.data?.items || []).map((seed) => {
+              const isPrimarySeed = seed.source_key === "adjustment_stats_2023_2025";
+              const importBusy = isPrimarySeed ? importingAdjustmentTargets : importingSupplementalTargets;
+              const buttonLabel = isPrimarySeed ? "导入调剂重点学校" : "导入 24/25 补充学校";
+              const buttonHandler = isPrimarySeed ? handleImportAdjustmentPriorityTargets : handleImportAdjustmentSupplementalTargets;
+              return (
+                <div
+                  key={seed.source_key}
+                  className={`rounded-2xl border p-4 ${
+                    seed.import_endpoint
+                      ? "border-emerald-500/20 bg-emerald-500/10"
+                      : "border-violet-500/20 bg-violet-500/10"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{seed.title}</div>
+                      <p className="mt-1 text-xs leading-6 text-slate-300">{seed.description}</p>
+                    </div>
+                    {seed.import_endpoint ? (
+                      <button
+                        type="button"
+                        onClick={buttonHandler}
+                        disabled={importBusy}
+                        className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-50 transition-colors hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {importBusy ? "导入中..." : buttonLabel}
+                      </button>
+                    ) : (
+                      <span className="rounded-xl border border-violet-500/30 bg-violet-500/15 px-3 py-2 text-xs font-semibold text-violet-100">
+                        暂不导入主库
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="text-slate-500">样本行数</div>
+                      <div className="mt-1 text-sm font-semibold text-white">{seed.total_rows.toLocaleString()}</div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="text-slate-500">学校数</div>
+                      <div className="mt-1 text-sm font-semibold text-white">{seed.unique_schools?.toLocaleString() || "--"}</div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="text-slate-500">seed 行数</div>
+                      <div className="mt-1 text-sm font-semibold text-white">{seed.target_rows?.toLocaleString() || "--"}</div>
+                    </div>
+                  </div>
+
+                  {(seed.highlights || []).length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      {(seed.highlights || []).map((highlight) => (
+                        <div
+                          key={`${seed.source_key}-${highlight}`}
+                          className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300"
+                        >
+                          {highlight}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {(seed.top_schools || []).length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Top 学校</div>
+                      {(seed.top_schools || []).slice(0, 4).map((school) => (
+                        <div
+                          key={`${seed.source_key}-${school.school_name}`}
+                          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-3 text-white">
+                            <span>
+                              {school.rank ? `#${school.rank} ` : ""}
+                              {school.school_name}
+                            </span>
+                            <span className="text-slate-400">{school.adjustment_count?.toLocaleString() || "--"}</span>
+                          </div>
+                          {(school.top_departments || []).length > 0 ? (
+                            <div className="mt-2 text-slate-400">{school.top_departments.slice(0, 2).join(" / ")}</div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
 
           <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3">

@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..dependencies import audit_event, require_admin_request
 from ..models import Department, School
-from ..schemas import SchoolBulkImportResponse, SchoolSuggestItem, SchoolSuggestResponse
+from ..schemas import (
+    SchoolBulkImportResponse,
+    SchoolImportSeedSchoolItem,
+    SchoolImportSeedSummaryItem,
+    SchoolImportSeedSummaryListResponse,
+    SchoolSuggestItem,
+    SchoolSuggestResponse,
+)
 
 router = APIRouter(prefix="/schools", tags=["schools"])
 
@@ -19,6 +26,22 @@ def _priority_targets_path() -> Path:
 
 def _adjustment_priority_targets_path() -> Path:
     return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_priority_school_targets_2023_2025.json"
+
+
+def _adjustment_supplemental_targets_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_supplemental_priority_targets_2024_2025.json"
+
+
+def _adjustment_2024_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_opportunity_2024_summary.json"
+
+
+def _adjustment_2025_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_opportunity_2025_snapshot_summary.json"
+
+
+def _mentor_review_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "mentor_review_summary.json"
 
 
 def _department_type_for_name(name: str) -> str:
@@ -90,6 +113,85 @@ def _import_school_targets_from_path(path: Path, *, request: Request, db: Sessio
     )
 
 
+def _summary_top_school_items(raw_rows: list[dict], limit: int = 5) -> list[SchoolImportSeedSchoolItem]:
+    items: list[SchoolImportSeedSchoolItem] = []
+    for raw in raw_rows[:limit]:
+        top_departments = []
+        if isinstance(raw.get("top_departments"), list):
+            top_departments = [
+                str(row.get("department_name") or "").strip()
+                for row in raw["top_departments"]
+                if str(row.get("department_name") or "").strip()
+            ]
+        items.append(
+            SchoolImportSeedSchoolItem(
+                rank=int(raw["rank"]) if raw.get("rank") is not None else None,
+                school_code=str(raw.get("school_code") or "").strip() or None,
+                school_name=str(raw.get("school_name") or "").strip(),
+                region_name=str(raw.get("region_name") or "").strip() or None,
+                school_category=str(raw.get("school_category") or "").strip() or None,
+                adjustment_count=int(raw["adjustment_count"]) if raw.get("adjustment_count") is not None else None,
+                top_departments=top_departments,
+            )
+        )
+    return items
+
+
+def _load_school_import_seed_summaries() -> list[SchoolImportSeedSummaryItem]:
+    base_dir = Path(__file__).resolve().parents[3] / "docs" / "data"
+    adjustment_stats = json.loads((base_dir / "adjustment_stats_2023_2025_summary.json").read_text(encoding="utf-8"))
+    adjustment_stats_targets = json.loads(_adjustment_priority_targets_path().read_text(encoding="utf-8"))
+    adjustment_2024 = json.loads(_adjustment_2024_summary_path().read_text(encoding="utf-8"))
+    adjustment_2025 = json.loads(_adjustment_2025_summary_path().read_text(encoding="utf-8"))
+    supplemental_targets = json.loads(_adjustment_supplemental_targets_path().read_text(encoding="utf-8"))
+    mentor_reviews = json.loads(_mentor_review_summary_path().read_text(encoding="utf-8"))
+
+    return [
+        SchoolImportSeedSummaryItem(
+            source_key="adjustment_stats_2023_2025",
+            title="23-25 调剂统计重点学校",
+            description="基于 23-25 调剂统计表聚合出的高频学校/学院，适合先补 schools / departments 和栏目资产。",
+            total_rows=int(adjustment_stats["total_rows"]),
+            target_rows=len(adjustment_stats_targets),
+            unique_schools=len(adjustment_stats.get("top_schools", [])),
+            import_endpoint="/schools/import/adjustment-priority-targets",
+            highlights=[
+                f"年份覆盖：{', '.join(adjustment_stats.get('year_counts', {}).keys())}",
+                f"学习形式：{', '.join(f'{k} {v}' for k, v in adjustment_stats.get('study_mode_counts', {}).items())}",
+            ],
+            top_schools=_summary_top_school_items(adjustment_stats.get("top_schools", [])),
+        ),
+        SchoolImportSeedSummaryItem(
+            source_key="adjustment_supplemental_2024_2025",
+            title="24 / 25 调剂补充重点学校",
+            description="把 2024 调剂余额表和 2025 调剂快照表合并成新的补充学校 seed，用来继续扩学校/学院资产。",
+            total_rows=int(adjustment_2024["total_rows"]) + int(adjustment_2025["total_rows"]),
+            target_rows=len(supplemental_targets),
+            unique_schools=len({str(row.get("school_name") or "").strip() for row in supplemental_targets if str(row.get("school_name") or "").strip()}),
+            import_endpoint="/schools/import/adjustment-supplemental-targets",
+            highlights=[
+                f"2024 样本：{adjustment_2024['total_rows']} 条，学校 {adjustment_2024['unique_schools']} 所",
+                f"2025 快照：{adjustment_2025['total_rows']} 条，学校 {adjustment_2025['unique_schools']} 所",
+            ],
+            top_schools=_summary_top_school_items(adjustment_2025.get("top_schools", [])),
+        ),
+        SchoolImportSeedSummaryItem(
+            source_key="mentor_reviews",
+            title="导师公开评价补充",
+            description="导师评价数据质量足够做情报源，但不适合直接混入公告/调剂主搜索，当前先保留为独立清洗资产。",
+            total_rows=int(mentor_reviews["total_rows"]),
+            unique_schools=int(mentor_reviews["unique_schools"]),
+            import_endpoint=None,
+            highlights=[
+                f"HTML 残留：{mentor_reviews['htmlish_rows']} 条",
+                f"含外链：{mentor_reviews['url_rows']} 条",
+                f"重复导师键：{mentor_reviews['duplicate_name_keys']} 组",
+            ],
+            top_schools=_summary_top_school_items(mentor_reviews.get("top_schools", [])),
+        ),
+    ]
+
+
 @router.get("/suggest", response_model=SchoolSuggestResponse)
 def suggest_schools(
     q: str = Query(default="", max_length=100),
@@ -124,3 +226,20 @@ def import_adjustment_priority_targets(request: Request, db: Session = Depends(g
         db=db,
         event_type="schools.import_adjustment_priority_targets",
     )
+
+
+@router.post("/import/adjustment-supplemental-targets", response_model=SchoolBulkImportResponse)
+def import_adjustment_supplemental_targets(request: Request, db: Session = Depends(get_db)) -> SchoolBulkImportResponse:
+    require_admin_request(request)
+    return _import_school_targets_from_path(
+        _adjustment_supplemental_targets_path(),
+        request=request,
+        db=db,
+        event_type="schools.import_adjustment_supplemental_targets",
+    )
+
+
+@router.get("/import/seed-summaries", response_model=SchoolImportSeedSummaryListResponse)
+def school_import_seed_summaries(request: Request) -> SchoolImportSeedSummaryListResponse:
+    require_admin_request(request)
+    return SchoolImportSeedSummaryListResponse(items=_load_school_import_seed_summaries())

@@ -1,0 +1,184 @@
+{
+  "source_file": "/Users/guhai/Downloads/所有学校所有导师的公开评价信息整理.xlsx",
+  "sheet_name": "Sheet1",
+  "total_rows": 16633,
+  "unique_schools": 451,
+  "htmlish_rows": 13475,
+  "url_rows": 253,
+  "bad_rows": 1,
+  "duplicate_name_keys": 484,
+  "top_schools": [
+    {
+      "rank": 1,
+      "school_name": "浙江大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 672,
+      "top_departments": []
+    },
+    {
+      "rank": 2,
+      "school_name": "东南大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 558,
+      "top_departments": []
+    },
+    {
+      "rank": 3,
+      "school_name": "中国科学院大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 554,
+      "top_departments": []
+    },
+    {
+      "rank": 4,
+      "school_name": "天津大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 540,
+      "top_departments": []
+    },
+    {
+      "rank": 5,
+      "school_name": "西安交通大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 505,
+      "top_departments": []
+    },
+    {
+      "rank": 6,
+      "school_name": "华中科技大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 474,
+      "top_departments": []
+    },
+    {
+      "rank": 7,
+      "school_name": "北京航空航天大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 466,
+      "top_departments": []
+    },
+    {
+      "rank": 8,
+      "school_name": "上海交通大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 422,
+      "top_departments": []
+    },
+    {
+      "rank": 9,
+      "school_name": "西安电子科技大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 371,
+      "top_departments": []
+    },
+    {
+      "rank": 10,
+      "school_name": "清华大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 326,
+      "top_departments": []
+    },
+    {
+      "rank": 11,
+      "school_name": "武汉大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 307,
+      "top_departments": []
+    },
+    {
+      "rank": 12,
+      "school_name": "大连理工大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 301,
+      "top_departments": []
+    },
+    {
+      "rank": 13,
+      "school_name": "中国科学技术大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 295,
+      "top_departments": []
+    },
+    {
+      "rank": 14,
+      "school_name": "四川大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 293,
+      "top_departments": []
+    },
+    {
+      "rank": 15,
+      "school_name": "北京大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 292,
+      "top_departments": []
+    },
+    {
+      "rank": 16,
+      "school_name": "北京邮电大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 284,
+      "top_departments": []
+    },
+    {
+      "rank": 17,
+      "school_name": "中南大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 255,
+      "top_departments": []
+    },
+    {
+      "rank": 18,
+      "school_name": "哈尔滨工业大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 240,
+      "top_departments": []
+    },
+    {
+      "rank": 19,
+      "school_name": "电子科技大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 239,
+      "top_departments": []
+    },
+    {
+      "rank": 20,
+      "school_name": "同济大学",
+      "school_category": "导师公开评价",
+      "adjustment_count": 236,
+      "top_departments": []
+    }
+  ],
+  "samples": [
+    {
+      "school_name": "Brown University",
+      "college_name": "无",
+      "mentor_name": "palmore",
+      "review_preview": "评价1：学术水平：一般吧，最近几年就发了一个ASC CATA 科研经费：基本养不活实验室 师生关系：平时联系毕竟少，基本就组会联系。一般会延毕一年。 学生前途：锂电池行业还可以，最近的一个师兄毕业了去硅谷工作。"
+    },
+    {
+      "school_name": "California Institute of Technology",
+      "college_name": "Electrical Engineering",
+      "mentor_name": "Changhuei Yang",
+      "review_preview": "评价1：学术水平：我导师给予了Yang很很高的评价，说他是天才 科研经费：充裕 师生关系：学生们评价非常好 学生前途：可见他课题组网站，非常好"
+    },
+    {
+      "school_name": "Case Western Reserve University",
+      "college_name": "无",
+      "mentor_name": "Guangbin luo",
+      "review_preview": "评价1：导师辨识特征：美国变态千千万 华人叫兽占一半 学生前途：https://www.mysupervisor.org/viewtopic.php?f=4678&amp;amp;t=54760"
+    },
+    {
+      "school_name": "Clemson University",
+      "college_name": "Economics, John E. Walker Department of",
+      "mentor_name": "Jerald Dwyer",
+      "review_preview": "评价1：经常出差，但是会认真指导论文，忙的的时候会把学生的事情放到后面。知道学生自身情况，不会太为难学生，但是指导论文建议中肯，实用性强。有时候也情绪化。"
+    },
+    {
+      "school_name": "Columbia University",
+      "college_name": "Biomedical Engineering Department",
+      "mentor_name": "Henry Hess",
+      "review_preview": "评价1：学术水平：A great scientist 科研经费：enough 学生补助：on average 师生关系：100% respect the students and postdocs 工作时间：It\\'s up to you 学生前途：pretty good"
+    }
+  ]
+}

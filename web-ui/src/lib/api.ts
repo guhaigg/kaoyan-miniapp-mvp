@@ -315,6 +315,32 @@ export type SchoolBulkImportResponse = {
   existing_departments: number;
 };
 
+export type SchoolImportSeedSchoolItem = {
+  rank: number | null;
+  school_code: string | null;
+  school_name: string;
+  region_name: string | null;
+  school_category: string | null;
+  adjustment_count: number | null;
+  top_departments: string[];
+};
+
+export type SchoolImportSeedSummaryItem = {
+  source_key: string;
+  title: string;
+  description: string;
+  total_rows: number;
+  target_rows: number | null;
+  unique_schools: number | null;
+  import_endpoint: string | null;
+  highlights: string[];
+  top_schools: SchoolImportSeedSchoolItem[];
+};
+
+export type SchoolImportSeedSummaryListResponse = {
+  items: SchoolImportSeedSummaryItem[];
+};
+
 export type AdminMeResponse = {
   username: string;
   authenticated: boolean;
