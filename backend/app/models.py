@@ -27,6 +27,8 @@ class School(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     sources: Mapped[list["Source"]] = relationship(back_populates="school", cascade="all, delete-orphan")
+    departments: Mapped[list["Department"]] = relationship(back_populates="school", cascade="all, delete-orphan")
+    site_sections: Mapped[list["SiteSection"]] = relationship(back_populates="school", cascade="all, delete-orphan")
     contents: Mapped[list["Content"]] = relationship(back_populates="school")
 
 
@@ -45,6 +47,90 @@ class Source(Base):
 
     school: Mapped["School | None"] = relationship(back_populates="sources")
     contents: Mapped[list["Content"]] = relationship(back_populates="source")
+    site_sections: Mapped[list["SiteSection"]] = relationship(back_populates="source")
+
+
+class Department(Base):
+    __tablename__ = "departments"
+    __table_args__ = (UniqueConstraint("school_id", "name", name="uq_departments_school_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    aliases: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    department_type: Mapped[str] = mapped_column(String(64), default="college", nullable=False, index=True)
+    enabled: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    school: Mapped["School | None"] = relationship(back_populates="departments")
+    site_sections: Mapped[list["SiteSection"]] = relationship(back_populates="department", cascade="all, delete-orphan")
+
+
+class SiteSection(Base):
+    __tablename__ = "site_sections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    department_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), nullable=True, index=True)
+    source_id: Mapped[str | None] = mapped_column(ForeignKey("sources.id"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    section_type: Mapped[str] = mapped_column(String(64), default="notice", nullable=False, index=True)
+    section_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    discovery_category: Mapped[str] = mapped_column(String(32), default="announcement", nullable=False, index=True)
+    list_selector_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, default=1, nullable=False, index=True)
+    last_discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_discovery_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    school: Mapped["School | None"] = relationship(back_populates="site_sections")
+    department: Mapped["Department | None"] = relationship(back_populates="site_sections")
+    source: Mapped["Source | None"] = relationship(back_populates="site_sections")
+    links: Mapped[list["SiteSectionLink"]] = relationship(back_populates="site_section", cascade="all, delete-orphan")
+
+
+class SiteSectionLink(Base):
+    __tablename__ = "site_section_links"
+    __table_args__ = (UniqueConstraint("site_section_id", "link_url", name="uq_site_section_links_section_url"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    site_section_id: Mapped[str] = mapped_column(ForeignKey("site_sections.id"), nullable=False, index=True)
+    crawl_job_id: Mapped[str | None] = mapped_column(ForeignKey("crawl_jobs.id"), nullable=True, index=True)
+    link_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    link_type: Mapped[str] = mapped_column(String(32), default="html", nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="discovered", nullable=False, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snapshot_meta: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    site_section: Mapped["SiteSection"] = relationship(back_populates="links")
+    files: Mapped[list["ContentFile"]] = relationship(back_populates="site_section_link", cascade="all, delete-orphan")
+
+
+class ContentFile(Base):
+    __tablename__ = "content_files"
+    __table_args__ = (UniqueConstraint("site_section_link_id", "file_url", name="uq_content_files_link_file_url"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    content_id: Mapped[str | None] = mapped_column(ForeignKey("contents.id"), nullable=True, index=True)
+    site_section_link_id: Mapped[str | None] = mapped_column(ForeignKey("site_section_links.id"), nullable=True, index=True)
+    file_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(32), default="pdf", nullable=False, index=True)
+    mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    text_extracted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parse_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    ocr_status: Mapped[str] = mapped_column(String(32), default="not_started", nullable=False, index=True)
+    file_meta: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    content: Mapped["Content | None"] = relationship()
+    site_section_link: Mapped["SiteSectionLink | None"] = relationship(back_populates="files")
 
 
 class Content(Base):

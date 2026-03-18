@@ -25,6 +25,10 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `POST /api/v1/crawl-jobs` (requires admin session or `X-Admin-Token`)
 - `GET /api/v1/crawl-jobs` (requires admin session or `X-Admin-Token`)
 - `GET /api/v1/crawl-jobs/{job_id}` (requires admin session or `X-Admin-Token`)
+- `POST /api/v1/site-sections` (requires admin session or `X-Admin-Token`)
+- `GET /api/v1/site-sections` (requires admin session or `X-Admin-Token`)
+- `POST /api/v1/site-sections/discover` (requires admin session or `X-Admin-Token`)
+- `GET /api/v1/site-sections/{id}/links` (requires admin session or `X-Admin-Token`)
 - `GET /api/v1/health`
 
 ## 3) Database Naming Rules
@@ -42,6 +46,10 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `content_snapshots`: raw HTML/text snapshots.
 - `crawl_jobs`: async refresh jobs.
 - `crawl_errors`: crawler/parse failure records.
+- `departments`: school departments/graduate schools.
+- `site_sections`: maintained section/list-page assets.
+- `site_section_links`: discovered detail/pdf links from section pages.
+- `content_files`: lightweight file records (currently PDF placeholder).
 - `users`: shadow accounts (`state=shadow`).
 - `user_events`: security and audit trail.
 
@@ -89,3 +97,21 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Convert predictable failures to 4xx with stable `detail`.
 - Log all unexpected 5xx with `request_id`.
 - For crawler refresh requests, return accepted/pending state through `crawl_jobs`.
+
+## 8) Site Section Discovery Baseline (Task Pack A-2 / A-3 Lite)
+
+- Asset layer:
+  - Admin can maintain `site_sections` with school/department dimensions.
+- Discovery scheduling:
+  - `POST /api/v1/site-sections/discover` creates `crawl_jobs` with `job_kind=site_section_discovery`.
+- Worker behavior:
+  - For `site_section_discovery`, worker fetches section list page and extracts `<a>` links.
+  - New HTML links are saved to `site_section_links` and enqueued as child detail crawl jobs.
+  - New PDF links are saved to `site_section_links` and recorded to `content_files` as placeholder entries.
+- Observability:
+  - Section rows keep `last_discovered_at / last_discovery_status / last_error`.
+  - Discovery failure still writes `crawl_errors`.
+- Current limitations (intentional for MVP):
+  - `list_selector_config` is stored but not yet interpreted as strict CSS/XPath extraction rules.
+  - No OCR/PDF text extraction yet; `content_files` only keeps file metadata placeholder.
+  - Cross-section dedup (same URL across different sections) is not yet globally merged.

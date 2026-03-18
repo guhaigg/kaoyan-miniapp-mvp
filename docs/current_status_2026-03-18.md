@@ -167,6 +167,29 @@
 - 标准回滚步骤
 - Bark 相关表结构变更提醒
 
+### 2.10 官网栏目发现链路（Task Pack A-2 + A-3 Lite）
+
+已新增“站点资产层 + 列表发现层”的最小落地：
+
+- 数据层新增：
+  - `departments`
+  - `site_sections`
+  - `site_section_links`
+  - `content_files`（轻量占位）
+- 新增管理接口：
+  - `POST /api/v1/site-sections`
+  - `GET /api/v1/site-sections`
+  - `POST /api/v1/site-sections/discover`
+  - `GET /api/v1/site-sections/{id}/links`
+- worker 新能力：
+  - 处理 `job_kind=site_section_discovery`
+  - 从栏目页列表发现新链接
+  - HTML 链接生成后续详情抓取任务
+  - PDF 链接写入 `content_files` 占位记录
+- 失败可观测：
+  - discovery 失败写 `crawl_errors`
+  - `site_sections` 回写 `last_discovery_status / last_error`
+
 ## 3. 当前未完成 / 未收尾
 
 ### 3.1 微信小程序主流程尚未完成正式验收
@@ -193,6 +216,9 @@
 - 多站点真实抓取策略（UA 轮换、频控、重试）的生产级实现
 - `sources` 驱动的调度策略与优先级机制
 - 解析规则质量与字段标准化的系统化验证
+- 列表页精细抽取规则（当前仍是通用 `<a>` 发现）
+- 跨栏目去重与公告聚合策略
+- PDF 正文抽取/OCR（当前仅 `content_files` 占位留痕）
 - 去重策略的完整验证（跨源/跨轮次）
 - 内容持续稳定灌入后台数据库
 

@@ -1,14 +1,16 @@
 import re
 from datetime import datetime
 from html import unescape
+from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import SessionLocal
-from ..models import CrawlError, CrawlJob, utcnow
+from ..models import ContentFile, CrawlError, CrawlJob, SiteSection, SiteSectionLink, utcnow
 from ..schemas import ContentIn
 from .content import upsert_content
 
@@ -16,6 +18,43 @@ _UA = "Mozilla/5.0 (compatible; GeWuJianLuCrawler/0.1; +https://gewujl.cloud)"
 _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+
+
+class _AnchorParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.links: list[dict[str, str]] = []
+        self._active_href: str | None = None
+        self._active_chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        attrs_map = {key.lower(): value for key, value in attrs}
+        href = (attrs_map.get("href") or "").strip()
+        if not href:
+            return
+        self._active_href = href
+        self._active_chunks = []
+
+    def handle_data(self, data: str) -> None:
+        if self._active_href is None:
+            return
+        text = data.strip()
+        if text:
+            self._active_chunks.append(text)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() != "a" or self._active_href is None:
+            return
+        self.links.append(
+            {
+                "href": self._active_href,
+                "text": _SPACE_RE.sub(" ", " ".join(self._active_chunks)).strip(),
+            }
+        )
+        self._active_href = None
+        self._active_chunks = []
 
 
 def _extract_title(raw_html: str) -> str | None:
@@ -47,6 +86,24 @@ def _coerce_datetime(value: Any) -> datetime | None:
         except ValueError:
             return None
     return None
+
+
+def _extract_links(raw_html: str) -> list[dict[str, str]]:
+    parser = _AnchorParser()
+    parser.feed(raw_html)
+    return parser.links
+
+
+def _is_pdf_url(url: str) -> bool:
+    parsed = urlparse(url)
+    path = (parsed.path or "").lower()
+    return path.endswith(".pdf")
+
+
+def _fallback_link_title(url: str) -> str:
+    path = urlparse(url).path or url
+    name = path.rstrip("/").split("/")[-1]
+    return name or url
 
 
 class CrawlEngine:
@@ -101,6 +158,9 @@ class CrawlEngine:
         source_url = str(query.get("source_url") or "").strip()
         content_payload = query.get("content")
 
+        if query.get("job_kind") == "site_section_discovery":
+            return self._discover_site_section(db, job, query)
+
         if query.get("simulate") is True:
             return self._ingest_simulated(db, job, query)
 
@@ -111,6 +171,118 @@ class CrawlEngine:
             return self._ingest_from_content_dict(db, job, query, content_payload)
 
         return None, "done(noop): no crawl source provided"
+
+    def _discover_site_section(self, db: Session, job: CrawlJob, query: dict[str, Any]) -> tuple[None, str]:
+        site_section_id = str(query.get("site_section_id") or "").strip()
+        if not site_section_id:
+            raise ValueError("site_section_id is required for discovery job")
+
+        section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+        if section is None:
+            raise ValueError("site section not found")
+
+        section_url = str(query.get("source_url") or section.section_url or "").strip()
+        if not section_url:
+            raise ValueError("site section url is empty")
+
+        response = httpx.get(
+            section_url,
+            timeout=10.0,
+            follow_redirects=True,
+            headers={"User-Agent": _UA},
+        )
+        response.raise_for_status()
+        raw_html = response.text or ""
+        discovered_links = _extract_links(raw_html)
+        if not discovered_links:
+            section.last_discovered_at = utcnow()
+            section.last_discovery_status = "done"
+            section.last_error = None
+            return None, "discovery done: 0 new links"
+
+        existing_urls = {
+            row[0]
+            for row in db.query(SiteSectionLink.link_url)
+            .filter(SiteSectionLink.site_section_id == section.id)
+            .all()
+        }
+        html_jobs = 0
+        pdf_files = 0
+        new_links = 0
+
+        for item in discovered_links:
+            href = (item.get("href") or "").strip()
+            if not href or href.startswith("javascript:") or href.startswith("#"):
+                continue
+
+            absolute_url = urljoin(section_url, href)
+            if absolute_url in existing_urls:
+                continue
+
+            link_type = "pdf" if _is_pdf_url(absolute_url) else "html"
+            title = (item.get("text") or "").strip() or _fallback_link_title(absolute_url)
+            link = SiteSectionLink(
+                site_section_id=section.id,
+                link_url=absolute_url,
+                title=title,
+                link_type=link_type,
+                status="discovered",
+                snapshot_meta={
+                    "crawl_job_id": job.id,
+                    "section_url": section_url,
+                    "section_type": section.section_type,
+                },
+            )
+            db.add(link)
+            db.flush()
+            existing_urls.add(absolute_url)
+            new_links += 1
+
+            if link_type == "pdf":
+                file_record = ContentFile(
+                    site_section_link_id=link.id,
+                    file_url=absolute_url,
+                    file_type="pdf",
+                    mime_type="application/pdf",
+                    parse_status="pending",
+                    ocr_status="not_started",
+                    file_meta={
+                        "crawl_job_id": job.id,
+                        "site_section_id": section.id,
+                        "section_url": section_url,
+                    },
+                )
+                db.add(file_record)
+                link.status = "file_recorded"
+                pdf_files += 1
+                continue
+
+            child_job = CrawlJob(
+                category=section.discovery_category,
+                status="pending",
+                requested_at=utcnow(),
+                message=f"queued by site section discovery {section.id}",
+                query={
+                    "job_kind": "detail_fetch",
+                    "site_section_id": section.id,
+                    "site_section_link_id": link.id,
+                    "source_url": absolute_url,
+                    "title": title,
+                    "school_name": section.school.name if section.school else None,
+                    "department_name": section.department.name if section.department else None,
+                    "section_type": section.section_type,
+                },
+            )
+            db.add(child_job)
+            db.flush()
+            link.crawl_job_id = child_job.id
+            link.status = "enqueued"
+            html_jobs += 1
+
+        section.last_discovered_at = utcnow()
+        section.last_discovery_status = "done"
+        section.last_error = None
+        return None, f"discovery done: {new_links} links, {html_jobs} html jobs, {pdf_files} pdf files"
 
     def _ingest_from_url(
         self,
@@ -225,6 +397,7 @@ class CrawlEngine:
                 return
             query_payload = dict(job.query or {})
             source_url = str(query_payload.get("source_url") or "").strip() or None
+            site_section_id = str(query_payload.get("site_section_id") or "").strip() or None
             db.add(
                 CrawlError(
                     source_id=None,
@@ -235,6 +408,12 @@ class CrawlEngine:
                     payload={"crawl_job_id": job.id, "query": query_payload},
                 )
             )
+            if site_section_id and query_payload.get("job_kind") == "site_section_discovery":
+                section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+                if section is not None:
+                    section.last_discovered_at = utcnow()
+                    section.last_discovery_status = "failed"
+                    section.last_error = str(exc)[:1000]
             job.status = "failed"
             job.finished_at = utcnow()
             job.message = str(exc)[:1000]

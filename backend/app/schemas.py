@@ -227,6 +227,73 @@ class CrawlJobListResponse(BaseModel):
     items: list[CrawlJobItem]
 
 
+class SiteSectionCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    section_type: str = Field(min_length=1, max_length=64)
+    section_url: str = Field(min_length=1, max_length=2048)
+    school_name: str | None = Field(default=None, max_length=255)
+    department_name: str | None = Field(default=None, max_length=255)
+    department_type: str = Field(default="college", min_length=1, max_length=64)
+    discovery_category: Literal["announcement", "adjustment"] = "announcement"
+    source_id: str | None = None
+    enabled: bool = True
+    list_selector_config: dict[str, Any] = Field(default_factory=dict)
+
+
+class SiteSectionItem(BaseModel):
+    id: str
+    name: str
+    section_type: str
+    section_url: str
+    school_name: str | None
+    department_name: str | None
+    department_type: str | None
+    discovery_category: str
+    enabled: bool
+    list_selector_config: dict[str, Any]
+    last_discovered_at: datetime | None
+    last_discovery_status: str | None
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SiteSectionListResponse(BaseModel):
+    total: int
+    items: list[SiteSectionItem]
+
+
+class SiteSectionDiscoverRequest(BaseModel):
+    school_name: str | None = Field(default=None, max_length=255)
+    department_name: str | None = Field(default=None, max_length=255)
+    section_type: str | None = Field(default=None, max_length=64)
+    enabled_only: bool = True
+
+
+class SiteSectionDiscoverResponse(BaseModel):
+    total_sections: int
+    job_ids: list[str]
+
+
+class SiteSectionLinkItem(BaseModel):
+    id: str
+    site_section_id: str
+    link_url: str
+    title: str | None
+    link_type: Literal["html", "pdf"]
+    status: str
+    crawl_job_id: str | None
+    published_at: datetime | None
+    snapshot_meta: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+class SiteSectionLinkListResponse(BaseModel):
+    total: int
+    items: list[SiteSectionLinkItem]
+
+
 class SearchBaseRequest(BaseModel):
     school_name: str | None = None
     keywords: str | None = None

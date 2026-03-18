@@ -397,7 +397,25 @@
 3. `Task Pack A-4`
    - 增加固定关键词规则和内容命中记录
 
-## 11. 一句话总结
+## 11. 当前实现快照（2026-03-18）
+
+已落地（最小版）：
+
+- `departments` / `site_sections` / `site_section_links` / `content_files` 数据结构已接入。
+- `site_sections` 管理接口已可用（创建、列表、按筛选触发 discovery、查看 links）。
+- crawler worker 已支持 `site_section_discovery`：
+  - 列表页发现新 HTML 链接并生成后续详情抓取任务；
+  - 识别 PDF 链接并写 `content_files` 占位记录；
+  - 失败回写 `crawl_errors` 与 section 状态。
+
+尚未落地（后续阶段）：
+
+- 精细选择器驱动的列表抽取（当前仍以通用 `<a>` 链接发现为主）。
+- PDF 正文抽取/OCR。
+- 跨栏目/跨站点全局去重与公告聚合。
+- 关键词规则命中与解释链路（`keyword_rules` / `content_matches`）。
+
+## 12. 一句话总结
 
 这个功能最好的产品形态，不是“通用爬虫”，而是：
 
