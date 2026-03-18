@@ -277,6 +277,24 @@
 - 公告检索已经进入“可用但仍需治理数据质量”的阶段
 - 调剂检索主链路可用，但业务成熟度仍低于公告检索
 
+### 2.10.4 调剂统计 Excel 已接入资产补齐流程
+
+基于外部 `23-25调剂统计数据.xlsx`，当前已经补齐：
+
+- 流式解析脚本：
+  - `backend/scripts/build_adjustment_priority_targets.py`
+- 机器可读摘要：
+  - `docs/data/adjustment_stats_2023_2025_summary.json`
+- 可导入的重点学校/学院 seed：
+  - `docs/data/adjustment_priority_school_targets_2023_2025.json`
+- 后台导入接口：
+  - `POST /api/v1/schools/import/adjustment-priority-targets`
+
+这一步的意义是：
+
+- 不再只靠手工整理重点学校
+- 可以用调剂历史样本反推优先补站点资产的学校和学院
+
 ### 2.10.1 正文抽取与标签化增强
 
 详情抓取链路已补一轮“正文清洗 + 标签提取”增强：

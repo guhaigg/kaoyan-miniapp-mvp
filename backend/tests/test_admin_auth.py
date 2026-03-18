@@ -304,3 +304,18 @@ def test_admin_can_import_priority_school_targets(client):
     names = [item["name"] for item in suggest_response.json()["items"]]
     assert "湖北大学" in names
     assert "湖北师范大学" in names
+
+
+def test_admin_can_import_adjustment_priority_targets(client):
+    admin_headers = _bootstrap_admin_headers(client, "portal_admin_import_adjustment")
+
+    import_response = client.post("/api/v1/schools/import/adjustment-priority-targets", headers=admin_headers)
+    assert import_response.status_code == 200
+    payload = import_response.json()
+    assert payload["total_rows"] >= 20
+    assert payload["created_schools"] >= 10
+
+    suggest_response = client.get("/api/v1/schools/suggest?q=河北")
+    assert suggest_response.status_code == 200
+    names = [item["name"] for item in suggest_response.json()["items"]]
+    assert "河北大学" in names

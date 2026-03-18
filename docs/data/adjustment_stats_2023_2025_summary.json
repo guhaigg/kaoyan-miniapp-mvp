@@ -1,0 +1,2535 @@
+{
+  "source_file": "/Users/guhai/Downloads/2018-2025调剂总表（未单分专业）/23-25调剂统计数据.xlsx",
+  "sheet_name": "23-24-25考研调剂数据-（考研调剂必看）",
+  "total_rows": 682750,
+  "year_counts": {
+    "2025": 257572,
+    "2023": 213233,
+    "2024": 211945
+  },
+  "study_mode_counts": {
+    "全日制": 421013,
+    "非全日制": 49792
+  },
+  "top_schools": [
+    {
+      "rank": 1,
+      "school_code": "10075",
+      "school_name": "河北大学",
+      "region_code": "13",
+      "region_name": "河北省",
+      "school_category": "普本",
+      "adjustment_count": 6995,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 4555,
+        "非全日制": 144
+      },
+      "top_departments": [
+        {
+          "department_name": "生命科学学院",
+          "count": 838
+        },
+        {
+          "department_name": "物理科学与技术学院",
+          "count": 666
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "086000 生物与医药",
+          "count": 376
+        },
+        {
+          "major": "085408 光电信息工程",
+          "count": 260
+        },
+        {
+          "major": "085400 电子信息",
+          "count": 186
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "school_code": "10593",
+      "school_name": "广西大学",
+      "region_code": "45",
+      "region_name": "广西壮族自治区",
+      "school_category": "211",
+      "adjustment_count": 6816,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 3922,
+        "非全日制": 539
+      },
+      "top_departments": [
+        {
+          "department_name": "资源环境与材料学院",
+          "count": 594
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 528
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085602 化学工程",
+          "count": 310
+        },
+        {
+          "major": "070200 物理学",
+          "count": 283
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 277
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "school_code": "10674",
+      "school_name": "昆明理工大学",
+      "region_code": "53",
+      "region_name": "云南省",
+      "school_category": "普本",
+      "adjustment_count": 6023,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 3744,
+        "非全日制": 225
+      },
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 706
+        },
+        {
+          "department_name": "冶金与能源工程学院",
+          "count": 680
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085603 冶金工程",
+          "count": 557
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 467
+        },
+        {
+          "major": "085701 环境工程",
+          "count": 214
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "school_code": "10216",
+      "school_name": "燕山大学",
+      "region_code": "13",
+      "region_name": "河北省",
+      "school_category": "普本",
+      "adjustment_count": 5730,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 3838,
+        "非全日制": 72
+      },
+      "top_departments": [
+        {
+          "department_name": "机械工程学院",
+          "count": 1084
+        },
+        {
+          "department_name": "电气工程学院",
+          "count": 921
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085501 机械工程",
+          "count": 384
+        },
+        {
+          "major": "080502 材料学",
+          "count": 316
+        },
+        {
+          "major": "085602 化学工程",
+          "count": 290
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "school_code": "10299",
+      "school_name": "江苏大学",
+      "region_code": "32",
+      "region_name": "江苏省",
+      "school_category": "普本",
+      "adjustment_count": 5613,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2931,
+        "非全日制": 802
+      },
+      "top_departments": [
+        {
+          "department_name": "管理学院",
+          "count": 500
+        },
+        {
+          "department_name": "流体机械工程技术研究中心",
+          "count": 415
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085802 动力工程",
+          "count": 489
+        },
+        {
+          "major": "085602 化学工程",
+          "count": 358
+        },
+        {
+          "major": "085701 环境工程",
+          "count": 333
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "school_code": "10730",
+      "school_name": "兰州大学",
+      "region_code": "62",
+      "region_name": "甘肃省",
+      "school_category": "985",
+      "adjustment_count": 5523,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 3271,
+        "非全日制": 463
+      },
+      "top_departments": [
+        {
+          "department_name": "资源环境学院",
+          "count": 499
+        },
+        {
+          "department_name": "管理学院",
+          "count": 461
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125100 工商管理",
+          "count": 376
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 315
+        },
+        {
+          "major": "086000 生物与医药",
+          "count": 277
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "school_code": "10270",
+      "school_name": "上海师范大学",
+      "region_code": "31",
+      "region_name": "上海市",
+      "school_category": "普本",
+      "adjustment_count": 5476,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 3487,
+        "非全日制": 293
+      },
+      "top_departments": [
+        {
+          "department_name": "哲学与法政学院",
+          "count": 1143
+        },
+        {
+          "department_name": "化学与材料科学学院",
+          "count": 615
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125200 公共管理",
+          "count": 222
+        },
+        {
+          "major": "125100 工商管理",
+          "count": 162
+        },
+        {
+          "major": "035101 法律(非法学",
+          "count": 159
+        }
+      ]
+    },
+    {
+      "rank": 8,
+      "school_code": "11065",
+      "school_name": "青岛大学",
+      "region_code": "37",
+      "region_name": "山东省",
+      "school_category": "普本",
+      "adjustment_count": 5282,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 3189,
+        "非全日制": 340
+      },
+      "top_departments": [
+        {
+          "department_name": "医学部",
+          "count": 702
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 525
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085601 材料工程",
+          "count": 587
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 199
+        },
+        {
+          "major": "085602 化学工程",
+          "count": 163
+        }
+      ]
+    },
+    {
+      "rank": 9,
+      "school_code": "10755",
+      "school_name": "新疆大学",
+      "region_code": "65",
+      "region_name": "新疆维吾尔自治区",
+      "school_category": "211",
+      "adjustment_count": 5230,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 3452,
+        "非全日制": 31
+      },
+      "top_departments": [
+        {
+          "department_name": "化工学院",
+          "count": 494
+        },
+        {
+          "department_name": "数学与系统科学学院",
+          "count": 404
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085700 资源与环境",
+          "count": 565
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 522
+        },
+        {
+          "major": "025200 应用统计",
+          "count": 333
+        }
+      ]
+    },
+    {
+      "rank": 10,
+      "school_code": "10217",
+      "school_name": "哈尔滨工程大学",
+      "region_code": "23",
+      "region_name": "黑龙江省",
+      "school_category": "211",
+      "adjustment_count": 4695,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 3042,
+        "非全日制": 110
+      },
+      "top_departments": [
+        {
+          "department_name": "烟台研究院",
+          "count": 1530
+        },
+        {
+          "department_name": "青岛基地",
+          "count": 940
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085400 电子信息",
+          "count": 1018
+        },
+        {
+          "major": "085900 土木水利",
+          "count": 975
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 619
+        }
+      ]
+    },
+    {
+      "rank": 11,
+      "school_code": "10602",
+      "school_name": "广西师范大学",
+      "region_code": "45",
+      "region_name": "广西壮族自治区",
+      "school_category": "普本",
+      "adjustment_count": 4326,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2491,
+        "非全日制": 419
+      },
+      "top_departments": [
+        {
+          "department_name": "经济管理学院",
+          "count": 470
+        },
+        {
+          "department_name": "化学与药学学院",
+          "count": 375
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125100 工商管理",
+          "count": 221
+        },
+        {
+          "major": "040100 教育学",
+          "count": 209
+        },
+        {
+          "major": "070300 化学",
+          "count": 198
+        }
+      ]
+    },
+    {
+      "rank": 12,
+      "school_code": "10856",
+      "school_name": "上海工程技术大学",
+      "region_code": "31",
+      "region_name": "上海市",
+      "school_category": "普本",
+      "adjustment_count": 4183,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2692,
+        "非全日制": 133
+      },
+      "top_departments": [
+        {
+          "department_name": "管理学院",
+          "count": 897
+        },
+        {
+          "department_name": "机械与汽车工程学院",
+          "count": 724
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "080200 机械工程",
+          "count": 439
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 439
+        },
+        {
+          "major": "086100 交通运输",
+          "count": 370
+        }
+      ]
+    },
+    {
+      "rank": 13,
+      "school_code": "10732",
+      "school_name": "兰州交通大学",
+      "region_code": "62",
+      "region_name": "甘肃省",
+      "school_category": "普本",
+      "adjustment_count": 4109,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2429,
+        "非全日制": 346
+      },
+      "top_departments": [
+        {
+          "department_name": "经济管理学院",
+          "count": 591
+        },
+        {
+          "department_name": "土木工程学院",
+          "count": 420
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125100 工商管理",
+          "count": 470
+        },
+        {
+          "major": "070300 化学",
+          "count": 242
+        },
+        {
+          "major": "086100 交通运输",
+          "count": 214
+        }
+      ]
+    },
+    {
+      "rank": 14,
+      "school_code": "10389",
+      "school_name": "福建农林大学",
+      "region_code": "35",
+      "region_name": "福建省",
+      "school_category": "普本",
+      "adjustment_count": 4073,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2683,
+        "非全日制": 96
+      },
+      "top_departments": [
+        {
+          "department_name": "未来技术学院",
+          "count": 436
+        },
+        {
+          "department_name": "生命科学学院",
+          "count": 372
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "086001 生物技术与工程",
+          "count": 353
+        },
+        {
+          "major": "095132 资源利用与植物保护",
+          "count": 313
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 204
+        }
+      ]
+    },
+    {
+      "rank": 15,
+      "school_code": "10736",
+      "school_name": "西北师范大学",
+      "region_code": "62",
+      "region_name": "甘肃省",
+      "school_category": "普本",
+      "adjustment_count": 3986,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2275,
+        "非全日制": 356
+      },
+      "top_departments": [
+        {
+          "department_name": "化学化工学院",
+          "count": 403
+        },
+        {
+          "department_name": "法学院",
+          "count": 299
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 264
+        },
+        {
+          "major": "085700 资源与环境",
+          "count": 198
+        },
+        {
+          "major": "125100 工商管理",
+          "count": 187
+        }
+      ]
+    },
+    {
+      "rank": 16,
+      "school_code": "10596",
+      "school_name": "桂林理工大学",
+      "region_code": "45",
+      "region_name": "广西壮族自治区",
+      "school_category": "普本",
+      "adjustment_count": 3978,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2662,
+        "非全日制": 122
+      },
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 661
+        },
+        {
+          "department_name": "环境科学与工程学院",
+          "count": 659
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 453
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 205
+        },
+        {
+          "major": "125100 工商管理",
+          "count": 195
+        }
+      ]
+    },
+    {
+      "rank": 17,
+      "school_code": "10280",
+      "school_name": "上海大学",
+      "region_code": "31",
+      "region_name": "上海市",
+      "school_category": "211",
+      "adjustment_count": 3870,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1453,
+        "非全日制": 1052
+      },
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 732
+        },
+        {
+          "department_name": "悉尼工商学院",
+          "count": 428
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125300 会计",
+          "count": 597
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 509
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 324
+        }
+      ]
+    },
+    {
+      "rank": 18,
+      "school_code": "10608",
+      "school_name": "广西民族大学",
+      "region_code": "45",
+      "region_name": "广西壮族自治区",
+      "school_category": "普本",
+      "adjustment_count": 3801,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2458,
+        "非全日制": 193
+      },
+      "top_departments": [
+        {
+          "department_name": "经济学院",
+          "count": 512
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 481
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 365
+        },
+        {
+          "major": "125100 工商管理",
+          "count": 210
+        },
+        {
+          "major": "025400 国际商务",
+          "count": 205
+        }
+      ]
+    },
+    {
+      "rank": 19,
+      "school_code": "10595",
+      "school_name": "桂林电子科技大学",
+      "region_code": "45",
+      "region_name": "广西壮族自治区",
+      "school_category": "普本",
+      "adjustment_count": 3770,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2334,
+        "非全日制": 212
+      },
+      "top_departments": [
+        {
+          "department_name": "机电工程学院",
+          "count": 430
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 408
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125100 工商管理",
+          "count": 332
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 279
+        },
+        {
+          "major": "120100 管理科学与工程",
+          "count": 217
+        }
+      ]
+    },
+    {
+      "rank": 20,
+      "school_code": "10731",
+      "school_name": "兰州理工大学",
+      "region_code": "62",
+      "region_name": "甘肃省",
+      "school_category": "普本",
+      "adjustment_count": 3649,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2594,
+        "非全日制": 402
+      },
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 571
+        },
+        {
+          "department_name": "石油化工学院",
+          "count": 493
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125100 工商管理",
+          "count": 392
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 264
+        },
+        {
+          "major": "085802 动力工程",
+          "count": 180
+        }
+      ]
+    },
+    {
+      "rank": 21,
+      "school_code": "10555",
+      "school_name": "南华大学",
+      "region_code": "43",
+      "region_name": "湖南省",
+      "school_category": "普本",
+      "adjustment_count": 3598,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2416,
+        "非全日制": 20
+      },
+      "top_departments": [
+        {
+          "department_name": "资源环境与安全工程学院",
+          "count": 435
+        },
+        {
+          "department_name": "基础医学院",
+          "count": 375
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085700 资源与环境",
+          "count": 346
+        },
+        {
+          "major": "100100 基础医学",
+          "count": 267
+        },
+        {
+          "major": "100200 临床医学",
+          "count": 228
+        }
+      ]
+    },
+    {
+      "rank": 22,
+      "school_code": "10512",
+      "school_name": "湖北大学",
+      "region_code": "42",
+      "region_name": "湖北省",
+      "school_category": "普本",
+      "adjustment_count": 3596,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2071,
+        "非全日制": 638
+      },
+      "top_departments": [
+        {
+          "department_name": "商学院",
+          "count": 545
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 480
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 579
+        },
+        {
+          "major": "125100 工商管理",
+          "count": 299
+        },
+        {
+          "major": "125200 公共管理",
+          "count": 266
+        }
+      ]
+    },
+    {
+      "rank": 23,
+      "school_code": "10127",
+      "school_name": "内蒙古科技大学",
+      "region_code": "15",
+      "region_name": "内蒙古自治区",
+      "school_category": "普本",
+      "adjustment_count": 3581,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2141,
+        "非全日制": 263
+      },
+      "top_departments": [
+        {
+          "department_name": "文法学院",
+          "count": 426
+        },
+        {
+          "department_name": "包头医学院",
+          "count": 393
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085603 冶金工程",
+          "count": 227
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 182
+        },
+        {
+          "major": "085901 土木工程",
+          "count": 179
+        }
+      ]
+    },
+    {
+      "rank": 24,
+      "school_code": "10475",
+      "school_name": "河南大学",
+      "region_code": "41",
+      "region_name": "河南省",
+      "school_category": "双一流",
+      "adjustment_count": 3526,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2135,
+        "非全日制": 155
+      },
+      "top_departments": [
+        {
+          "department_name": "纳米材料工程研究中心",
+          "count": 458
+        },
+        {
+          "department_name": "省部共建作物逆境适应与改良国家重点实验室",
+          "count": 237
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 632
+        },
+        {
+          "major": "071000 生物学",
+          "count": 381
+        },
+        {
+          "major": "070300 化学",
+          "count": 311
+        }
+      ]
+    },
+    {
+      "rank": 25,
+      "school_code": "10159",
+      "school_name": "中国医科大学",
+      "region_code": "21",
+      "region_name": "辽宁省",
+      "school_category": "普本",
+      "adjustment_count": 3490,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2337,
+        "非全日制": 1
+      },
+      "top_departments": [
+        {
+          "department_name": "第一临床学院",
+          "count": 791
+        },
+        {
+          "department_name": "公共卫生学院",
+          "count": 687
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "105300 公共卫生",
+          "count": 592
+        },
+        {
+          "major": "105500 药学",
+          "count": 356
+        },
+        {
+          "major": "100214 肿瘤学",
+          "count": 215
+        }
+      ]
+    },
+    {
+      "rank": 26,
+      "school_code": "10759",
+      "school_name": "石河子大学",
+      "region_code": "65",
+      "region_name": "新疆维吾尔自治区",
+      "school_category": "211",
+      "adjustment_count": 3431,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2314,
+        "非全日制": 128
+      },
+      "top_departments": [
+        {
+          "department_name": "经济与管理学院",
+          "count": 523
+        },
+        {
+          "department_name": "医学院",
+          "count": 515
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 236
+        },
+        {
+          "major": "100100 基础医学",
+          "count": 187
+        },
+        {
+          "major": "085900 土木水利",
+          "count": 140
+        }
+      ]
+    },
+    {
+      "rank": 27,
+      "school_code": "10560",
+      "school_name": "汕头大学",
+      "region_code": "44",
+      "region_name": "广东省",
+      "school_category": "普本",
+      "adjustment_count": 3351,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2137,
+        "非全日制": 109
+      },
+      "top_departments": [
+        {
+          "department_name": "工学院",
+          "count": 728
+        },
+        {
+          "department_name": "理学院",
+          "count": 600
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085500 机械",
+          "count": 207
+        },
+        {
+          "major": "085900 土木水利",
+          "count": 168
+        },
+        {
+          "major": "071000 生物学",
+          "count": 142
+        }
+      ]
+    },
+    {
+      "rank": 28,
+      "school_code": "10259",
+      "school_name": "上海应用技术大学",
+      "region_code": "31",
+      "region_name": "上海市",
+      "school_category": "普本",
+      "adjustment_count": 3332,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2218,
+        "非全日制": 17
+      },
+      "top_departments": [
+        {
+          "department_name": "化学与环境工程学院",
+          "count": 672
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 499
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 554
+        },
+        {
+          "major": "085400 电子信息",
+          "count": 289
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 236
+        }
+      ]
+    },
+    {
+      "rank": 29,
+      "school_code": "10364",
+      "school_name": "安徽农业大学",
+      "region_code": "34",
+      "region_name": "安徽省",
+      "school_category": "普本",
+      "adjustment_count": 3265,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2326,
+        "非全日制": 54
+      },
+      "top_departments": [
+        {
+          "department_name": "生命科学学院",
+          "count": 366
+        },
+        {
+          "department_name": "动物科技学院",
+          "count": 339
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "095131 农艺与种业",
+          "count": 467
+        },
+        {
+          "major": "071000 生物学",
+          "count": 232
+        },
+        {
+          "major": "095132 资源利用与植物保护",
+          "count": 201
+        }
+      ]
+    },
+    {
+      "rank": 30,
+      "school_code": "10574",
+      "school_name": "华南师范大学",
+      "region_code": "44",
+      "region_name": "广东省",
+      "school_category": "211",
+      "adjustment_count": 3197,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2043,
+        "非全日制": 39
+      },
+      "top_departments": [
+        {
+          "department_name": "华南先进光电子研究院",
+          "count": 355
+        },
+        {
+          "department_name": "生物光子学研究院",
+          "count": 312
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 332
+        },
+        {
+          "major": "086000 生物与医药",
+          "count": 292
+        },
+        {
+          "major": "070200 物理学",
+          "count": 284
+        }
+      ]
+    },
+    {
+      "rank": 31,
+      "school_code": "10338",
+      "school_name": "浙江理工大学",
+      "region_code": "33",
+      "region_name": "浙江省",
+      "school_category": "普本",
+      "adjustment_count": 3188,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 2053,
+        "非全日制": 71
+      },
+      "top_departments": [
+        {
+          "department_name": "机械工程学院",
+          "count": 841
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 712
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085601 材料工程",
+          "count": 481
+        },
+        {
+          "major": "085501 机械工程",
+          "count": 450
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 231
+        }
+      ]
+    },
+    {
+      "rank": 32,
+      "school_code": "10718",
+      "school_name": "陕西师范大学",
+      "region_code": "61",
+      "region_name": "陕西省",
+      "school_category": "211",
+      "adjustment_count": 3033,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1831,
+        "非全日制": 140
+      },
+      "top_departments": [
+        {
+          "department_name": "化学化工学院",
+          "count": 460
+        },
+        {
+          "department_name": "地理科学与旅游学院",
+          "count": 261
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 256
+        },
+        {
+          "major": "070300 化学",
+          "count": 204
+        },
+        {
+          "major": "086000 生物与医药",
+          "count": 150
+        }
+      ]
+    },
+    {
+      "rank": 33,
+      "school_code": "10289",
+      "school_name": "江苏科技大学",
+      "region_code": "32",
+      "region_name": "江苏省",
+      "school_category": "普本",
+      "adjustment_count": 3005,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1800,
+        "非全日制": 206
+      },
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 460
+        },
+        {
+          "department_name": "船舶与海洋工程学院",
+          "count": 394
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 462
+        },
+        {
+          "major": "085900 土木水利",
+          "count": 380
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 161
+        }
+      ]
+    },
+    {
+      "rank": 34,
+      "school_code": "10758",
+      "school_name": "新疆农业大学",
+      "region_code": "65",
+      "region_name": "新疆维吾尔自治区",
+      "school_category": "普本",
+      "adjustment_count": 2839,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1826,
+        "非全日制": 126
+      },
+      "top_departments": [
+        {
+          "department_name": "水利与土木工程学院",
+          "count": 315
+        },
+        {
+          "department_name": "资源与环境学院",
+          "count": 286
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "095131 农艺与种业",
+          "count": 342
+        },
+        {
+          "major": "095132 资源利用与植物保护",
+          "count": 203
+        },
+        {
+          "major": "125200 公共管理",
+          "count": 124
+        }
+      ]
+    },
+    {
+      "rank": 35,
+      "school_code": "10590",
+      "school_name": "深圳大学",
+      "region_code": "44",
+      "region_name": "广东省",
+      "school_category": "普本",
+      "adjustment_count": 2825,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1755,
+        "非全日制": 246
+      },
+      "top_departments": [
+        {
+          "department_name": "应用技术学院",
+          "count": 488
+        },
+        {
+          "department_name": "物理与光电工程学院",
+          "count": 333
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085408 光电信息工程",
+          "count": 494
+        },
+        {
+          "major": "085901 土木工程",
+          "count": 246
+        },
+        {
+          "major": "085409 生物医学工程",
+          "count": 142
+        }
+      ]
+    },
+    {
+      "rank": 36,
+      "school_code": "10113",
+      "school_name": "山西农业大学",
+      "region_code": "14",
+      "region_name": "山西省",
+      "school_category": "普本",
+      "adjustment_count": 2808,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1861,
+        "非全日制": 54
+      },
+      "top_departments": [
+        {
+          "department_name": "农学院",
+          "count": 503
+        },
+        {
+          "department_name": "资源环境学院",
+          "count": 335
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "095131 农艺与种业",
+          "count": 576
+        },
+        {
+          "major": "095132 资源利用与植物保护",
+          "count": 353
+        },
+        {
+          "major": "095133 畜牧",
+          "count": 198
+        }
+      ]
+    },
+    {
+      "rank": 37,
+      "school_code": "10424",
+      "school_name": "山东科技大学",
+      "region_code": "37",
+      "region_name": "山东省",
+      "school_category": "普本",
+      "adjustment_count": 2794,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1706,
+        "非全日制": 290
+      },
+      "top_departments": [
+        {
+          "department_name": "文法学院",
+          "count": 313
+        },
+        {
+          "department_name": "能源与矿业工程学院",
+          "count": 252
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085700 资源与环境",
+          "count": 193
+        },
+        {
+          "major": "085400 电子信息",
+          "count": 145
+        },
+        {
+          "major": "085703 地质工程",
+          "count": 143
+        }
+      ]
+    },
+    {
+      "rank": 38,
+      "school_code": "10112",
+      "school_name": "太原理工大学",
+      "region_code": "14",
+      "region_name": "山西省",
+      "school_category": "211",
+      "adjustment_count": 2769,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1726,
+        "非全日制": 54
+      },
+      "top_departments": [
+        {
+          "department_name": "矿业工程学院、原位改性采矿教育部重点实验室",
+          "count": 427
+        },
+        {
+          "department_name": "材料科学与工程学院、新材料界面科学与工程教育部重点实验室",
+          "count": 262
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085705 矿业工程",
+          "count": 282
+        },
+        {
+          "major": "085408 光电信息工程",
+          "count": 194
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 107
+        }
+      ]
+    },
+    {
+      "rank": 39,
+      "school_code": "10108",
+      "school_name": "山西大学",
+      "region_code": "14",
+      "region_name": "山西省",
+      "school_category": "双一流",
+      "adjustment_count": 2760,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1769,
+        "非全日制": 222
+      },
+      "top_departments": [
+        {
+          "department_name": "物理电子工程学院",
+          "count": 518
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 304
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085408 光电信息工程",
+          "count": 145
+        },
+        {
+          "major": "085701 环境工程",
+          "count": 135
+        },
+        {
+          "major": "070207 光学",
+          "count": 94
+        }
+      ]
+    },
+    {
+      "rank": 40,
+      "school_code": "10385",
+      "school_name": "华侨大学",
+      "region_code": "35",
+      "region_name": "福建省",
+      "school_category": "普本",
+      "adjustment_count": 2730,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1712,
+        "非全日制": 152
+      },
+      "top_departments": [
+        {
+          "department_name": "化工学院",
+          "count": 360
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 261
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 221
+        },
+        {
+          "major": "020200 应用经济学",
+          "count": 139
+        },
+        {
+          "major": "080200 机械工程",
+          "count": 131
+        }
+      ]
+    },
+    {
+      "rank": 41,
+      "school_code": "10220",
+      "school_name": "东北石油大学",
+      "region_code": "23",
+      "region_name": "黑龙江省",
+      "school_category": "普本",
+      "adjustment_count": 2714,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1801,
+        "非全日制": 62
+      },
+      "top_departments": [
+        {
+          "department_name": "石油工程学院",
+          "count": 635
+        },
+        {
+          "department_name": "机械科学与工程学院",
+          "count": 444
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085706 石油与天然气工程",
+          "count": 301
+        },
+        {
+          "major": "082002 油气田开发工程",
+          "count": 177
+        },
+        {
+          "major": "085501 机械工程",
+          "count": 159
+        }
+      ]
+    },
+    {
+      "rank": 42,
+      "school_code": "10490",
+      "school_name": "武汉工程大学",
+      "region_code": "42",
+      "region_name": "湖北省",
+      "school_category": "普本",
+      "adjustment_count": 2708,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1554,
+        "非全日制": 323
+      },
+      "top_departments": [
+        {
+          "department_name": "管理学院",
+          "count": 351
+        },
+        {
+          "department_name": "化工与制药学院",
+          "count": 338
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125100 工商管理",
+          "count": 220
+        },
+        {
+          "major": "085701 环境工程",
+          "count": 161
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 131
+        }
+      ]
+    },
+    {
+      "rank": 43,
+      "school_code": "10126",
+      "school_name": "内蒙古大学",
+      "region_code": "15",
+      "region_name": "内蒙古自治区",
+      "school_category": "211",
+      "adjustment_count": 2700,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1748,
+        "非全日制": 10
+      },
+      "top_departments": [
+        {
+          "department_name": "化学化工学院",
+          "count": 662
+        },
+        {
+          "department_name": "生态与环境学院",
+          "count": 500
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 472
+        },
+        {
+          "major": "085700 资源与环境",
+          "count": 408
+        },
+        {
+          "major": "086000 生物与医药",
+          "count": 302
+        }
+      ]
+    },
+    {
+      "rank": 44,
+      "school_code": "10488",
+      "school_name": "武汉科技大学",
+      "region_code": "42",
+      "region_name": "湖北省",
+      "school_category": "普本",
+      "adjustment_count": 2693,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1469,
+        "非全日制": 396
+      },
+      "top_departments": [
+        {
+          "department_name": "材料学部",
+          "count": 484
+        },
+        {
+          "department_name": "化学与化工学院",
+          "count": 277
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 631
+        },
+        {
+          "major": "125100 工商管理",
+          "count": 231
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 218
+        }
+      ]
+    },
+    {
+      "rank": 45,
+      "school_code": "10361",
+      "school_name": "安徽理工大学",
+      "region_code": "34",
+      "region_name": "安徽省",
+      "school_category": "普本",
+      "adjustment_count": 2671,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1918,
+        "非全日制": 36
+      },
+      "top_departments": [
+        {
+          "department_name": "联合培养(合肥综合性国家科学中心能源研究院)",
+          "count": 296
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 235
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085705 矿业工程",
+          "count": 191
+        },
+        {
+          "major": "085702 安全工程",
+          "count": 144
+        },
+        {
+          "major": "085602 化学工程",
+          "count": 142
+        }
+      ]
+    },
+    {
+      "rank": 46,
+      "school_code": "10705",
+      "school_name": "西安石油大学",
+      "region_code": "61",
+      "region_name": "陕西省",
+      "school_category": "普本",
+      "adjustment_count": 2668,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1179,
+        "非全日制": 615
+      },
+      "top_departments": [
+        {
+          "department_name": "经济管理学院",
+          "count": 597
+        },
+        {
+          "department_name": "石油工程学院",
+          "count": 269
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125100 工商管理",
+          "count": 389
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 195
+        },
+        {
+          "major": "085703 地质工程",
+          "count": 172
+        }
+      ]
+    },
+    {
+      "rank": 47,
+      "school_code": "11845",
+      "school_name": "广东工业大学",
+      "region_code": "44",
+      "region_name": "广东省",
+      "school_category": "普本",
+      "adjustment_count": 2630,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1464,
+        "非全日制": 392
+      },
+      "top_departments": [
+        {
+          "department_name": "轻工化工学院",
+          "count": 306
+        },
+        {
+          "department_name": "生态环境与资源学院",
+          "count": 259
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085701 环境工程",
+          "count": 284
+        },
+        {
+          "major": "085602 化学工程",
+          "count": 247
+        },
+        {
+          "major": "125100 工商管理",
+          "count": 167
+        }
+      ]
+    },
+    {
+      "rank": 48,
+      "school_code": "11117",
+      "school_name": "扬州大学",
+      "region_code": "32",
+      "region_name": "江苏省",
+      "school_category": "普本",
+      "adjustment_count": 2611,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1190,
+        "非全日制": 563
+      },
+      "top_departments": [
+        {
+          "department_name": "化学化工学院",
+          "count": 588
+        },
+        {
+          "department_name": "医学院",
+          "count": 205
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085601 材料工程",
+          "count": 319
+        },
+        {
+          "major": "070300 化学",
+          "count": 188
+        },
+        {
+          "major": "095131 农艺与种业",
+          "count": 104
+        }
+      ]
+    },
+    {
+      "rank": 49,
+      "school_code": "10749",
+      "school_name": "宁夏大学",
+      "region_code": "64",
+      "region_name": "宁夏回族自治区",
+      "school_category": "211",
+      "adjustment_count": 2525,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1647,
+        "非全日制": 56
+      },
+      "top_departments": [
+        {
+          "department_name": "化学化工学院",
+          "count": 503
+        },
+        {
+          "department_name": "土木与水利工程学院",
+          "count": 314
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 462
+        },
+        {
+          "major": "085601 材料工程",
+          "count": 194
+        },
+        {
+          "major": "085902 水利工程",
+          "count": 155
+        }
+      ]
+    },
+    {
+      "rank": 50,
+      "school_code": "10298",
+      "school_name": "南京林业大学",
+      "region_code": "32",
+      "region_name": "江苏省",
+      "school_category": "双一流",
+      "adjustment_count": 2513,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1200,
+        "非全日制": 525
+      },
+      "top_departments": [
+        {
+          "department_name": "经济管理学院",
+          "count": 571
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 302
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 561
+        },
+        {
+          "major": "125100 工商管理",
+          "count": 296
+        },
+        {
+          "major": "125300 会计",
+          "count": 167
+        }
+      ]
+    },
+    {
+      "rank": 51,
+      "school_code": "10460",
+      "school_name": "河南理工大学",
+      "region_code": "41",
+      "region_name": "河南省",
+      "school_category": "普本",
+      "adjustment_count": 2511,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1559,
+        "非全日制": 63
+      },
+      "top_departments": [
+        {
+          "department_name": "资源环境学院",
+          "count": 319
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 315
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 368
+        },
+        {
+          "major": "085700 资源与环境",
+          "count": 243
+        },
+        {
+          "major": "085703 地质工程",
+          "count": 151
+        }
+      ]
+    },
+    {
+      "rank": 52,
+      "school_code": "10459",
+      "school_name": "郑州大学",
+      "region_code": "41",
+      "region_name": "河南省",
+      "school_category": "211",
+      "adjustment_count": 2508,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1492,
+        "非全日制": 39
+      },
+      "top_departments": [
+        {
+          "department_name": "医学科学院",
+          "count": 402
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 385
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 502
+        },
+        {
+          "major": "100200 临床医学",
+          "count": 95
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 90
+        }
+      ]
+    },
+    {
+      "rank": 53,
+      "school_code": "10212",
+      "school_name": "黑龙江大学",
+      "region_code": "23",
+      "region_name": "黑龙江省",
+      "school_category": "普本",
+      "adjustment_count": 2496,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1681,
+        "非全日制": 82
+      },
+      "top_departments": [
+        {
+          "department_name": "现代农业与生态环境学院",
+          "count": 262
+        },
+        {
+          "department_name": "经济与工商管理学院",
+          "count": 205
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125200 公共管理",
+          "count": 134
+        },
+        {
+          "major": "085900 土木水利",
+          "count": 132
+        },
+        {
+          "major": "045101 教育管理",
+          "count": 108
+        }
+      ]
+    },
+    {
+      "rank": 54,
+      "school_code": "10214",
+      "school_name": "哈尔滨理工大学",
+      "region_code": "23",
+      "region_name": "黑龙江省",
+      "school_category": "普本",
+      "adjustment_count": 2481,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1575,
+        "非全日制": 82
+      },
+      "top_departments": [
+        {
+          "department_name": "材料科学与化学工程学院",
+          "count": 624
+        },
+        {
+          "department_name": "经济与管理学院",
+          "count": 358
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 353
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 186
+        },
+        {
+          "major": "080200 机械工程",
+          "count": 165
+        }
+      ]
+    },
+    {
+      "rank": 55,
+      "school_code": "10337",
+      "school_name": "浙江工业大学",
+      "region_code": "33",
+      "region_name": "浙江省",
+      "school_category": "普本",
+      "adjustment_count": 2440,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1491,
+        "非全日制": 123
+      },
+      "top_departments": [
+        {
+          "department_name": "信息工程学院",
+          "count": 324
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 237
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 291
+        },
+        {
+          "major": "085400 电子信息",
+          "count": 189
+        },
+        {
+          "major": "085406 控制工程",
+          "count": 189
+        }
+      ]
+    },
+    {
+      "rank": 56,
+      "school_code": "10394",
+      "school_name": "福建师范大学",
+      "region_code": "35",
+      "region_name": "福建省",
+      "school_category": "普本",
+      "adjustment_count": 2435,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1716,
+        "非全日制": 8
+      },
+      "top_departments": [
+        {
+          "department_name": "结构所联培",
+          "count": 301
+        },
+        {
+          "department_name": "光电与信息工程学院",
+          "count": 192
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085601 材料工程",
+          "count": 382
+        },
+        {
+          "major": "070300 化学",
+          "count": 259
+        },
+        {
+          "major": "085701 环境工程",
+          "count": 119
+        }
+      ]
+    },
+    {
+      "rank": 57,
+      "school_code": "10357",
+      "school_name": "安徽大学",
+      "region_code": "34",
+      "region_name": "安徽省",
+      "school_category": "211",
+      "adjustment_count": 2432,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1500,
+        "非全日制": 93
+      },
+      "top_departments": [
+        {
+          "department_name": "物质科学与信息技术研究院",
+          "count": 349
+        },
+        {
+          "department_name": "集成电路学院",
+          "count": 229
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085600 材料与化工",
+          "count": 267
+        },
+        {
+          "major": "085403 集成电路工程",
+          "count": 149
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 128
+        }
+      ]
+    },
+    {
+      "rank": 58,
+      "school_code": "10427",
+      "school_name": "济南大学",
+      "region_code": "37",
+      "region_name": "山东省",
+      "school_category": "普本",
+      "adjustment_count": 2430,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1523,
+        "非全日制": 103
+      },
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 342
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 322
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "085601 材料工程",
+          "count": 285
+        },
+        {
+          "major": "085602 化学工程",
+          "count": 233
+        },
+        {
+          "major": "080500 材料科学与工程",
+          "count": 157
+        }
+      ]
+    },
+    {
+      "rank": 59,
+      "school_code": "10161",
+      "school_name": "大连医科大学",
+      "region_code": "21",
+      "region_name": "辽宁省",
+      "school_category": "普本",
+      "adjustment_count": 2410,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 1656
+      },
+      "top_departments": [
+        {
+          "department_name": "附属第一医院及所辖基地",
+          "count": 457
+        },
+        {
+          "department_name": "公共卫生学院",
+          "count": 265
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "105800 医学技术",
+          "count": 274
+        },
+        {
+          "major": "105300 公共卫生",
+          "count": 195
+        },
+        {
+          "major": "100210 外科学",
+          "count": 192
+        }
+      ]
+    },
+    {
+      "rank": 60,
+      "school_code": "10500",
+      "school_name": "湖北工业大学",
+      "region_code": "42",
+      "region_name": "湖北省",
+      "school_category": "普本",
+      "adjustment_count": 2406,
+      "years": [
+        "2023",
+        "2024",
+        "2025"
+      ],
+      "study_modes": {
+        "全日制": 910,
+        "非全日制": 711
+      },
+      "top_departments": [
+        {
+          "department_name": "经济与管理学院",
+          "count": 998
+        },
+        {
+          "department_name": "土木建筑与环境学院",
+          "count": 323
+        }
+      ],
+      "top_majors": [
+        {
+          "major": "125100 工商管理",
+          "count": 454
+        },
+        {
+          "major": "125200 公共管理",
+          "count": 355
+        },
+        {
+          "major": "085600 材料与化工",
+          "count": 175
+        }
+      ]
+    }
+  ]
+}

@@ -55,6 +55,8 @@
 - [Miniapp Smoke Checklist（2026-03-18）](./miniapp_smoke_checklist_2026-03-18.md)
 - [首批重点学校/学院清单（2026-03-18）](./priority_school_targets_2026-03-18.md)
 - [priority_school_targets_2026-03-18.json](./priority_school_targets_2026-03-18.json)
+- [调剂统计表接入说明（2026-03-19）](./adjustment_stats_ingest_2026-03-19.md)
+- [docs/data/adjustment_priority_school_targets_2023_2025.json](./data/adjustment_priority_school_targets_2023_2025.json)
 
 ### 2.6 数据库变更
 

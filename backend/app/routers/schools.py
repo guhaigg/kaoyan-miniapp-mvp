@@ -17,28 +17,16 @@ def _priority_targets_path() -> Path:
     return Path(__file__).resolve().parents[3] / "docs" / "priority_school_targets_2026-03-18.json"
 
 
+def _adjustment_priority_targets_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_priority_school_targets_2023_2025.json"
+
+
 def _department_type_for_name(name: str) -> str:
     return "graduate_school" if "研究生院" in name else "college"
 
 
-@router.get("/suggest", response_model=SchoolSuggestResponse)
-def suggest_schools(
-    q: str = Query(default="", max_length=100),
-    limit: int = Query(default=10, ge=1, le=50),
-    db: Session = Depends(get_db),
-) -> SchoolSuggestResponse:
-    keyword = q.strip()
-    query = db.query(School).filter(School.enabled == 1)
-    if keyword:
-        query = query.filter(or_(School.name.ilike(f"%{keyword}%"), School.province.ilike(f"%{keyword}%")))
-    rows = query.order_by(School.updated_at.desc()).limit(limit).all()
-    return SchoolSuggestResponse(items=[SchoolSuggestItem(id=x.id, name=x.name, province=x.province) for x in rows])
-
-
-@router.post("/import/priority-targets", response_model=SchoolBulkImportResponse)
-def import_priority_targets(request: Request, db: Session = Depends(get_db)) -> SchoolBulkImportResponse:
-    require_admin_request(request)
-    payload = json.loads(_priority_targets_path().read_text(encoding="utf-8"))
+def _import_school_targets_from_path(path: Path, *, request: Request, db: Session, event_type: str) -> SchoolBulkImportResponse:
+    payload = json.loads(path.read_text(encoding="utf-8"))
 
     created_schools = 0
     existing_schools = 0
@@ -85,7 +73,7 @@ def import_priority_targets(request: Request, db: Session = Depends(get_db)) -> 
     audit_event(
         db,
         request,
-        "schools.import_priority_targets",
+        event_type,
         None,
         {
             "total_rows": len(payload),
@@ -99,4 +87,40 @@ def import_priority_targets(request: Request, db: Session = Depends(get_db)) -> 
         existing_schools=existing_schools,
         created_departments=created_departments,
         existing_departments=existing_departments,
+    )
+
+
+@router.get("/suggest", response_model=SchoolSuggestResponse)
+def suggest_schools(
+    q: str = Query(default="", max_length=100),
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> SchoolSuggestResponse:
+    keyword = q.strip()
+    query = db.query(School).filter(School.enabled == 1)
+    if keyword:
+        query = query.filter(or_(School.name.ilike(f"%{keyword}%"), School.province.ilike(f"%{keyword}%")))
+    rows = query.order_by(School.updated_at.desc()).limit(limit).all()
+    return SchoolSuggestResponse(items=[SchoolSuggestItem(id=x.id, name=x.name, province=x.province) for x in rows])
+
+
+@router.post("/import/priority-targets", response_model=SchoolBulkImportResponse)
+def import_priority_targets(request: Request, db: Session = Depends(get_db)) -> SchoolBulkImportResponse:
+    require_admin_request(request)
+    return _import_school_targets_from_path(
+        _priority_targets_path(),
+        request=request,
+        db=db,
+        event_type="schools.import_priority_targets",
+    )
+
+
+@router.post("/import/adjustment-priority-targets", response_model=SchoolBulkImportResponse)
+def import_adjustment_priority_targets(request: Request, db: Session = Depends(get_db)) -> SchoolBulkImportResponse:
+    require_admin_request(request)
+    return _import_school_targets_from_path(
+        _adjustment_priority_targets_path(),
+        request=request,
+        db=db,
+        event_type="schools.import_adjustment_priority_targets",
     )

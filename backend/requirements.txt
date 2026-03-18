@@ -13,4 +13,5 @@ cssselect>=1.2.0
 readability-lxml>=0.8.1
 jieba>=0.42.1
 pypdf>=5.3.1
+openpyxl>=3.1.5
 pytest>=8.4.0
