@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as app_models
 from ..models import NotificationOutbox, utcnow
+from .nlp import keyword_matches_content, normalize_tag
 
 
 def _resolve_models() -> tuple[type[Any], type[Any], type[Any]] | None:
@@ -65,6 +66,7 @@ def _target_matches_scope(target: Any, *, school_id: str | None, department_id: 
 def _collect_keyword_hits(
     keywords: list[Any],
     content_text: str,
+    content_tags: list[str],
     *,
     keyword_value_field: str,
     keyword_mode_field: str,
@@ -78,7 +80,7 @@ def _collect_keyword_hits(
         keyword = _as_text(getattr(keyword_row, keyword_value_field, None)).lower()
         if not keyword or keyword in seen:
             continue
-        if keyword in content_text:
+        if keyword_matches_content(keyword, content_text, content_tags):
             seen.add(keyword)
             matched.append(keyword)
     return matched
@@ -122,6 +124,8 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
         return
 
     extra = dict(getattr(content, "extra", None) or {})
+    content_tags = [normalize_tag(tag) for tag in (extra.get("tags") or [])]
+    content_tags = [tag for tag in content_tags if tag]
     school_id = _as_id(extra.get("school_id")) or _as_id(getattr(content, "school_id", None))
     department_id = _as_id(extra.get("department_id"))
     site_section_id = _as_id(extra.get("site_section_id"))
@@ -191,6 +195,7 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
         matched_keywords = _collect_keyword_hits(
             keywords_by_target.get(target_id, []),
             content_text,
+            content_tags,
             keyword_value_field=keyword_value_field,
             keyword_mode_field=keyword_mode_field,
         )
@@ -249,6 +254,7 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
                 "school_name": school_name or None,
                 "major": major or None,
                 "region": region or None,
+                "tags": content_tags,
                 "hit_id": _as_id(getattr(hit_row, "id", None)),
             },
             status="pending",

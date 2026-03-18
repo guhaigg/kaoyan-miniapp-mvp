@@ -57,7 +57,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `departments`: school departments/graduate schools.
 - `site_sections`: maintained section/list-page assets.
 - `site_section_links`: discovered detail/pdf links from section pages.
-- `content_files`: lightweight file records (currently PDF placeholder).
+- `content_files`: file records for PDF/attachments, including text extraction status and OCR handoff status.
 - `portal_user_monitor_targets`: user-owned monitoring scopes (school/department/section), interval and status.
 - `portal_user_monitor_keywords`: per-target custom keywords.
 - `portal_user_monitor_hits`: user-target-content match records used by in-app/Bark delivery.
@@ -118,13 +118,15 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Worker behavior:
   - For `site_section_discovery`, worker fetches section list page and extracts `<a>` links.
   - New HTML links are saved to `site_section_links` and enqueued as child detail crawl jobs.
-  - New PDF links are saved to `site_section_links` and recorded to `content_files` as placeholder entries.
+  - New PDF links are saved to `site_section_links`, recorded to `content_files`, and enqueued as `job_kind=file_parse`.
+  - Detail page ingestion prefers `detail_selector_config`, falls back to `readability-lxml`, then finally to plain text extraction.
+  - PDF file ingestion prefers direct text extraction from text-based PDF; if extracted text is too short, create a placeholder content row and mark the file as `needs_ocr`.
+  - Extracted content is tagged with domain keywords via `jieba`, and tags are stored in `contents.extra.tags`.
 - Observability:
   - Section rows keep `last_discovered_at / last_discovery_status / last_error`.
   - Discovery failure still writes `crawl_errors`.
 - Current limitations (intentional for MVP):
-  - `list_selector_config` is stored but not yet interpreted as strict CSS/XPath extraction rules.
-  - No OCR/PDF text extraction yet; `content_files` only keeps file metadata placeholder.
+  - No OCR yet; scanned/image PDF is marked `needs_ocr` and exposed through original file link placeholder content.
   - Cross-section dedup (same URL across different sections) is not yet globally merged.
 
 ## 9) Premium Monitoring Phase 1 Baseline (Implemented + Known Gaps)
@@ -148,6 +150,6 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - Admin API does not yet expose a dedicated field for toggling `premium_monitoring_enabled`; current tests toggle it through DB setup.
 - Intentional Phase 1 limits:
   - No OCR.
-  - No full PDF text extraction.
-  - No complex NLP/ranking model.
+  - Text-based PDF extraction is supported, but scanned/image PDF still requires a later OCR stage.
+  - NLP is currently limited to domain keyword tagging (`jieba` + custom dictionary), not full ranking/semantic analysis.
   - No per-user dedicated crawler workers.

@@ -1,5 +1,9 @@
 import hashlib
+import io
 import re
+import time
+from contextlib import suppress
+from datetime import timedelta
 from datetime import datetime
 from html import unescape
 from html.parser import HTMLParser
@@ -7,6 +11,9 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from lxml import etree, html
+from readability import Document
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -14,11 +21,114 @@ from ..db import SessionLocal
 from ..models import ContentFile, CrawlError, CrawlJob, SiteSection, SiteSectionLink, utcnow
 from ..schemas import ContentIn
 from .content import upsert_content
+from .nlp import extract_domain_tags
+
+with suppress(Exception):
+    from pypdf import PdfReader
 
 _UA = "Mozilla/5.0 (compatible; GeWuJianLuCrawler/0.1; +https://gewujl.cloud)"
 _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_DEFAULT_EXCLUDE_TEXT_KEYWORDS = [
+    "首页",
+    "上一页",
+    "下一页",
+    "尾页",
+    "末页",
+    "返回",
+    "关闭",
+    "打印",
+    "友情链接",
+    "联系我们",
+    "站点地图",
+    "加入收藏",
+    "学校首页",
+]
+_DEFAULT_EXCLUDE_URL_KEYWORDS = [
+    "javascript:",
+    "mailto:",
+    "tel:",
+    "/search",
+    "search?",
+    "login",
+    "logout",
+    "sso",
+]
+_DEFAULT_EXCLUDE_URL_SUFFIXES = [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".svg",
+    ".zip",
+    ".rar",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+]
+_DEFAULT_LIST_CSS_SELECTOR = ", ".join(
+    [
+        ".article-list a[href]",
+        ".news-list a[href]",
+        ".notice-list a[href]",
+        ".content-list a[href]",
+        ".list a[href]",
+        ".main a[href]",
+        "article a[href]",
+    ]
+)
+_DEFAULT_LIST_XPATH_SELECTOR = " | ".join(
+    [
+        "//div[contains(@class, 'article-list')]//a[@href]",
+        "//ul[contains(@class, 'news-list')]//a[@href]",
+        "//ul[contains(@class, 'notice-list')]//a[@href]",
+        "//div[contains(@class, 'content-list')]//a[@href]",
+        "//main//a[@href]",
+        "//article//a[@href]",
+    ]
+)
+_DEFAULT_DETAIL_CSS_SELECTOR = ", ".join(
+    [
+        "article",
+        ".article",
+        ".article-content",
+        ".detail-content",
+        ".content",
+        ".news-content",
+        ".entry-content",
+        ".main-content",
+    ]
+)
+_DEFAULT_DETAIL_XPATH_SELECTOR = " | ".join(
+    [
+        "//article",
+        "//div[contains(@class, 'article')]",
+        "//div[contains(@class, 'article-content')]",
+        "//div[contains(@class, 'detail-content')]",
+        "//div[contains(@class, 'news-content')]",
+        "//div[contains(@class, 'entry-content')]",
+        "//div[contains(@class, 'main-content')]",
+    ]
+)
+_MIN_DETAIL_TEXT_LENGTH = 50
+_MIN_PDF_TEXT_LENGTH = 50
+_MAX_OUTBOUND_LINKS = 3
+_MAX_OUTBOUND_LINK_TEXT_LENGTH = 80
+_LINK_NOTICE_MAX_BODY_LENGTH = 120
+_SUMMARY_MAX_LENGTH = 180
+_LINK_NOTICE_HINT_KEYWORDS = [
+    "详见附件",
+    "点击查看",
+    "查看原文",
+    "附件下载",
+    "链接如下",
+    "见附件",
+    "查看详情",
+]
 
 
 class _AnchorParser(HTMLParser):
@@ -72,6 +182,15 @@ def _extract_text(raw_html: str) -> str:
     return text
 
 
+def _summarize_text(text: str, *, max_length: int = _SUMMARY_MAX_LENGTH) -> str | None:
+    normalized = _SPACE_RE.sub(" ", str(text or "")).strip()
+    if not normalized:
+        return None
+    if len(normalized) <= max_length:
+        return normalized
+    return f"{normalized[: max_length - 1].rstrip()}..."
+
+
 def _coerce_datetime(value: Any) -> datetime | None:
     if value is None:
         return None
@@ -109,6 +228,473 @@ def _fallback_link_title(url: str) -> str:
 
 def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+
+def _to_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            items.append(text)
+    return items
+
+
+def _to_optional_string(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _has_manual_selector(raw_config: dict[str, Any]) -> bool:
+    return bool(_to_optional_string(raw_config.get("css_selector")) or _to_optional_string(raw_config.get("xpath_selector")))
+
+
+def _suggest_default_list_selector_config(_section: SiteSection) -> dict[str, Any]:
+    return {
+        "css_selector": _DEFAULT_LIST_CSS_SELECTOR,
+        "xpath_selector": _DEFAULT_LIST_XPATH_SELECTOR,
+        "fallback_to_all_links": True,
+        "link_attribute": "href",
+    }
+
+
+def _suggest_default_detail_selector_config(_section: SiteSection) -> dict[str, Any]:
+    return {
+        "css_selector": _DEFAULT_DETAIL_CSS_SELECTOR,
+        "xpath_selector": _DEFAULT_DETAIL_XPATH_SELECTOR,
+        "fallback_to_full_text": True,
+    }
+
+
+def build_site_section_list_selector_config(section: SiteSection, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    base_config: dict[str, Any] = {
+        "same_host_only": True,
+        "min_text_length": 2,
+        "exclude_text_keywords": list(_DEFAULT_EXCLUDE_TEXT_KEYWORDS),
+        "exclude_url_keywords": list(_DEFAULT_EXCLUDE_URL_KEYWORDS),
+        "exclude_url_suffixes": list(_DEFAULT_EXCLUDE_URL_SUFFIXES),
+        "allowed_path_prefixes": [],
+        "include_url_keywords": [],
+        "include_text_keywords": [],
+        "include_url_regexes": [],
+        "exclude_url_regexes": [],
+        "include_text_regexes": [],
+        "exclude_text_regexes": [],
+        "css_selector": "",
+        "xpath_selector": "",
+        "link_attribute": "href",
+        "fallback_to_all_links": True,
+    }
+
+    raw_config = overrides if overrides is not None else (section.list_selector_config or {})
+    if not isinstance(raw_config, dict):
+        return base_config
+
+    default_selector_config = _suggest_default_list_selector_config(section)
+    config = dict(base_config)
+    manual_selector = _has_manual_selector(raw_config)
+    config.update(default_selector_config if not manual_selector else {})
+    for key in [
+        "allowed_path_prefixes",
+        "include_url_keywords",
+        "exclude_url_keywords",
+        "include_text_keywords",
+        "exclude_text_keywords",
+        "include_url_regexes",
+        "exclude_url_regexes",
+        "include_text_regexes",
+        "exclude_text_regexes",
+        "exclude_url_suffixes",
+        "allowed_hosts",
+    ]:
+        if key in raw_config:
+            config[key] = _to_string_list(raw_config.get(key))
+
+    for key in ["css_selector", "xpath_selector", "link_attribute"]:
+        if key in raw_config:
+            config[key] = _to_optional_string(raw_config.get(key)) or ""
+
+    if "same_host_only" in raw_config:
+        config["same_host_only"] = bool(raw_config.get("same_host_only"))
+    if "min_text_length" in raw_config:
+        try:
+            config["min_text_length"] = max(0, int(raw_config.get("min_text_length") or 0))
+        except (TypeError, ValueError):
+            pass
+    if "fallback_to_all_links" in raw_config:
+        config["fallback_to_all_links"] = bool(raw_config.get("fallback_to_all_links"))
+    return config
+
+
+def build_site_section_detail_selector_config(section: SiteSection, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    base_config: dict[str, Any] = {
+        "css_selector": "",
+        "xpath_selector": "",
+        "fallback_to_full_text": True,
+    }
+
+    raw_config = overrides if overrides is not None else (section.detail_selector_config or {})
+    if not isinstance(raw_config, dict):
+        return base_config
+
+    config = dict(base_config)
+    if not _has_manual_selector(raw_config):
+        config.update(_suggest_default_detail_selector_config(section))
+
+    for key in ["css_selector", "xpath_selector"]:
+        if key in raw_config:
+            config[key] = _to_optional_string(raw_config.get(key)) or ""
+
+    if "fallback_to_full_text" in raw_config:
+        config["fallback_to_full_text"] = bool(raw_config.get("fallback_to_full_text"))
+    return config
+
+
+def _matches_keyword_list(text: str, keywords: list[str]) -> bool:
+    lowered = text.lower()
+    return any(keyword.lower() in lowered for keyword in keywords if keyword)
+
+
+def _matches_regex_list(text: str, patterns: list[str]) -> bool:
+    for pattern in patterns:
+        try:
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                return True
+        except re.error:
+            continue
+    return False
+
+
+def _path_allowed(path: str, prefixes: list[str]) -> bool:
+    if not prefixes:
+        return True
+    return any(path.startswith(prefix) for prefix in prefixes)
+
+
+def _link_matches_selector_config(*, section_url: str, absolute_url: str, text: str, config: dict[str, Any]) -> bool:
+    parsed_target = urlparse(absolute_url)
+    parsed_section = urlparse(section_url)
+    target_host = (parsed_target.netloc or "").lower()
+    section_host = (parsed_section.netloc or "").lower()
+    target_path = (parsed_target.path or "").strip()
+    normalized_text = _SPACE_RE.sub(" ", text).strip()
+
+    if config.get("same_host_only") and target_host and section_host and target_host != section_host:
+        return False
+
+    allowed_hosts = [host.lower() for host in config.get("allowed_hosts") or []]
+    if allowed_hosts and target_host not in allowed_hosts:
+        return False
+
+    if not _path_allowed(target_path, config.get("allowed_path_prefixes") or []):
+        return False
+
+    min_text_length = int(config.get("min_text_length") or 0)
+    if min_text_length > 0 and len(normalized_text) < min_text_length:
+        return False
+
+    url_text = absolute_url.lower()
+    if _matches_keyword_list(url_text, config.get("exclude_url_keywords") or []):
+        return False
+    if _matches_keyword_list(normalized_text, config.get("exclude_text_keywords") or []):
+        return False
+    if _matches_regex_list(url_text, config.get("exclude_url_regexes") or []):
+        return False
+    if _matches_regex_list(normalized_text, config.get("exclude_text_regexes") or []):
+        return False
+
+    suffixes = [suffix.lower() for suffix in config.get("exclude_url_suffixes") or []]
+    if any(target_path.lower().endswith(suffix) for suffix in suffixes):
+        return False
+
+    include_url_keywords = config.get("include_url_keywords") or []
+    if include_url_keywords and not _matches_keyword_list(url_text, include_url_keywords):
+        return False
+
+    include_text_keywords = config.get("include_text_keywords") or []
+    if include_text_keywords and not _matches_keyword_list(normalized_text, include_text_keywords):
+        return False
+
+    include_url_regexes = config.get("include_url_regexes") or []
+    if include_url_regexes and not _matches_regex_list(url_text, include_url_regexes):
+        return False
+
+    include_text_regexes = config.get("include_text_regexes") or []
+    if include_text_regexes and not _matches_regex_list(normalized_text, include_text_regexes):
+        return False
+
+    return True
+
+
+def _parse_html_document(raw_html: str) -> html.HtmlElement | None:
+    if not raw_html.strip():
+        return None
+    try:
+        return html.fromstring(raw_html)
+    except (etree.ParserError, ValueError):
+        return None
+
+
+def _collect_anchor_nodes(results: list[Any]) -> list[Any]:
+    anchors: list[Any] = []
+    seen_ids: set[int] = set()
+
+    for result in results:
+        if not hasattr(result, "xpath"):
+            continue
+        nodes = [result] if getattr(result, "tag", None) == "a" else result.xpath(".//a[@href]")
+        for node in nodes:
+            node_id = id(node)
+            if node_id in seen_ids:
+                continue
+            seen_ids.add(node_id)
+            anchors.append(node)
+    return anchors
+
+
+def _extract_links_by_selector(raw_html: str, config: dict[str, Any]) -> list[dict[str, str]]:
+    document = _parse_html_document(raw_html)
+    if document is None:
+        return []
+
+    selected_nodes: list[Any] = []
+    css_selector = _to_optional_string(config.get("css_selector"))
+    xpath_selector = _to_optional_string(config.get("xpath_selector"))
+    if css_selector:
+        try:
+            selected_nodes.extend(document.cssselect(css_selector))
+        except Exception:
+            pass
+    if xpath_selector:
+        try:
+            selected_nodes.extend(document.xpath(xpath_selector))
+        except Exception:
+            pass
+
+    if not selected_nodes:
+        return []
+
+    link_attribute = _to_optional_string(config.get("link_attribute")) or "href"
+    items: list[dict[str, str]] = []
+    for node in _collect_anchor_nodes(selected_nodes):
+        href = str(node.get(link_attribute) or "").strip()
+        if not href:
+            continue
+        text = _SPACE_RE.sub(" ", " ".join(node.itertext())).strip()
+        items.append({"href": href, "text": text})
+    return items
+
+
+def _extract_text_by_selector(raw_html: str, config: dict[str, Any]) -> str:
+    document = _parse_html_document(raw_html)
+    if document is None:
+        return ""
+
+    selected_nodes: list[Any] = []
+    css_selector = _to_optional_string(config.get("css_selector"))
+    xpath_selector = _to_optional_string(config.get("xpath_selector"))
+    if css_selector:
+        try:
+            selected_nodes.extend(document.cssselect(css_selector))
+        except Exception:
+            pass
+    if xpath_selector:
+        try:
+            selected_nodes.extend(document.xpath(xpath_selector))
+        except Exception:
+            pass
+
+    chunks: list[str] = []
+    for node in selected_nodes:
+        if hasattr(node, "itertext"):
+            text = _SPACE_RE.sub(" ", " ".join(node.itertext())).strip()
+        else:
+            text = _SPACE_RE.sub(" ", str(node or "")).strip()
+        if text:
+            chunks.append(text)
+    return _SPACE_RE.sub(" ", " ".join(chunks)).strip()
+
+
+def _extract_text_by_readability(raw_html: str) -> tuple[str | None, str]:
+    if not raw_html.strip():
+        return None, ""
+
+    try:
+        doc = Document(raw_html)
+        title = _SPACE_RE.sub(" ", str(doc.short_title() or "")).strip() or None
+        summary_html = str(doc.summary() or "").strip()
+        if not summary_html:
+            return title, ""
+        return title, _extract_text(summary_html)
+    except Exception:
+        return None, ""
+
+
+def _extract_detail_body(
+    raw_html: str,
+    *,
+    detail_selector_config: dict[str, Any] | None,
+) -> tuple[str, str, str | None]:
+    selected_text = _extract_text_by_selector(raw_html, detail_selector_config or {}) if detail_selector_config else ""
+    allow_fallback = bool((detail_selector_config or {}).get("fallback_to_full_text", True))
+    if selected_text and (len(selected_text) >= _MIN_DETAIL_TEXT_LENGTH or not allow_fallback):
+        return selected_text, "selector", None
+
+    if not allow_fallback:
+        return selected_text, "selector", None
+
+    readability_title, readability_text = _extract_text_by_readability(raw_html)
+    if len(readability_text) >= _MIN_DETAIL_TEXT_LENGTH:
+        return readability_text, "readability", readability_title
+
+    parsed_text = _extract_text(raw_html)
+    return parsed_text, "plain_text", readability_title
+
+
+def _build_content_tags(*parts: str | None, top_k: int = 5) -> list[str]:
+    merged = " ".join(_SPACE_RE.sub(" ", str(part or "")).strip() for part in parts if str(part or "").strip())
+    return extract_domain_tags(merged, top_k=top_k)
+
+
+def _normalize_link_text(text: str, url: str) -> str:
+    normalized = _SPACE_RE.sub(" ", str(text or "")).strip()
+    if not normalized:
+        normalized = _fallback_link_title(url)
+    return normalized[:_MAX_OUTBOUND_LINK_TEXT_LENGTH].rstrip()
+
+
+def _extract_outbound_links(raw_html: str, *, base_url: str, current_url: str) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    current = current_url.split("#", 1)[0]
+
+    for item in _extract_links(raw_html):
+        href = str(item.get("href") or "").strip()
+        if not href or href.startswith("#") or href.startswith("javascript:") or href.startswith("mailto:") or href.startswith("tel:"):
+            continue
+
+        absolute_url = urljoin(base_url, href).split("#", 1)[0]
+        if not absolute_url or absolute_url == current or absolute_url in seen_urls:
+            continue
+
+        text = _normalize_link_text(str(item.get("text") or ""), absolute_url)
+        if _matches_keyword_list(text, _DEFAULT_EXCLUDE_TEXT_KEYWORDS):
+            continue
+        if _matches_keyword_list(absolute_url, _DEFAULT_EXCLUDE_URL_KEYWORDS):
+            continue
+
+        seen_urls.add(absolute_url)
+        items.append(
+            {
+                "url": absolute_url,
+                "text": text,
+                "link_type": "pdf" if _is_pdf_url(absolute_url) else "html",
+            }
+        )
+        if len(items) >= _MAX_OUTBOUND_LINKS:
+            break
+
+    return items
+
+
+def _looks_like_link_notice(*, body: str, raw_html: str, outbound_links: list[dict[str, str]]) -> bool:
+    if not outbound_links:
+        return False
+
+    normalized_body = _SPACE_RE.sub(" ", str(body or "")).strip()
+    normalized_page = _SPACE_RE.sub(" ", f"{raw_html} {normalized_body}").lower()
+    has_hint = any(keyword.lower() in normalized_page for keyword in _LINK_NOTICE_HINT_KEYWORDS)
+    return has_hint or len(normalized_body) <= _LINK_NOTICE_MAX_BODY_LENGTH
+
+
+def _build_link_notice_content(title: str, outbound_links: list[dict[str, str]]) -> tuple[str, str]:
+    pdf_count = sum(1 for item in outbound_links if item.get("link_type") == "pdf")
+    html_count = len(outbound_links) - pdf_count
+    target_label = "附件" if pdf_count and not html_count else "链接" if html_count and not pdf_count else "链接和附件"
+    summary = f"该公告正文较短，系统判断核心内容在{target_label}中，已保留目标地址供继续查看。"
+
+    lines = [
+        f"系统识别《{title}》为链接型公告。",
+        "页面可直接读取的正文较少，核心信息更可能位于以下链接或附件中。",
+        "建议优先打开下列目标地址查看完整公告：",
+    ]
+    for index, item in enumerate(outbound_links, start=1):
+        type_label = "PDF附件" if item.get("link_type") == "pdf" else "目标链接"
+        lines.append(f"{index}. {item.get('text') or '未命名链接'}（{type_label}）: {item.get('url')}")
+    lines.append("如页面仅提供跳转入口，请以目标链接中的完整正文或附件为准。")
+    return "\n".join(lines), summary
+
+
+def _build_scan_pdf_notice_content(title: str, file_url: str) -> tuple[str, str]:
+    summary = "系统识别到该 PDF 可用文字过少，疑似图片型或扫描件，已保留原文件链接供继续查看。"
+    body = "\n".join(
+        [
+            f"系统已发现《{title}》对应的 PDF 附件。",
+            "当前提取到的可用文字过少，判断该文件更像图片型或扫描件。",
+            "MVP 阶段暂不进行 OCR，以避免额外占用服务器 CPU 和内存。",
+            f"请点击原文件查看完整内容：{file_url}",
+        ]
+    )
+    return body, summary
+
+
+def _fetch_with_retry(url: str) -> httpx.Response:
+    settings = get_settings()
+    attempts = max(1, int(settings.crawl_retry_attempts))
+    backoff_seconds = max(0.0, float(settings.crawl_retry_backoff_seconds))
+    timeout = max(1.0, float(settings.crawl_fetch_timeout_seconds))
+    last_error: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            response = httpx.get(
+                url,
+                timeout=timeout,
+                follow_redirects=True,
+                headers={"User-Agent": _UA},
+            )
+            response.raise_for_status()
+            return response
+        except Exception as exc:
+            last_error = exc
+            if attempt >= attempts:
+                break
+            delay = backoff_seconds * (2 ** (attempt - 1))
+            if delay > 0:
+                time.sleep(delay)
+
+    if last_error is None:
+        raise RuntimeError("fetch failed without exception")
+    raise last_error
+
+
+def _download_binary_with_retry(url: str) -> tuple[bytes, str | None]:
+    response = _fetch_with_retry(url)
+    raw_bytes = getattr(response, "content", None)
+    if raw_bytes is None:
+        raw_bytes = str(getattr(response, "text", "") or "").encode("utf-8", errors="ignore")
+    headers = getattr(response, "headers", {}) or {}
+    mime_type = str(headers.get("content-type") or "").strip() or None
+    return bytes(raw_bytes), mime_type
+
+
+def _extract_pdf_text_from_bytes(file_bytes: bytes) -> str:
+    if not file_bytes:
+        return ""
+    if "PdfReader" not in globals():
+        raise RuntimeError("pypdf is not installed")
+
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes))  # type: ignore[name-defined]
+        chunks: list[str] = []
+        for page in reader.pages:
+            page_text = _SPACE_RE.sub(" ", str(page.extract_text() or "")).strip()
+            if page_text:
+                chunks.append(page_text)
+        return "\n".join(chunks).strip()
+    except Exception as exc:
+        raise RuntimeError(f"pdf text extraction failed: {exc}") from exc
 
 
 def _scope_meta_from_query(db: Session, query: dict[str, Any]) -> dict[str, str]:
@@ -163,7 +749,23 @@ class CrawlEngine:
 
     def _lock_pending_rows(self, batch_size: int) -> list[str]:
         with SessionLocal() as db:
-            query = db.query(CrawlJob).filter(CrawlJob.status == "pending").order_by(CrawlJob.requested_at.asc()).limit(batch_size)
+            settings = get_settings()
+            stale_cutoff = utcnow() - timedelta(seconds=max(1, int(settings.crawl_processing_timeout_seconds)))
+            query = (
+                db.query(CrawlJob)
+                .filter(
+                    or_(
+                        CrawlJob.status == "pending",
+                        and_(
+                            CrawlJob.status == "running",
+                            CrawlJob.finished_at.is_(None),
+                            CrawlJob.updated_at <= stale_cutoff,
+                        ),
+                    )
+                )
+                .order_by(CrawlJob.requested_at.asc())
+                .limit(batch_size)
+            )
             dialect_name = (db.bind.dialect.name if db.bind else "").lower()
             if dialect_name != "sqlite":
                 query = query.with_for_update(skip_locked=True)
@@ -173,9 +775,18 @@ class CrawlEngine:
 
             now = utcnow()
             for row in rows:
+                was_stale_running = row.status == "running"
+                if was_stale_running:
+                    query_payload = dict(row.query or {})
+                    reclaim_count = int(query_payload.get("_lease_reclaim_count") or 0) + 1
+                    query_payload["_lease_reclaim_count"] = reclaim_count
+                    query_payload["_last_lease_reclaimed_at"] = now.isoformat()
+                    row.query = query_payload
                 row.status = "running"
                 row.started_at = now
-                row.message = "worker picked up"
+                row.finished_at = None
+                row.updated_at = now
+                row.message = "worker reclaimed expired lease" if was_stale_running else "worker picked up"
             db.commit()
             return [row.id for row in rows]
 
@@ -186,6 +797,8 @@ class CrawlEngine:
 
         if query.get("job_kind") == "site_section_discovery":
             return self._discover_site_section(db, job, query)
+        if query.get("job_kind") == "file_parse":
+            return self._ingest_from_file(db, job, query)
 
         if query.get("simulate") is True:
             return self._ingest_simulated(db, job, query)
@@ -211,15 +824,12 @@ class CrawlEngine:
         if not section_url:
             raise ValueError("site section url is empty")
 
-        response = httpx.get(
-            section_url,
-            timeout=10.0,
-            follow_redirects=True,
-            headers={"User-Agent": _UA},
-        )
-        response.raise_for_status()
+        response = _fetch_with_retry(section_url)
         raw_html = response.text or ""
-        discovered_links = _extract_links(raw_html)
+        selector_config = build_site_section_list_selector_config(section)
+        discovered_links = _extract_links_by_selector(raw_html, selector_config)
+        if not discovered_links and selector_config.get("fallback_to_all_links"):
+            discovered_links = _extract_links(raw_html)
         if not discovered_links:
             section.last_discovered_at = utcnow()
             section.last_discovery_status = "done"
@@ -242,12 +852,20 @@ class CrawlEngine:
                 continue
 
             absolute_url = urljoin(section_url, href)
+            link_text = (item.get("text") or "").strip()
+            if not _link_matches_selector_config(
+                section_url=section_url,
+                absolute_url=absolute_url,
+                text=link_text,
+                config=selector_config,
+            ):
+                continue
             url_hash = _url_hash(absolute_url)
             if url_hash in existing_url_hashes:
                 continue
 
             link_type = "pdf" if _is_pdf_url(absolute_url) else "html"
-            title = (item.get("text") or "").strip() or _fallback_link_title(absolute_url)
+            title = link_text or _fallback_link_title(absolute_url)
             link = SiteSectionLink(
                 site_section_id=section.id,
                 link_url=absolute_url,
@@ -282,7 +900,32 @@ class CrawlEngine:
                     },
                 )
                 db.add(file_record)
+                db.flush()
+                child_job = CrawlJob(
+                    category=section.discovery_category,
+                    status="pending",
+                    requested_at=utcnow(),
+                    message=f"queued pdf parse by site section discovery {section.id}",
+                    query={
+                        "job_kind": "file_parse",
+                        "content_file_id": file_record.id,
+                        "site_section_id": section.id,
+                        "site_section_link_id": link.id,
+                        "source_url": absolute_url,
+                        "title": title,
+                        "school_name": section.school.name if section.school else None,
+                        "department_name": section.department.name if section.department else None,
+                        "section_type": section.section_type,
+                    },
+                )
+                db.add(child_job)
+                db.flush()
+                link.crawl_job_id = child_job.id
                 link.status = "file_recorded"
+                file_record.file_meta = {
+                    **dict(file_record.file_meta or {}),
+                    "parse_job_id": child_job.id,
+                }
                 pdf_files += 1
                 continue
 
@@ -320,24 +963,41 @@ class CrawlEngine:
         query: dict[str, Any],
         source_url: str,
     ) -> tuple[str, str]:
-        response = httpx.get(
-            source_url,
-            timeout=10.0,
-            follow_redirects=True,
-            headers={"User-Agent": _UA},
-        )
-        response.raise_for_status()
+        response = _fetch_with_retry(source_url)
         raw_html = response.text or ""
-        parsed_text = _extract_text(raw_html)
-        if not parsed_text:
+        detail_selector_config: dict[str, Any] | None = None
+        site_section_id = str(query.get("site_section_id") or "").strip()
+        if site_section_id:
+            section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+            if section is not None:
+                detail_selector_config = build_site_section_detail_selector_config(section)
+        extracted_body, extraction_method, readability_title = _extract_detail_body(
+            raw_html,
+            detail_selector_config=detail_selector_config,
+        )
+        body = str(query.get("body") or "").strip() or extracted_body
+        if not body:
             raise ValueError("parsed body is empty")
 
-        title = str(query.get("title") or "").strip() or _extract_title(raw_html) or f"{job.category} crawl {job.id[:8]}"
-        body = str(query.get("body") or "").strip() or parsed_text
-        summary = str(query.get("summary") or "").strip() or None
+        title = (
+            str(query.get("title") or "").strip()
+            or readability_title
+            or _extract_title(raw_html)
+            or f"{job.category} crawl {job.id[:8]}"
+        )
+        summary = str(query.get("summary") or "").strip() or _summarize_text(body)
         extra = dict(query.get("extra") or {})
+        outbound_links = _extract_outbound_links(raw_html, base_url=source_url, current_url=source_url)
+        if _looks_like_link_notice(body=body, raw_html=raw_html, outbound_links=outbound_links):
+            body, summary = _build_link_notice_content(title, outbound_links)
+            extra["notice_kind"] = "link_notice"
+            extra["outbound_links"] = outbound_links
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "url_fetch"
+        if detail_selector_config:
+            extra["detail_selector_applied"] = extraction_method == "selector"
+        extra["detail_extraction_method"] = extraction_method
+        extra["tags"] = _build_content_tags(title, summary, body)
         extra.update(_scope_meta_from_query(db, query))
 
         payload = ContentIn(
@@ -357,6 +1017,85 @@ class CrawlEngine:
         content, status = upsert_content(db, payload)
         return content.id, status
 
+    def _ingest_from_file(
+        self,
+        db: Session,
+        job: CrawlJob,
+        query: dict[str, Any],
+    ) -> tuple[str, str]:
+        content_file_id = str(query.get("content_file_id") or "").strip()
+        if not content_file_id:
+            raise ValueError("content_file_id is required for file parse job")
+
+        file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one_or_none()
+        if file_record is None:
+            raise ValueError("content file not found")
+
+        file_url = str(query.get("source_url") or file_record.file_url or "").strip()
+        if not file_url:
+            raise ValueError("file url is empty")
+
+        link = file_record.site_section_link
+        title = (
+            str(query.get("title") or "").strip()
+            or (str(link.title).strip() if link and link.title else "")
+            or _fallback_link_title(file_url)
+        )
+
+        file_bytes, mime_type = _download_binary_with_retry(file_url)
+        extracted_text = _extract_pdf_text_from_bytes(file_bytes)
+        summary = None
+        extra = dict(query.get("extra") or {})
+        extra["crawl_job_id"] = job.id
+        extra["crawl_mode"] = "pdf_file"
+        extra["content_file_id"] = file_record.id
+        if link is not None:
+            extra["site_section_link_id"] = link.id
+        extra.update(_scope_meta_from_query(db, query))
+
+        if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH:
+            body = extracted_text
+            summary = _summarize_text(extracted_text)
+            extra["pdf_parse_status"] = "done"
+            extra["pdf_text_extracted"] = True
+        else:
+            body, summary = _build_scan_pdf_notice_content(title, file_url)
+            extra["pdf_parse_status"] = "needs_ocr"
+            extra["pdf_text_extracted"] = False
+
+        extra["tags"] = _build_content_tags(title, summary, extracted_text or body)
+
+        payload = ContentIn(
+            category=job.category,
+            title=title,
+            body=body,
+            summary=summary,
+            school_name=(str(query.get("school_name") or "").strip() or None),
+            source_url=file_url,
+            source_type="crawler",
+            published_at=_coerce_datetime(query.get("published_at")),
+            region=(str(query.get("region") or "").strip() or None),
+            major=(str(query.get("major") or "").strip() or None),
+            extra=extra,
+            raw_html=None,
+        )
+        content, status = upsert_content(db, payload)
+
+        file_record.content_id = content.id
+        file_record.mime_type = mime_type or file_record.mime_type or "application/pdf"
+        file_record.text_extracted = extracted_text or None
+        file_record.parse_status = "done" if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH else "needs_ocr"
+        file_record.ocr_status = "not_started" if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH else "skipped_mvp"
+        file_record.file_meta = {
+            **dict(file_record.file_meta or {}),
+            "parse_job_id": job.id,
+            "pdf_text_extracted": bool(extracted_text and len(extracted_text) >= _MIN_PDF_TEXT_LENGTH),
+        }
+        if link is not None:
+            link.status = "parsed" if file_record.parse_status == "done" else "file_needs_ocr"
+
+        return content.id, f"{status}:pdf_{file_record.parse_status}"
+
     def _ingest_from_content_dict(
         self,
         db: Session,
@@ -372,10 +1111,11 @@ class CrawlEngine:
 
         source_url = str(content_data.get("source_url") or "").strip() or f"crawl-job://{job.id}"
         raw_html = str(content_data.get("raw_html") or "").strip() or None
-        summary = str(content_data.get("summary") or "").strip() or None
+        summary = str(content_data.get("summary") or "").strip() or _summarize_text(body)
         extra = dict(content_data.get("extra") or {})
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "content_payload"
+        extra["tags"] = _build_content_tags(title, summary, body)
         extra.update(_scope_meta_from_query(db, query))
 
         payload = ContentIn(
@@ -403,13 +1143,14 @@ class CrawlEngine:
         extra = dict(query.get("extra") or {})
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "simulate"
+        extra["tags"] = _build_content_tags(title, query.get("summary"), body)
         extra.update(_scope_meta_from_query(db, query))
 
         payload = ContentIn(
             category=job.category,
             title=title,
             body=body,
-            summary=(str(query.get("summary") or "").strip() or None),
+            summary=(str(query.get("summary") or "").strip() or _summarize_text(body)),
             school_name=(str(query.get("school_name") or "").strip() or None),
             source_url=source_url,
             source_type="crawler",
@@ -430,6 +1171,7 @@ class CrawlEngine:
             query_payload = dict(job.query or {})
             source_url = str(query_payload.get("source_url") or "").strip() or None
             site_section_id = str(query_payload.get("site_section_id") or "").strip() or None
+            content_file_id = str(query_payload.get("content_file_id") or "").strip() or None
             db.add(
                 CrawlError(
                     source_id=None,
@@ -446,6 +1188,16 @@ class CrawlEngine:
                     section.last_discovered_at = utcnow()
                     section.last_discovery_status = "failed"
                     section.last_error = str(exc)[:1000]
+            if content_file_id and query_payload.get("job_kind") == "file_parse":
+                file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one_or_none()
+                if file_record is not None:
+                    file_record.parse_status = "failed"
+                    file_record.file_meta = {
+                        **dict(file_record.file_meta or {}),
+                        "parse_error": str(exc)[:1000],
+                    }
+                    if file_record.site_section_link is not None:
+                        file_record.site_section_link.status = "parse_failed"
             job.status = "failed"
             job.finished_at = utcnow()
             job.message = str(exc)[:1000]

@@ -40,11 +40,14 @@ async def stream_notifications(request: Request):
     enforce_rate_limit(request, f"notification_stream:{user.id}")
     settings = get_settings()
     poll_interval = max(0.5, float(settings.notification_sse_poll_seconds))
+    shutdown_event = getattr(request.app.state, "shutdown_event", None)
 
     async def event_generator():
         yield ": connected\n\n"
         try:
             while True:
+                if shutdown_event is not None and shutdown_event.is_set():
+                    break
                 if await request.is_disconnected():
                     break
 

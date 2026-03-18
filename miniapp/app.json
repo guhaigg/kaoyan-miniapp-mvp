@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/home/index",
+    "pages/account-bind/index",
     "pages/announcements/index",
     "pages/adjustments/index",
     "pages/detail/index",

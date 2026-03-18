@@ -1,38 +1,60 @@
-import hmac
-import time
+from collections import Counter
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, selectinload
 
 from ..config import get_settings
 from ..db import get_db
 from ..dependencies import (
     audit_event,
-    clear_admin_login_failures,
-    enforce_rate_limit,
-    ensure_admin_not_locked,
     get_admin_identity,
-    record_admin_login_failure,
     require_admin_request,
 )
-from ..models import AdminAccount, Content, PortalUser, UserEvent, utcnow
+from ..models import AccountPaymentOrder, Content, PortalUser, PortalUserSubscription, School, UserEvent
 from ..schemas import (
     AdminAuditItem,
     AdminAuditListResponse,
     AdminChangePasswordRequest,
     AdminChangePasswordResponse,
-    AdminLoginRequest,
-    AdminLoginResponse,
+    AdminContentFingerprintStatsResponse,
+    AdminEntitlementItem,
+    AdminIdentityItem,
+    AdminMarkPaymentOrderPaidRequest,
+    AdminPaymentOrderItem,
+    AdminPaymentOrderListResponse,
+    AdminUserDemoteRequest,
     AdminMeResponse,
+    AdminRegisterRequest,
+    AdminRegisterResponse,
+    AdminResetUserPasswordRequest,
+    AdminResetUserPasswordResponse,
+    AdminRoleAssignmentItem,
     AdminUserItem,
     AdminUserListResponse,
+    AdminUserPromoteRequest,
     AdminUserUpdateRequest,
+    ContentIn,
     ContentOut,
     ManualEntryRequest,
 )
-from ..security import create_visitor_token, hash_password, verify_password
-from ..services.content import upsert_content
+from ..security import hash_password, verify_password
+from ..services.account_access import (
+    ENTITLEMENT_PREMIUM_MONITORING,
+    ENTITLEMENT_SOURCE_ADMIN_GRANT,
+    ROLE_ADMIN,
+    create_payment_order,
+    ensure_account_role,
+    ensure_password_identity,
+    entitlement_expiry_from_days,
+    find_password_login_account,
+    mark_payment_order_paid,
+    resolve_portal_access,
+    revoke_premium_entitlements,
+    set_password_hash,
+    upsert_premium_entitlement,
+)
+from ..services.content import _build_content_fingerprint, upsert_content
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -41,102 +63,296 @@ def _normalize_username(username: str) -> str:
     return username.strip().lower()
 
 
-def _issue_admin_session_token(username: str) -> str:
-    settings = get_settings()
-    return create_visitor_token(
-        {"typ": "admin", "usr": username, "iat": int(time.time())},
-        settings.secret_key,
-    )
-
-
-def _admin_expected_password() -> str:
-    settings = get_settings()
-    password = settings.admin_password.strip()
-    if password:
-        return password
-    return settings.admin_token.strip()
-
-
-def _to_admin_user_item(user: PortalUser, is_admin: bool) -> AdminUserItem:
+def _to_admin_user_item(user: PortalUser, is_admin: bool, is_premium: bool, premium_expires_at=None) -> AdminUserItem:
+    identities = [
+        AdminIdentityItem(
+            id=identity.id,
+            identity_type=identity.identity_type,
+            login_name=identity.login_name,
+            status=identity.status,
+            provider_subject=identity.provider_subject,
+            provider_unionid=identity.provider_unionid,
+            verified_at=identity.verified_at,
+            last_login_at=identity.last_login_at,
+        )
+        for identity in sorted(user.identities, key=lambda item: (item.identity_type, item.created_at))
+    ]
+    roles = [
+        AdminRoleAssignmentItem(
+            role_code=role.role_code,
+            status=role.status,
+            source=role.source,
+            created_at=role.created_at,
+        )
+        for role in sorted(user.roles, key=lambda item: (item.role_code, item.created_at))
+    ]
+    entitlements = [
+        AdminEntitlementItem(
+            entitlement_code=entitlement.entitlement_code,
+            status=entitlement.status,
+            source=entitlement.source,
+            starts_at=entitlement.starts_at,
+            expires_at=entitlement.expires_at,
+            revoked_at=entitlement.revoked_at,
+            order_ref=entitlement.order_ref,
+        )
+        for entitlement in sorted(
+            user.entitlements,
+            key=lambda item: (item.entitlement_code, item.created_at),
+        )
+    ]
     return AdminUserItem(
         id=user.id,
         username=user.username,
         status=user.status,
         is_admin=is_admin,
+        is_premium=is_premium,
+        premium_expires_at=premium_expires_at,
         nickname=user.nickname,
+        identities=identities,
+        roles=roles,
+        entitlements=entitlements,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
     )
 
 
-def _get_portal_admin_account(db: Session, username: str) -> AdminAccount | None:
-    return (
-        db.query(AdminAccount)
-        .join(PortalUser, PortalUser.id == AdminAccount.user_id)
-        .filter(PortalUser.username == username, AdminAccount.status == "active", PortalUser.status == "active")
-        .one_or_none()
+def _to_admin_payment_order_item(order: AccountPaymentOrder, username: str) -> AdminPaymentOrderItem:
+    return AdminPaymentOrderItem(
+        id=order.id,
+        account_id=order.account_id,
+        username=username,
+        entitlement_code=order.entitlement_code,
+        source=order.source,
+        status=order.status,
+        duration_days=order.duration_days,
+        amount_cents=order.amount_cents,
+        currency=order.currency,
+        order_ref=order.order_ref,
+        provider_name=order.provider_name,
+        provider_order_ref=order.provider_order_ref,
+        provider_payment_ref=order.provider_payment_ref,
+        paid_at=order.paid_at,
+        canceled_at=order.canceled_at,
+        created_at=order.created_at,
+        meta_json=dict(order.meta_json or {}),
     )
 
 
-def _login_with_portal_admin(payload: AdminLoginRequest, db: Session) -> str | None:
-    username = _normalize_username(payload.username)
-    account = _get_portal_admin_account(db, username)
-    if account is None:
-        return None
-    if not verify_password(payload.password, account.user.password_hash):
-        return None
-    account.last_login_at = utcnow()
-    account.user.last_login_at = utcnow()
-    db.commit()
-    return account.user.username
-
-
-@router.post("/auth/login", response_model=AdminLoginResponse)
-def admin_login(payload: AdminLoginRequest, response: Response, request: Request, db: Session = Depends(get_db)) -> AdminLoginResponse:
-    client_ip = request.client.host if request.client else "unknown"
-    enforce_rate_limit(request, f"admin_login:{client_ip}")
-    username = _normalize_username(payload.username)
-    ensure_admin_not_locked(username)
-
-    login_username = _login_with_portal_admin(payload, db)
-    if login_username is None:
-        settings = get_settings()
-        expected_password = _admin_expected_password()
-        if not expected_password:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="admin password not configured")
-
-        username_ok = hmac.compare_digest(username, settings.admin_username)
-        password_ok = hmac.compare_digest(payload.password, expected_password)
-        if not (username_ok and password_ok):
-            record_admin_login_failure(username)
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid admin credentials")
-        login_username = settings.admin_username
-
-    settings = get_settings()
-    clear_admin_login_failures(username)
-    session_token = _issue_admin_session_token(login_username)
-    response.set_cookie(
-        key="gw_admin_session",
-        value=session_token,
-        max_age=settings.admin_session_ttl_seconds,
-        httponly=True,
-        samesite="lax",
-        secure=False,
+def _mark_school_subscriptions_deleted(db: Session, user_id: str) -> int:
+    rows = (
+        db.query(PortalUserSubscription)
+        .filter(
+            PortalUserSubscription.user_id == user_id,
+            PortalUserSubscription.subscription_type == "school",
+            PortalUserSubscription.status == "active",
+        )
+        .all()
     )
-    return AdminLoginResponse(username=login_username, expires_in=settings.admin_session_ttl_seconds)
+    for row in rows:
+        row.status = "deleted"
+    return len(rows)
 
 
-@router.post("/auth/logout")
-def admin_logout(response: Response, request: Request) -> dict[str, str]:
-    require_admin_request(request)
-    response.delete_cookie("gw_admin_session")
-    return {"status": "ok"}
+def _sync_user_identity_statuses(user: PortalUser) -> None:
+    next_status = "active" if user.status == "active" else "inactive"
+    for identity in user.identities:
+        if identity.identity_type == "password":
+            identity.status = next_status
+
+
+def _apply_role_for_user(
+    db: Session,
+    *,
+    user: PortalUser,
+    target_role: str,
+    operator: str,
+    premium_days: int | None,
+) -> dict:
+    affected_school_subscriptions = 0
+    operator_user = db.query(PortalUser).filter(PortalUser.username == operator).one_or_none()
+    operator_account_id = operator_user.id if operator_user is not None else None
+
+    if target_role == "admin":
+        revoke_premium_entitlements(db, user_id=user.id)
+        ensure_account_role(
+            db,
+            user_id=user.id,
+            role_code=ROLE_ADMIN,
+            operator_account_id=operator_account_id,
+            source="manual",
+            active=True,
+        )
+    elif target_role == "premium":
+        expires_at = entitlement_expiry_from_days(premium_days)
+        upsert_premium_entitlement(
+            db,
+            user_id=user.id,
+            operator_account_id=operator_account_id,
+            expires_at=expires_at,
+            source=ENTITLEMENT_SOURCE_ADMIN_GRANT,
+        )
+        ensure_account_role(
+            db,
+            user_id=user.id,
+            role_code=ROLE_ADMIN,
+            operator_account_id=operator_account_id,
+            source="manual",
+            active=False,
+        )
+    else:
+        revoke_premium_entitlements(db, user_id=user.id)
+        ensure_account_role(
+            db,
+            user_id=user.id,
+            role_code=ROLE_ADMIN,
+            operator_account_id=operator_account_id,
+            source="manual",
+            active=False,
+        )
+        affected_school_subscriptions = _mark_school_subscriptions_deleted(db, user.id)
+
+    db.flush()
+    access_state = resolve_portal_access(db, user)
+    return {
+        "is_admin": access_state.is_admin,
+        "is_premium": access_state.is_premium,
+        "premium_expires_at": access_state.premium_expires_at,
+        "affected_school_subscriptions": affected_school_subscriptions,
+    }
+
+
+def _get_portal_admin_user(db: Session, username: str) -> PortalUser | None:
+    user, _identity = find_password_login_account(db, username)
+    if user is None:
+        return None
+    access_state = resolve_portal_access(db, user)
+    if not access_state.is_admin:
+        return None
+    return user
+
+
+def _content_fingerprint_stats(db: Session) -> AdminContentFingerprintStatsResponse:
+    total_contents = int(db.query(func.count(Content.id)).scalar() or 0)
+    fingerprinted_contents = int(
+        db.query(func.count(Content.id))
+        .filter(Content.content_fingerprint.is_not(None), Content.content_fingerprint != "")
+        .scalar()
+        or 0
+    )
+
+    pending_rows = (
+        db.query(
+            Content.id,
+            Content.category,
+            Content.title,
+            Content.body,
+            Content.summary,
+            Content.source_url,
+            Content.source_type,
+            Content.published_at,
+            Content.region,
+            Content.major,
+            Content.extra,
+            School.name.label("school_name"),
+        )
+        .outerjoin(School, School.id == Content.school_id)
+        .filter(or_(Content.content_fingerprint.is_(None), Content.content_fingerprint == ""))
+        .all()
+    )
+
+    fingerprint_counter: Counter[str] = Counter()
+    pending_fingerprints_by_id: dict[str, str] = {}
+    existing_fingerprints = {
+        row[0]
+        for row in db.query(Content.content_fingerprint)
+        .filter(Content.content_fingerprint.is_not(None), Content.content_fingerprint != "")
+        .all()
+        if row[0]
+    }
+
+    for row in pending_rows:
+        fingerprint = _build_content_fingerprint(
+            ContentIn(
+                category=row.category,
+                title=row.title,
+                body=row.body,
+                summary=row.summary,
+                school_name=row.school_name,
+                source_url=row.source_url,
+                source_type=row.source_type,
+                published_at=row.published_at,
+                region=row.region,
+                major=row.major,
+                extra=dict(row.extra or {}),
+                raw_html=None,
+            ),
+            row.school_name,
+        )
+        pending_fingerprints_by_id[row.id] = fingerprint
+        fingerprint_counter[fingerprint] += 1
+
+    collision_contents = 0
+    for row_id, fingerprint in pending_fingerprints_by_id.items():
+        if fingerprint in existing_fingerprints or fingerprint_counter[fingerprint] > 1:
+            collision_contents += 1
+
+    pending_contents = len(pending_rows)
+    coverage_ratio = 0.0 if total_contents == 0 else round(fingerprinted_contents / total_contents, 4)
+    return AdminContentFingerprintStatsResponse(
+        total_contents=total_contents,
+        fingerprinted_contents=fingerprinted_contents,
+        pending_contents=pending_contents,
+        collision_contents=collision_contents,
+        coverage_ratio=coverage_ratio,
+    )
 
 
 @router.get("/auth/me", response_model=AdminMeResponse)
 def admin_me(request: Request) -> AdminMeResponse:
     require_admin_request(request)
-    return AdminMeResponse(username=get_admin_identity(request) or get_settings().admin_username, authenticated=True)
+    return AdminMeResponse(username=get_admin_identity(request) or "admin", authenticated=True)
+
+
+@router.get("/content-fingerprint-stats", response_model=AdminContentFingerprintStatsResponse)
+def admin_content_fingerprint_stats(request: Request, db: Session = Depends(get_db)) -> AdminContentFingerprintStatsResponse:
+    require_admin_request(request)
+    return _content_fingerprint_stats(db)
+
+
+@router.post("/auth/register", response_model=AdminRegisterResponse)
+def admin_register(
+    payload: AdminRegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminRegisterResponse:
+    require_admin_request(request)
+    username = _normalize_username(payload.username)
+    existing = db.query(PortalUser).filter(PortalUser.username == username).one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="admin username already exists")
+
+    operator = get_admin_identity(request) or get_settings().admin_username
+    user = PortalUser(
+        username=username,
+        password_hash=hash_password(payload.password),
+        status="active",
+    )
+    db.add(user)
+    db.flush()
+    ensure_password_identity(db, user)
+    ensure_account_role(
+        db,
+        user_id=user.id,
+        role_code=ROLE_ADMIN,
+        operator_account_id=None,
+        source="bootstrap",
+        active=True,
+    )
+    db.commit()
+    db.refresh(user)
+    audit_event(db, request, "admin.register", None, {"user_id": user.id, "operator": operator})
+    return AdminRegisterResponse(user_id=user.id, username=user.username, promoted=True, bootstrap=False)
 
 
 @router.post("/auth/change-password", response_model=AdminChangePasswordResponse)
@@ -147,17 +363,137 @@ def admin_change_password(
 ) -> AdminChangePasswordResponse:
     require_admin_request(request)
     username = get_admin_identity(request) or get_settings().admin_username
-    account = _get_portal_admin_account(db, username)
-    if account is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="current admin account is env-based and cannot be changed here")
+    user = _get_portal_admin_user(db, username)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="current admin account must be a portal admin user")
 
-    if not verify_password(payload.old_password, account.user.password_hash):
+    ensure_password_identity(db, user)
+    if not verify_password(payload.old_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="old password incorrect")
 
-    account.user.password_hash = hash_password(payload.new_password)
+    set_password_hash(db, user, hash_password(payload.new_password))
     db.commit()
     audit_event(db, request, "admin.password_change", None, {"operator": username})
     return AdminChangePasswordResponse(status="ok")
+
+
+@router.post("/users/{user_id}/reset-password", response_model=AdminResetUserPasswordResponse)
+def reset_user_password(
+    user_id: str,
+    payload: AdminResetUserPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminResetUserPasswordResponse:
+    require_admin_request(request)
+    user = db.query(PortalUser).filter(PortalUser.id == user_id).one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+    if user.status != "active":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cannot reset password for blocked user")
+
+    ensure_password_identity(db, user)
+    set_password_hash(db, user, hash_password(payload.new_password))
+    _sync_user_identity_statuses(user)
+    db.commit()
+    audit_event(
+        db,
+        request,
+        "admin.user_password_reset",
+        None,
+        {"user_id": user.id, "operator": get_admin_identity(request) or get_settings().admin_username},
+    )
+    return AdminResetUserPasswordResponse(status="ok", user_id=user.id, username=user.username)
+
+
+@router.get("/payment-orders", response_model=AdminPaymentOrderListResponse)
+def list_payment_orders(
+    request: Request,
+    db: Session = Depends(get_db),
+    status_value: str | None = Query(default=None, alias="status"),
+    user_id: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> AdminPaymentOrderListResponse:
+    require_admin_request(request)
+    query = db.query(AccountPaymentOrder, PortalUser.username).join(PortalUser, PortalUser.id == AccountPaymentOrder.account_id)
+    if status_value:
+        query = query.filter(AccountPaymentOrder.status == status_value.strip())
+    if user_id:
+        query = query.filter(AccountPaymentOrder.account_id == user_id)
+    rows = query.order_by(AccountPaymentOrder.created_at.desc()).limit(limit).all()
+    return AdminPaymentOrderListResponse(
+        total=len(rows),
+        items=[_to_admin_payment_order_item(order, username) for order, username in rows],
+    )
+
+
+@router.post("/payment-orders/{order_id}/mark-paid", response_model=AdminPaymentOrderItem)
+def admin_mark_payment_order_paid(
+    order_id: str,
+    payload: AdminMarkPaymentOrderPaidRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminPaymentOrderItem:
+    require_admin_request(request)
+    order = db.query(AccountPaymentOrder).filter(AccountPaymentOrder.id == order_id).one_or_none()
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="payment order not found")
+    operator_username = get_admin_identity(request) or get_settings().admin_username
+    operator_user = db.query(PortalUser).filter(PortalUser.username == operator_username).one_or_none()
+    operator_account_id = operator_user.id if operator_user is not None else None
+    try:
+        mark_payment_order_paid(
+            db,
+            order=order,
+            operator_account_id=operator_account_id,
+            provider_payment_ref=payload.provider_payment_ref,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(order)
+    audit_event(
+        db,
+        request,
+        "admin.payment_order_mark_paid",
+        None,
+        {"order_id": order.id, "account_id": order.account_id, "operator": operator_username},
+    )
+    username = db.query(PortalUser.username).filter(PortalUser.id == order.account_id).scalar() or "unknown"
+    return _to_admin_payment_order_item(order, username)
+
+
+@router.post("/users/{user_id}/payment-orders", response_model=AdminPaymentOrderItem)
+def create_user_payment_order(
+    user_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    duration_days: int = Query(default=30, ge=1, le=3650),
+    amount_cents: int = Query(default=0, ge=0),
+) -> AdminPaymentOrderItem:
+    require_admin_request(request)
+    user = db.query(PortalUser).filter(PortalUser.id == user_id).one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+    order = create_payment_order(
+        db,
+        user_id=user.id,
+        entitlement_code=ENTITLEMENT_PREMIUM_MONITORING,
+        source=ENTITLEMENT_SOURCE_ADMIN_GRANT,
+        duration_days=duration_days,
+        amount_cents=amount_cents,
+        currency="CNY",
+        provider_name="manual_admin",
+        meta_json={"issued_by_admin": True},
+    )
+    db.commit()
+    audit_event(
+        db,
+        request,
+        "admin.payment_order_create",
+        None,
+        {"order_id": order.id, "account_id": user.id, "duration_days": duration_days, "amount_cents": amount_cents},
+    )
+    return _to_admin_payment_order_item(order, user.username)
 
 
 @router.get("/users", response_model=AdminUserListResponse)
@@ -171,7 +507,11 @@ def list_users(
 ) -> AdminUserListResponse:
     require_admin_request(request)
 
-    query = db.query(PortalUser)
+    query = db.query(PortalUser).options(
+        selectinload(PortalUser.identities),
+        selectinload(PortalUser.roles),
+        selectinload(PortalUser.entitlements),
+    )
     if state:
         query = query.filter(PortalUser.status == state.strip())
     if keyword:
@@ -180,12 +520,23 @@ def list_users(
 
     total = query.count()
     rows = query.order_by(PortalUser.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    admin_ids = {x[0] for x in db.query(AdminAccount.user_id).filter(AdminAccount.status == "active").all()}
+    changed = False
+    for row in rows:
+        access_state = resolve_portal_access(db, row)
+        if access_state.expired_premium and not access_state.is_admin and not access_state.is_premium:
+            _mark_school_subscriptions_deleted(db, row.id)
+            changed = True
+    if changed:
+        db.commit()
     return AdminUserListResponse(
         total=total,
         page=page,
         page_size=page_size,
-        items=[_to_admin_user_item(x, x.id in admin_ids) for x in rows],
+        items=[
+            _to_admin_user_item(x, state.is_admin, state.is_premium, state.premium_expires_at)
+            for x in rows
+            for state in [resolve_portal_access(db, x)]
+        ],
     )
 
 
@@ -206,16 +557,23 @@ def update_user(
     if payload.nickname is not None:
         nickname = payload.nickname.strip()
         user.nickname = nickname or None
+    ensure_password_identity(db, user)
+    _sync_user_identity_statuses(user)
 
     db.commit()
     db.refresh(user)
     audit_event(db, request, "admin.user_update", None, {"user_id": user.id})
-    is_admin = db.query(AdminAccount).filter(AdminAccount.user_id == user.id, AdminAccount.status == "active").count() > 0
-    return _to_admin_user_item(user, is_admin)
+    access_state = resolve_portal_access(db, user)
+    return _to_admin_user_item(user, access_state.is_admin, access_state.is_premium, access_state.premium_expires_at)
 
 
 @router.post("/users/{user_id}/promote", response_model=AdminUserItem)
-def promote_user(user_id: str, request: Request, db: Session = Depends(get_db)) -> AdminUserItem:
+def promote_user(
+    user_id: str,
+    request: Request,
+    payload: AdminUserPromoteRequest | None = None,
+    db: Session = Depends(get_db),
+) -> AdminUserItem:
     require_admin_request(request)
     user = db.query(PortalUser).filter(PortalUser.id == user_id).one_or_none()
     if user is None:
@@ -223,20 +581,83 @@ def promote_user(user_id: str, request: Request, db: Session = Depends(get_db)) 
     if user.status != "active":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cannot promote blocked user")
 
-    account = db.query(AdminAccount).filter(AdminAccount.user_id == user.id).one_or_none()
+    target_role = payload.target_role if payload is not None else "admin"
     operator = get_admin_identity(request) or get_settings().admin_username
-    if account is None:
-        account = AdminAccount(user_id=user.id, status="active", promoted_by=operator, last_login_at=None)
-        db.add(account)
-    else:
-        account.status = "active"
-        if not account.promoted_by:
-            account.promoted_by = operator
+    role_state = _apply_role_for_user(
+        db,
+        user=user,
+        target_role=target_role,
+        operator=operator,
+        premium_days=(payload.premium_days if payload is not None else None),
+    )
 
     db.commit()
     db.refresh(user)
-    audit_event(db, request, "admin.user_promote", None, {"user_id": user.id, "operator": operator})
-    return _to_admin_user_item(user, True)
+    audit_event(
+        db,
+        request,
+        "admin.user_promote",
+        None,
+        {
+            "user_id": user.id,
+            "operator": operator,
+            "target_role": target_role,
+            "is_admin": role_state["is_admin"],
+            "is_premium": role_state["is_premium"],
+            "premium_expires_at": role_state["premium_expires_at"].isoformat() if role_state["premium_expires_at"] else None,
+        },
+    )
+    return _to_admin_user_item(
+        user,
+        bool(role_state["is_admin"]),
+        bool(role_state["is_premium"]),
+        role_state["premium_expires_at"],
+    )
+
+
+@router.post("/users/{user_id}/demote", response_model=AdminUserItem)
+def demote_user(
+    user_id: str,
+    payload: AdminUserDemoteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminUserItem:
+    require_admin_request(request)
+    user = db.query(PortalUser).filter(PortalUser.id == user_id).one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    operator = get_admin_identity(request) or get_settings().admin_username
+    role_state = _apply_role_for_user(
+        db,
+        user=user,
+        target_role=payload.target_role,
+        operator=operator,
+        premium_days=payload.premium_days,
+    )
+    db.commit()
+    db.refresh(user)
+    audit_event(
+        db,
+        request,
+        "admin.user_demote",
+        None,
+        {
+            "user_id": user.id,
+            "operator": operator,
+            "target_role": payload.target_role,
+            "is_admin": role_state["is_admin"],
+            "is_premium": role_state["is_premium"],
+            "premium_expires_at": role_state["premium_expires_at"].isoformat() if role_state["premium_expires_at"] else None,
+            "affected_school_subscriptions": role_state["affected_school_subscriptions"],
+        },
+    )
+    return _to_admin_user_item(
+        user,
+        bool(role_state["is_admin"]),
+        bool(role_state["is_premium"]),
+        role_state["premium_expires_at"],
+    )
 
 
 @router.get("/audits", response_model=AdminAuditListResponse)

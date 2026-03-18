@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, SlidersHorizontal, Target } from "lucide-react";
@@ -7,8 +9,13 @@ import FilterDrawer, { type SchoolTier, type StudyMode } from "@/components/sear
 import FeedCard, { FeedCardSkeleton } from "@/components/shared/FeedCard";
 import { ApiError, SearchResponse } from "@/lib/api";
 import { useAdjustmentSearchMutation, useAnnouncementSearchMutation } from "@/hooks/useSearch";
+import { useAddSubscriptionMutation, useDeleteSubscriptionMutation, useSubscriptionsQuery } from "@/hooks/useSubscriptions";
+import { useAppStore } from "@/lib/store";
 
 export default function SearchPage() {
+  const router = useRouter();
+  const { portalAuth } = useAppStore();
+  const isAnonymous = !portalAuth;
   const [queryType, setQueryType] = useState<"announcements" | "adjustments">("announcements");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [keywords, setKeywords] = useState("");
@@ -26,6 +33,9 @@ export default function SearchPage() {
 
   const announcementMutation = useAnnouncementSearchMutation();
   const adjustmentMutation = useAdjustmentSearchMutation();
+  const subscriptionsQuery = useSubscriptionsQuery(Boolean(portalAuth));
+  const addSubscriptionMutation = useAddSubscriptionMutation();
+  const deleteSubscriptionMutation = useDeleteSubscriptionMutation();
 
   const filteredItems = useMemo(() => {
     if (!searchResult) return [];
@@ -41,8 +51,24 @@ export default function SearchPage() {
   const currentPage = searchResult?.page || 1;
   const totalPages = searchResult ? Math.max(1, Math.ceil(searchResult.total / searchResult.page_size)) : 1;
   const hasLocalFilters = schoolTiers.length > 0 || studyMode !== "all";
+  const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
+  const adjustmentLocked = isAnonymous;
+  const previewLimit = searchResult?.preview_limit ?? 2;
+  const schoolSubscriptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of subscriptionsQuery.data?.items || []) {
+      if (item.subscription_type === "school" && item.status === "active") {
+        map.set(item.value, item.id);
+      }
+    }
+    return map;
+  }, [subscriptionsQuery.data?.items]);
 
   const calculateMatch = () => {
+    if (isAnonymous) {
+      setMessage("调剂测算属于登录后的深度功能，请先登录。");
+      return;
+    }
     if (!score || !major) return;
     const diff = parseInt(score, 10) - (major === "工科" ? 273 : major === "理学" ? 279 : 346);
     setResult({
@@ -58,6 +84,10 @@ export default function SearchPage() {
 
   async function triggerSearch(page = 1) {
     setMessage("");
+    if (queryType === "adjustments" && isAnonymous) {
+      setMessage("调剂检索属于登录后的深度功能，请先登录后继续。");
+      return;
+    }
     try {
       const payload =
         queryType === "announcements"
@@ -86,6 +116,40 @@ export default function SearchPage() {
         setMessage(`查询失败：${error.message}`);
       } else {
         setMessage("数据源响应超时，请稍后重连。");
+      }
+    }
+  }
+
+  async function handleSchoolBookmark(schoolName: string) {
+    if (!portalAuth) {
+      setMessage("登录后才能收藏院校并建立监控。");
+      router.push("/login");
+      return;
+    }
+    if (!portalAuth.isAdmin && !portalAuth.isPremium) {
+      setMessage("院校收藏需要高级会员或管理员权限。");
+      router.push("/account/billing");
+      return;
+    }
+
+    const existingId = schoolSubscriptions.get(schoolName);
+    try {
+      if (existingId) {
+        await deleteSubscriptionMutation.mutateAsync(existingId);
+        setMessage(`已取消收藏 ${schoolName}`);
+      } else {
+        await addSubscriptionMutation.mutateAsync({
+          subscription_type: "school",
+          value: schoolName,
+          category: "all",
+        });
+        setMessage(`已收藏 ${schoolName}`);
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`收藏失败：${error.message}`);
+      } else {
+        setMessage("收藏失败，请稍后重试。");
       }
     }
   }
@@ -128,10 +192,17 @@ export default function SearchPage() {
                 queryType === "adjustments"
                   ? "bg-cyan-500 text-white"
                   : "text-slate-300 hover:bg-white/10"
-              }`}
-              onClick={() => setQueryType("adjustments")}
+              } ${adjustmentLocked ? "cursor-not-allowed opacity-50 hover:bg-transparent" : ""}`}
+              onClick={() => {
+                if (adjustmentLocked) {
+                  setMessage("调剂检索属于登录后的深度功能，请先登录。");
+                  return;
+                }
+                setQueryType("adjustments");
+              }}
+              disabled={adjustmentLocked}
             >
-              调剂检索
+              调剂检索{adjustmentLocked ? " · 登录后开放" : ""}
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -218,6 +289,62 @@ export default function SearchPage() {
         resultCount={searchResult ? filteredItems.length : 0}
       />
 
+      {showUpgradePanel ? (
+        <div className="mb-8 overflow-hidden rounded-3xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.38),rgba(20,24,36,0.9))] p-6 shadow-2xl">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-amber-300">Premium Access</div>
+              <h3 className="text-2xl font-bold text-white">院校收藏和定时监控没有入口，不是你没找到，是我们埋得太深了。</h3>
+              <p className="mt-2 text-sm leading-7 text-amber-50/85">
+                现在普通账号想用院校收藏、实时提示和定时巡检，需要先开通高级会员。入口已经前置到这里，打开后可以直接创建会员订单。
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-amber-100/90">
+                <span className="rounded-full border border-amber-300/20 bg-black/20 px-3 py-1">院校收藏</span>
+                <span className="rounded-full border border-amber-300/20 bg-black/20 px-3 py-1">定时查询</span>
+                <span className="rounded-full border border-amber-300/20 bg-black/20 px-3 py-1">新信息直推</span>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-col gap-3">
+              <Link
+                href="/account/billing"
+                className="rounded-2xl bg-amber-400 px-6 py-3 text-center text-sm font-bold text-black transition-colors hover:bg-amber-300"
+              >
+                立即开通高级会员
+              </Link>
+              <div className="text-center text-xs text-amber-100/70">订单创建后由后台确认支付并发放权益</div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isAnonymous ? (
+        <div className="mb-8 overflow-hidden rounded-3xl border border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,25,40,0.95),rgba(5,10,19,0.96))] p-6 shadow-2xl">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">Visitor Preview</div>
+              <h3 className="text-2xl font-bold text-white">未登录只开放公告预览，且最多显示前两条。</h3>
+              <p className="mt-2 text-sm leading-7 text-slate-300">
+                登录后才开放完整分页、院校收藏、调剂检索、调剂测算和后续定时监控。匿名态只保留最轻的预览入口。
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-3">
+              <Link
+                href="/login"
+                className="rounded-2xl bg-cyan-500 px-6 py-3 text-center text-sm font-bold text-white transition-colors hover:bg-cyan-400"
+              >
+                登录查看完整结果
+              </Link>
+              <Link
+                href="/register"
+                className="rounded-2xl border border-white/15 bg-white/5 px-6 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-white/10"
+              >
+                注册新账号
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {message ? (
         <div className="mb-8 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-slate-300">
           {message}
@@ -244,6 +371,12 @@ export default function SearchPage() {
               <span>
                 总记录 <span className="text-white">{searchResult.total}</span>
               </span>
+              {searchResult.access_limited ? (
+                <>
+                  <span className="text-slate-500">/</span>
+                  <span className="text-amber-300">匿名预览仅展示前 {previewLimit} 条</span>
+                </>
+              ) : null}
               {hasLocalFilters ? (
                 <>
                   <span className="text-slate-500">/</span>
@@ -262,17 +395,38 @@ export default function SearchPage() {
                       type: item.category === "adjustment" ? "adjustment" : "announcement",
                       title: item.title,
                       content: item.summary || "暂无摘要，点击查看源站原文。",
+                      badges: [
+                        ...(item.notice_kind === "link_notice" ? [{ label: "链接型公告", tone: "sky" as const }] : []),
+                        ...(item.pdf_parse_status === "needs_ocr"
+                          ? [{ label: "扫描件待查看", tone: "amber" as const }]
+                          : []),
+                      ],
                       publishTime: item.published_at || item.updated_at,
                       href: item.source_url,
                       isUrgent: /紧急|截止|补录|缺额/i.test(
                         `${item.title} ${item.summary || ""} ${item.major || ""}`,
                       ),
-                      tags: [
-                        item.category === "adjustment" ? "调剂动态" : "最新公告",
-                        item.school_name || "未知院校",
-                        item.region || "区域待补充",
-                        item.major || "专业待补充",
-                      ],
+                      tags:
+                        item.tags && item.tags.length > 0
+                          ? item.tags
+                          : [
+                              item.category === "adjustment" ? "调剂动态" : "最新公告",
+                              item.school_name || "未知院校",
+                              item.region || "区域待补充",
+                              item.major || "专业待补充",
+                            ],
+                      bookmark: item.school_name
+                        ? {
+                            active: schoolSubscriptions.has(item.school_name),
+                            available: !isAnonymous && (portalAuth?.isAdmin || portalAuth?.isPremium),
+                            label: isAnonymous
+                              ? "登录后可收藏院校"
+                              : portalAuth?.isAdmin || portalAuth?.isPremium
+                                ? `${schoolSubscriptions.has(item.school_name) ? "取消收藏" : "收藏院校"}：${item.school_name}`
+                                : "院校收藏需要高级会员",
+                            onToggle: () => handleSchoolBookmark(item.school_name as string),
+                          }
+                        : undefined,
                     }}
                   />
                 ))}
@@ -283,20 +437,40 @@ export default function SearchPage() {
               </div>
             )}
 
+            {searchResult.access_limited ? (
+              <div className="rounded-3xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.35),rgba(20,24,36,0.92))] p-6 text-sm text-amber-50/85">
+                当前是匿名预览模式，只返回最前面的 {previewLimit} 条公告。继续查看完整结果、收藏院校或进入调剂链路，需要先登录。
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link
+                    href="/login"
+                    className="rounded-xl bg-amber-400 px-4 py-2.5 font-semibold text-black transition-colors hover:bg-amber-300"
+                  >
+                    登录查看完整结果
+                  </Link>
+                  <Link
+                    href="/register"
+                    className="rounded-xl border border-white/15 bg-black/20 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-black/30"
+                  >
+                    先注册账号
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+
             <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm">
               <span className="text-slate-300">
                 第 {currentPage}/{totalPages} 页 · 共 {searchResult.total} 条
               </span>
               <div className="flex gap-2">
                 <button
-                  disabled={currentPage <= 1 || isSearching}
+                  disabled={currentPage <= 1 || isSearching || searchResult.access_limited}
                   onClick={() => triggerSearch(currentPage - 1)}
                   className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   上一页
                 </button>
                 <button
-                  disabled={currentPage >= totalPages || isSearching}
+                  disabled={currentPage >= totalPages || isSearching || searchResult.access_limited}
                   onClick={() => triggerSearch(currentPage + 1)}
                   className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -308,7 +482,7 @@ export default function SearchPage() {
         ) : null}
       </div>
 
-      <div className="relative overflow-hidden rounded-3xl border border-cyan-500/20 bg-cyan-950/10 p-8 shadow-2xl backdrop-blur-xl">
+      <div className={`relative overflow-hidden rounded-3xl border p-8 shadow-2xl backdrop-blur-xl ${isAnonymous ? "border-white/10 bg-white/[0.04]" : "border-cyan-500/20 bg-cyan-950/10"}`}>
         <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 -translate-y-1/2 translate-x-1/2 rounded-full bg-cyan-500/10 blur-3xl" />
         <div className="relative z-10 flex flex-col items-center gap-8 md:flex-row">
           <div className="text-white md:w-1/3">
@@ -316,7 +490,7 @@ export default function SearchPage() {
               <Target className="text-cyan-400" /> 调剂雷达测算
             </h3>
             <p className="text-sm leading-relaxed text-slate-400">
-              系统将比对往年国家线及院系均分，测算你的初筛通过率。
+              {isAnonymous ? "登录后开放调剂测算、调剂检索和更多深度能力。" : "系统将比对往年国家线及院系均分，测算你的初筛通过率。"}
             </p>
           </div>
           <div className="flex w-full flex-col gap-4 sm:flex-row md:w-2/3">
@@ -325,11 +499,13 @@ export default function SearchPage() {
               placeholder="初试总分"
               value={score}
               onChange={(event) => setScore(event.target.value)}
+              disabled={isAnonymous}
               className="w-full rounded-xl border border-white/10 bg-black/40 px-5 py-4 text-white outline-none transition-colors focus:border-cyan-400 sm:w-32"
             />
             <select
               value={major}
               onChange={(event) => setMajor(event.target.value)}
+              disabled={isAnonymous}
               className="flex-1 appearance-none rounded-xl border border-white/10 bg-black/40 px-5 py-4 text-white outline-none transition-colors focus:border-cyan-400"
             >
               <option value="" disabled>
@@ -341,9 +517,10 @@ export default function SearchPage() {
             <button
               type="button"
               onClick={calculateMatch}
-              className="whitespace-nowrap rounded-xl bg-cyan-500 px-8 py-4 font-bold text-white shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all hover:bg-cyan-400 active:scale-95"
+              disabled={isAnonymous}
+              className="whitespace-nowrap rounded-xl bg-cyan-500 px-8 py-4 font-bold text-white shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all hover:bg-cyan-400 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              测算胜率
+              {isAnonymous ? "登录后开放" : "测算胜率"}
             </button>
           </div>
         </div>

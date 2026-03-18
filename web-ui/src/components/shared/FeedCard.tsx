@@ -18,13 +18,21 @@ export interface FeedItem {
   content: string;
   publishTime: string | Date;
   tags: string[];
+  badges?: Array<{ label: string; tone: "sky" | "amber" }>;
   isUrgent?: boolean;
   href?: string | null;
+  bookmark?: {
+    active: boolean;
+    available: boolean;
+    label: string;
+    onToggle: () => Promise<void> | void;
+  };
 }
 
 export default function FeedCard({ item }: { item: FeedItem }) {
-  const [isStarred, setIsStarred] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
+  const [bookmarkFlash, setBookmarkFlash] = useState<"saved" | "removed" | null>(null);
 
   const isAdjustment = item.type === "adjustment";
   const isUrgent = Boolean(item.isUrgent);
@@ -58,6 +66,7 @@ export default function FeedCard({ item }: { item: FeedItem }) {
   const timeAgo = formatDistanceToNowZh(item.publishTime);
 
   const tags = item.tags.length > 0 ? item.tags : ["待补充"];
+  const badges = item.badges || [];
 
   async function handleShare(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -74,6 +83,21 @@ export default function FeedCard({ item }: { item: FeedItem }) {
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
       setCopied(false);
+    }
+  }
+
+  async function handleBookmark(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!item.bookmark || bookmarkBusy) return;
+    const nextFlash = item.bookmark.active ? "removed" : "saved";
+    setBookmarkBusy(true);
+    try {
+      await item.bookmark.onToggle();
+      setBookmarkFlash(nextFlash);
+      window.setTimeout(() => setBookmarkFlash(null), 1200);
+    } finally {
+      setBookmarkBusy(false);
     }
   }
 
@@ -98,14 +122,15 @@ export default function FeedCard({ item }: { item: FeedItem }) {
           className="relative z-10 flex h-full flex-col justify-between"
         >
           <CardBody
+            bookmarkBusy={bookmarkBusy}
             copied={copied}
+            handleBookmark={handleBookmark}
             handleShare={handleShare}
             isAdjustment={isAdjustment}
-            isStarred={isStarred}
             isUrgent={isUrgent}
             item={item}
-            setIsStarred={setIsStarred}
             style={style}
+            badges={badges}
             tags={tags}
             timeAgo={timeAgo}
           />
@@ -113,14 +138,15 @@ export default function FeedCard({ item }: { item: FeedItem }) {
       ) : (
         <div className="relative z-10 flex h-full flex-col justify-between">
           <CardBody
+            bookmarkBusy={bookmarkBusy}
             copied={copied}
+            handleBookmark={handleBookmark}
             handleShare={handleShare}
             isAdjustment={isAdjustment}
-            isStarred={isStarred}
             isUrgent={isUrgent}
             item={item}
-            setIsStarred={setIsStarred}
             style={style}
+            badges={badges}
             tags={tags}
             timeAgo={timeAgo}
           />
@@ -138,30 +164,45 @@ export default function FeedCard({ item }: { item: FeedItem }) {
             已复制分享链接
           </motion.div>
         ) : null}
+        {bookmarkFlash ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className={`absolute bottom-4 left-4 rounded-full border px-3 py-1 text-xs ${
+              bookmarkFlash === "saved"
+                ? "border-yellow-400/20 bg-yellow-500/10 text-yellow-200"
+                : "border-white/10 bg-white/10 text-slate-200"
+            }`}
+          >
+            {bookmarkFlash === "saved" ? "已收藏" : "已取消收藏"}
+          </motion.div>
+        ) : null}
       </AnimatePresence>
     </motion.div>
   );
 }
 
 function CardBody({
+  bookmarkBusy,
   copied,
+  handleBookmark,
   handleShare,
   isAdjustment,
-  isStarred,
   isUrgent,
   item,
-  setIsStarred,
   style,
+  badges,
   tags,
   timeAgo,
 }: {
+  bookmarkBusy: boolean;
   copied: boolean;
+  handleBookmark: (event: MouseEvent<HTMLButtonElement>) => Promise<void>;
   handleShare: (event: MouseEvent<HTMLButtonElement>) => Promise<void>;
   isAdjustment: boolean;
-  isStarred: boolean;
   isUrgent: boolean;
   item: FeedItem;
-  setIsStarred: (value: boolean | ((prev: boolean) => boolean)) => void;
   style: {
     bg: string;
     border: string;
@@ -169,6 +210,7 @@ function CardBody({
     text: string;
     badgeBg: string;
   };
+  badges: Array<{ label: string; tone: "sky" | "amber" }>;
   tags: string[];
   timeAgo: string;
 }) {
@@ -199,32 +241,50 @@ function CardBody({
             >
               <Share2 size={16} />
             </button>
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.8 }}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setIsStarred((prev) => !prev);
-              }}
-              className={`rounded-lg p-1.5 transition-colors ${
-                isStarred
-                  ? "text-yellow-400 hover:bg-yellow-400/10"
-                  : "text-slate-400 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <Star
-                size={16}
-                fill={isStarred ? "currentColor" : "none"}
-                className={isStarred ? "drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]" : undefined}
-              />
-            </motion.button>
+            {item.bookmark ? (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.8 }}
+                disabled={bookmarkBusy}
+                title={item.bookmark.label}
+                onClick={handleBookmark}
+                className={`rounded-lg p-1.5 transition-colors ${
+                  item.bookmark.active
+                    ? "text-yellow-400 hover:bg-yellow-400/10"
+                    : item.bookmark.available
+                      ? "text-slate-400 hover:bg-white/10 hover:text-white"
+                      : "text-slate-500 hover:bg-white/10 hover:text-slate-300"
+                } ${bookmarkBusy ? "cursor-not-allowed opacity-60" : ""}`}
+              >
+                <Star
+                  size={16}
+                  fill={item.bookmark.active ? "currentColor" : "none"}
+                  className={item.bookmark.active ? "drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]" : undefined}
+                />
+              </motion.button>
+            ) : null}
           </div>
         </div>
 
         <h3 className="mb-2 text-xl font-bold leading-snug text-white transition-colors group-hover:text-cyan-50">
           {item.title}
         </h3>
+        {badges.length > 0 ? (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {badges.map((badge) => (
+              <span
+                key={`${item.id}-${badge.label}`}
+                className={
+                  badge.tone === "amber"
+                    ? "rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200"
+                    : "rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-200"
+                }
+              >
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <p className="mb-5 line-clamp-2 text-sm leading-relaxed text-slate-400">
           {item.content}
         </p>

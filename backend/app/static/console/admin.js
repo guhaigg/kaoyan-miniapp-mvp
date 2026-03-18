@@ -3,6 +3,7 @@ function $(id) {
 }
 
 const API_BASE = "/api/v1";
+const MODERN_ADMIN_URL = "/admin/";
 
 function text(value) {
   return String(value ?? "")
@@ -36,6 +37,10 @@ async function api(path, options = {}) {
   return { ok: response.ok, status: response.status, data };
 }
 
+function goToModernAdmin() {
+  window.location.replace(MODERN_ADMIN_URL);
+}
+
 function setLoginView(loggedIn) {
   $("loginCard").classList.toggle("hidden", loggedIn);
   $("panelCard").classList.toggle("hidden", !loggedIn);
@@ -54,39 +59,20 @@ async function checkSession() {
   const result = await api("/admin/auth/me");
   if (!result.ok) {
     setLoginView(false);
-    $("loginStatus").textContent = "请先登录管理员账号";
+    $("loginStatus").textContent = "旧控制台已停用，正在跳转到新版后台...";
+    setTimeout(goToModernAdmin, 300);
     return;
   }
-  setLoginView(true);
-  $("meStatus").textContent = `当前账号：${result.data.username}`;
-  await loadUsers();
+  goToModernAdmin();
 }
 
 async function doLogin() {
-  const username = $("username").value.trim();
-  const password = $("password").value;
-  if (!username || !password) {
-    $("loginStatus").textContent = "请输入管理员账号和密码";
-    return;
-  }
-  $("loginStatus").textContent = "登录中...";
-  const result = await api("/admin/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ username, password }),
-  });
-  if (!result.ok) {
-    $("loginStatus").textContent = `登录失败（${result.status}）：${pretty(result.data)}`;
-    return;
-  }
-  $("password").value = "";
-  $("loginStatus").textContent = "登录成功";
-  await checkSession();
+  $("loginStatus").textContent = "旧控制台已停用，正在跳转到新版后台...";
+  goToModernAdmin();
 }
 
 async function doLogout() {
-  await api("/admin/auth/logout", { method: "POST" });
-  setLoginView(false);
-  $("loginStatus").textContent = "已退出";
+  goToModernAdmin();
 }
 
 function renderUsers(items) {

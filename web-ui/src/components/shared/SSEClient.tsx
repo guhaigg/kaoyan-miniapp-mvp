@@ -5,12 +5,14 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useQueryClient } from "@tanstack/react-query";
 import { NotificationEventItem, notificationsStreamUrl } from "@/lib/api";
 import { mergeNoticeList, watchlistNoticeQueryKey } from "@/lib/notice-cache";
+import { useDocumentVisibility } from "@/hooks/useDocumentVisibility";
 import { useAppStore } from "@/lib/store";
 
 function buildToastContent(item: NotificationEventItem) {
   const school = item.payload.school_name || "目标院校";
   const title = item.payload.title || "有新的信息变更";
-  const isUrgent = /紧急|截止|补录|缺额|复试|调剂/i.test(`${title} ${item.payload.summary || ""}`);
+  const tags = (item.payload.tags || []).join(" ");
+  const isUrgent = /紧急|截止|补录|缺额|复试|调剂/i.test(`${title} ${item.payload.summary || ""} ${tags}`);
   return {
     toastTitle: isUrgent ? "紧急调剂提醒" : "数据源更新提醒",
     toastMessage: `${school}：${title}`,
@@ -23,11 +25,12 @@ export default function SSEClient() {
   const portalAuth = useAppStore((state) => state.portalAuth);
   const logout = useAppStore((state) => state.logout);
   const showToast = useAppStore((state) => state.showToast);
+  const isDocumentVisible = useDocumentVisibility();
 
   useEffect(() => {
     const userId = portalAuth?.userId;
     const token = portalAuth?.accessToken;
-    if (!userId || !token) {
+    if (!userId || !token || !isDocumentVisible) {
       return;
     }
 
@@ -42,7 +45,7 @@ export default function SSEClient() {
       },
       signal: abortController.signal,
       credentials: "include",
-      openWhenHidden: true,
+      openWhenHidden: false,
       async onopen(response) {
         if (response.ok) return;
         if (response.status === 401) {
@@ -80,7 +83,7 @@ export default function SSEClient() {
     return () => {
       abortController.abort();
     };
-  }, [logout, portalAuth?.accessToken, portalAuth?.userId, queryClient, showToast]);
+  }, [isDocumentVisible, logout, portalAuth?.accessToken, portalAuth?.userId, queryClient, showToast]);
 
   return null;
 }

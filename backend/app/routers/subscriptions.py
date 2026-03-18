@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional
+from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional, has_premium_monitoring_access
 from ..models import PortalUserSubscription
 from ..schemas import SubscriptionCreateRequest, SubscriptionItem, SubscriptionListResponse
 
@@ -20,6 +20,11 @@ def _require_portal_user(request: Request, db: Session):
 def create_subscription(payload: SubscriptionCreateRequest, request: Request, db: Session = Depends(get_db)) -> SubscriptionItem:
     user = _require_portal_user(request, db)
     enforce_rate_limit(request, f"subscription_create:{user.id}")
+    if payload.subscription_type == "school" and not has_premium_monitoring_access(db, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="school subscription requires premium or admin role",
+        )
 
     value = payload.value.strip()
     if not value:

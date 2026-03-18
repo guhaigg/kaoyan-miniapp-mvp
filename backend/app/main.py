@@ -17,31 +17,55 @@ from .services.notifications import notification_engine
 async def _notification_worker_loop():
     settings = get_settings()
     sleep_seconds = max(0.2, float(settings.notification_poll_interval_seconds))
+    task = asyncio.current_task()
+    shutdown_event = getattr(task, "_gewu_shutdown_event", None) if task is not None else None
     while True:
+        if shutdown_event is not None and shutdown_event.is_set():
+            return
         try:
             processed = await asyncio.to_thread(notification_engine.process_batch)
+        except asyncio.CancelledError:
+            return
         except Exception:
             processed = 0
 
         if processed <= 0:
-            await asyncio.sleep(sleep_seconds)
+            try:
+                await asyncio.sleep(sleep_seconds)
+            except asyncio.CancelledError:
+                return
         else:
-            await asyncio.sleep(0.05)
+            try:
+                await asyncio.sleep(0.05)
+            except asyncio.CancelledError:
+                return
 
 
 async def _crawl_worker_loop():
     settings = get_settings()
     sleep_seconds = max(0.2, float(settings.crawl_poll_interval_seconds))
+    task = asyncio.current_task()
+    shutdown_event = getattr(task, "_gewu_shutdown_event", None) if task is not None else None
     while True:
+        if shutdown_event is not None and shutdown_event.is_set():
+            return
         try:
             processed = await asyncio.to_thread(crawl_engine.process_job_batch)
+        except asyncio.CancelledError:
+            return
         except Exception:
             processed = 0
 
         if processed <= 0:
-            await asyncio.sleep(sleep_seconds)
+            try:
+                await asyncio.sleep(sleep_seconds)
+            except asyncio.CancelledError:
+                return
         else:
-            await asyncio.sleep(0.05)
+            try:
+                await asyncio.sleep(0.05)
+            except asyncio.CancelledError:
+                return
 
 
 @asynccontextmanager
@@ -57,23 +81,28 @@ async def lifespan(app: FastAPI):
     except Exception:
         redis_client = None
     app.state.redis = redis_client
+    shutdown_event = asyncio.Event()
+    app.state.shutdown_event = shutdown_event
     notification_task = None
     crawl_task = None
     if settings.enable_notification_worker:
         notification_task = asyncio.create_task(_notification_worker_loop())
+        setattr(notification_task, "_gewu_shutdown_event", shutdown_event)
     if settings.enable_crawl_worker:
         crawl_task = asyncio.create_task(_crawl_worker_loop())
+        setattr(crawl_task, "_gewu_shutdown_event", shutdown_event)
     app.state.notification_task = notification_task
     app.state.crawl_task = crawl_task
     yield
+    shutdown_event.set()
     if crawl_task is not None:
         crawl_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await crawl_task
+        with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+            await asyncio.wait_for(crawl_task, timeout=2.0)
     if notification_task is not None:
         notification_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await notification_task
+        with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+            await asyncio.wait_for(notification_task, timeout=2.0)
     if redis_client is not None:
         redis_client.close()
 

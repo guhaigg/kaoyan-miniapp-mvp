@@ -8,6 +8,10 @@ interface PortalAuthSession {
   username: string;
   nickname: string | null;
   status: string;
+  isAdmin: boolean;
+  isPremium: boolean;
+  role: "user" | "premium" | "admin";
+  premiumExpiresAt: string | null;
   accessExpiresAt: number;
   refreshExpiresAt: number;
 }
@@ -36,7 +40,14 @@ interface AppState {
     userId: string;
     username: string;
   }) => void;
-  setPortalProfile: (payload: { nickname: string | null; status: string }) => void;
+  setPortalProfile: (payload: {
+    nickname: string | null;
+    status: string;
+    isAdmin: boolean;
+    isPremium: boolean;
+    role: "user" | "premium" | "admin";
+    premiumExpiresAt: string | null;
+  }) => void;
   clearPortalAuth: () => void;
   logout: () => void;
   toast: ToastState;
@@ -65,6 +76,10 @@ export const useAppStore = create<AppState>()(
             username: payload.username,
             nickname: null,
             status: "active",
+            isAdmin: false,
+            isPremium: false,
+            role: "user",
+            premiumExpiresAt: null,
             accessExpiresAt: Date.now() + payload.expiresIn * 1000,
             refreshExpiresAt: Date.now() + payload.refreshExpiresIn * 1000,
           },
@@ -77,6 +92,10 @@ export const useAppStore = create<AppState>()(
               ...state.portalAuth,
               nickname: payload.nickname,
               status: payload.status,
+              isAdmin: payload.isAdmin,
+              isPremium: payload.isPremium,
+              role: payload.role,
+              premiumExpiresAt: payload.premiumExpiresAt,
             },
           };
         }),

@@ -51,12 +51,32 @@
 相关文档：
 
 - `docs/auth_login_architecture.md`
+- `docs/account_system_transition_plan_2026-03-18.md`
 
 当前实现特点：
 
 - Access Token + Refresh Token 双层机制
 - Refresh Token 走 HttpOnly Cookie
+- 登录/静默登录接口同时在响应体返回 `refresh_token`，便于小程序接入
 - 支持会话撤销与后续风控升级
+- 账号模型主路径已切到：
+  - `portal_users` 作为主账号表
+  - `account_identities` 作为登录身份
+  - `account_roles` 作为管理员角色
+  - `account_entitlements` 作为会员权益
+  - `account_payment_orders` 作为订单/支付单账本
+- 当前运行时权限判定：
+  - 管理员只认 `account_roles`
+  - 高级会员只认 `account_entitlements`
+  - 旧 `admin_accounts / premium_*` 已不再参与放权
+- 遗留物理清理：
+  - 已补 MySQL / SQLite DDL，用于删除 `admin_accounts` 与 `portal_users.premium_*`
+  - `users` 微信影子表保留，等待小程序正式切换后再处理
+- 网站侧账号闭环已上线：
+  - 用户可查看账号总览、通知历史、会员订单并自助改密
+  - 用户可创建网站会员订单
+  - 管理员可查看订单账本并确认支付发放权益
+- 微信身份接口已保留在 `account_identities(wechat_miniapp)` 路径上
 
 ### 2.3 通知实时链路
 
@@ -175,7 +195,7 @@
   - `departments`
   - `site_sections`
   - `site_section_links`
-  - `content_files`（轻量占位）
+  - `content_files`（PDF 文本抽取与 OCR 留痕）
 - 新增管理接口：
   - `POST /api/v1/site-sections`
   - `GET /api/v1/site-sections`
@@ -185,10 +205,26 @@
   - 处理 `job_kind=site_section_discovery`
   - 从栏目页列表发现新链接
   - HTML 链接生成后续详情抓取任务
-  - PDF 链接写入 `content_files` 占位记录
+  - PDF 链接写入 `content_files` 并排入 `file_parse` 子任务
+  - 文字型 PDF 自动提取正文并入库
+  - 扫描型/低文本 PDF 标记为 `needs_ocr`，生成原文件占位内容
 - 失败可观测：
   - discovery 失败写 `crawl_errors`
   - `site_sections` 回写 `last_discovery_status / last_error`
+
+### 2.10.1 正文抽取与标签化增强
+
+详情抓取链路已补一轮“正文清洗 + 标签提取”增强：
+
+- 正文抽取：
+  - 优先使用 `detail_selector_config`
+  - 若选择器命中不足，则降级到 `readability-lxml`
+  - 若仍失败，则退回通用全文去标签文本
+- 标签提取：
+  - 接入 `jieba` 领域词增强
+  - 自动提取如 `调剂 / 复试 / 拟录取 / 0854 / 电子信息` 等标签
+  - 标签写入 `contents.extra.tags`
+  - 搜索结果和通知 payload 可透传这些标签
 
 ### 2.11 高级监控 Phase 1（当前分支收口状态）
 
@@ -196,7 +232,7 @@
 
 - 数据层：`portal_user_monitor_targets / portal_user_monitor_keywords / portal_user_monitor_hits` 已在模型中落地。
 - 接口层：`/api/v1/monitoring/*` 目标配置、关键词配置、命中查询、管理员命中查询接口已挂载。
-- 权限层：普通用户无权限；`premium_monitoring_enabled=1` 的 PortalUser 与管理员可访问高级监控接口。
+- 权限层：普通用户无权限；高级会员权益优先从 `account_entitlements(premium_monitoring)` 读取，管理员优先从 `account_roles(admin)` 读取，旧字段继续兼容。
 - 联动层：内容写入时会触发监控命中计算，并写入命中记录与 `notification_outbox(event_type=monitor.hit)`。
 - 测试与文档：已补充 `backend/tests/test_premium_monitoring_authz.py` 与 `backend/tests/test_premium_monitoring_targets.py`，并同步 backend/crawler 与需求文档。
 
@@ -226,9 +262,8 @@
 - 多站点真实抓取策略（UA 轮换、频控、重试）的生产级实现
 - `sources` 驱动的调度策略与优先级机制
 - 解析规则质量与字段标准化的系统化验证
-- 列表页精细抽取规则（当前仍是通用 `<a>` 发现）
 - 跨栏目去重与公告聚合策略
-- PDF 正文抽取/OCR（当前仅 `content_files` 占位留痕）
+- OCR（当前仅支持文字型 PDF 自动提取，扫描型 PDF 会标记 `needs_ocr`）
 - 去重策略的完整验证（跨源/跨轮次）
 - 内容持续稳定灌入后台数据库
 

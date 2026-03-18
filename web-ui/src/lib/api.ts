@@ -152,6 +152,7 @@ export type UserLoginResponse = {
   token_type: "bearer";
   access_token: string;
   expires_in: number;
+  refresh_token?: string | null;
   refresh_expires_in: number;
   user_id: string;
   username: string;
@@ -168,6 +169,92 @@ export type UserMeResponse = {
   username: string;
   nickname: string | null;
   status: string;
+  is_admin: boolean;
+  is_premium: boolean;
+  role: "user" | "premium" | "admin";
+  premium_expires_at: string | null;
+};
+
+export type UserIdentityItem = {
+  id: string;
+  identity_type: string;
+  status: string;
+  login_name: string | null;
+  provider_app_id: string | null;
+  verified_at: string | null;
+  last_login_at: string | null;
+};
+
+export type UserIdentityListResponse = {
+  total: number;
+  items: UserIdentityItem[];
+};
+
+export type UserRoleItem = {
+  role_code: string;
+  status: string;
+  source: string;
+  created_at: string;
+};
+
+export type UserEntitlementItem = {
+  entitlement_code: string;
+  status: string;
+  source: string;
+  starts_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  order_ref?: string | null;
+};
+
+export type UserAccountOverviewResponse = {
+  user_id: string;
+  username: string;
+  nickname: string | null;
+  status: string;
+  is_admin: boolean;
+  is_premium: boolean;
+  role: "user" | "premium" | "admin";
+  premium_expires_at: string | null;
+  identities: UserIdentityItem[];
+  roles: UserRoleItem[];
+  entitlements: UserEntitlementItem[];
+};
+
+export type UserPaymentOrderItem = {
+  id: string;
+  entitlement_code: string;
+  source: string;
+  status: string;
+  duration_days: number;
+  amount_cents: number;
+  currency: string;
+  order_ref: string;
+  provider_name: string | null;
+  provider_order_ref: string | null;
+  provider_payment_ref: string | null;
+  paid_at: string | null;
+  canceled_at: string | null;
+  created_at: string;
+  meta_json: Record<string, unknown>;
+};
+
+export type UserPaymentOrderListResponse = {
+  total: number;
+  items: UserPaymentOrderItem[];
+};
+
+export type UserPaymentOrderCreateRequest = {
+  duration_days: 30 | 90 | 365;
+  source?: "web_pay" | "wechat_pay";
+};
+
+export type WechatBindCodeResponse = {
+  status: "ok";
+  code: string;
+  expires_at: string;
+  expires_in: number;
+  bind_type: "wechat_miniapp";
 };
 
 export type SearchItem = {
@@ -176,6 +263,9 @@ export type SearchItem = {
   school_name: string | null;
   title: string;
   summary: string | null;
+  tags: string[];
+  notice_kind: string | null;
+  pdf_parse_status: string | null;
   source_url: string | null;
   source_type: string;
   published_at: string | null;
@@ -187,6 +277,9 @@ export type SearchItem = {
 export type SearchResponse = {
   request_id: string;
   mode: "cache" | "hybrid_refresh";
+  authenticated: boolean;
+  access_limited: boolean;
+  preview_limit: number | null;
   items: SearchItem[];
   total: number;
   page: number;
@@ -216,9 +309,57 @@ export type AdminMeResponse = {
   authenticated: boolean;
 };
 
-export type AdminLoginResponse = {
+export type AdminIdentityItem = {
+  id: string;
+  identity_type: string;
+  login_name: string | null;
+  status: string;
+  provider_subject?: string | null;
+  provider_unionid?: string | null;
+  verified_at?: string | null;
+  last_login_at?: string | null;
+};
+
+export type AdminRoleAssignmentItem = {
+  role_code: string;
+  status: string;
+  source: string;
+  created_at: string;
+};
+
+export type AdminEntitlementItem = {
+  entitlement_code: string;
+  status: string;
+  source: string;
+  starts_at: string;
+  expires_at: string | null;
+  revoked_at?: string | null;
+  order_ref?: string | null;
+};
+
+export type AdminPaymentOrderItem = {
+  id: string;
+  account_id: string;
   username: string;
-  expires_in: number;
+  entitlement_code: string;
+  source: string;
+  status: string;
+  duration_days: number;
+  amount_cents: number;
+  currency: string;
+  order_ref: string;
+  provider_name: string | null;
+  provider_order_ref: string | null;
+  provider_payment_ref: string | null;
+  paid_at: string | null;
+  canceled_at: string | null;
+  created_at: string;
+  meta_json: Record<string, unknown>;
+};
+
+export type AdminPaymentOrderListResponse = {
+  total: number;
+  items: AdminPaymentOrderItem[];
 };
 
 export type AdminUserItem = {
@@ -226,7 +367,12 @@ export type AdminUserItem = {
   username: string;
   status: string;
   is_admin: boolean;
+  is_premium: boolean;
+  premium_expires_at: string | null;
   nickname: string | null;
+  identities: AdminIdentityItem[];
+  roles: AdminRoleAssignmentItem[];
+  entitlements: AdminEntitlementItem[];
   created_at: string;
   last_login_at: string | null;
 };
@@ -254,11 +400,104 @@ export type AdminAuditListResponse = {
   items: AdminAuditItem[];
 };
 
+export type AdminContentFingerprintStatsResponse = {
+  total_contents: number;
+  fingerprinted_contents: number;
+  pending_contents: number;
+  collision_contents: number;
+  coverage_ratio: number;
+};
+
 export type HealthResponse = {
   status: "ok" | "degraded";
   app_env: string;
   db: "up" | "down";
   redis: "up" | "down";
+};
+
+export type SiteSectionSelectorConfig = Record<string, unknown>;
+
+export type SiteSectionItem = {
+  id: string;
+  name: string;
+  section_type: string;
+  section_url: string;
+  school_name: string | null;
+  department_name: string | null;
+  department_type: string | null;
+  discovery_category: "announcement" | "adjustment";
+  enabled: boolean;
+  list_selector_config: SiteSectionSelectorConfig;
+  detail_selector_config: SiteSectionSelectorConfig;
+  suggested_list_selector_config: SiteSectionSelectorConfig;
+  suggested_detail_selector_config: SiteSectionSelectorConfig;
+  last_discovered_at: string | null;
+  last_discovery_status: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SiteSectionListResponse = {
+  total: number;
+  items: SiteSectionItem[];
+};
+
+export type SiteSectionBackfillSelectorConfigResponse = {
+  total_sections: number;
+  updated_sections: number;
+  items: SiteSectionItem[];
+};
+
+export type SiteSectionSelectorPreviewLinkItem = {
+  url: string;
+  text: string;
+  link_type: "html" | "pdf";
+};
+
+export type SiteSectionSelectorPreviewResponse = {
+  section_url: string;
+  suggested_list_selector_config: SiteSectionSelectorConfig;
+  suggested_detail_selector_config: SiteSectionSelectorConfig;
+  list_match_count: number;
+  list_preview_items: SiteSectionSelectorPreviewLinkItem[];
+  detail_preview_url: string | null;
+  detail_title: string | null;
+  detail_excerpt: string | null;
+  detail_extraction_method: "selector" | "readability" | "plain_text" | null;
+  warnings: string[];
+};
+
+export type ContentFileItem = {
+  id: string;
+  content_id: string | null;
+  site_section_link_id: string | null;
+  site_section_id: string | null;
+  site_section_name: string | null;
+  school_name: string | null;
+  link_title: string | null;
+  content_title: string | null;
+  file_url: string;
+  file_type: string;
+  mime_type: string | null;
+  text_excerpt: string | null;
+  parse_status: string;
+  ocr_status: string;
+  file_meta: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContentFileListResponse = {
+  total: number;
+  items: ContentFileItem[];
+};
+
+export type ContentFileRetryParseResponse = {
+  content_file_id: string;
+  job_id: string;
+  status: "queued" | "existing";
+  parse_status: string;
 };
 
 export type SubscriptionType = "school" | "major" | "keyword" | "region";
@@ -285,6 +524,7 @@ export type NotificationPayload = {
   title?: string;
   body?: string;
   summary?: string;
+  tags?: string[];
   school_name?: string;
   major?: string;
   region?: string;
@@ -303,6 +543,22 @@ export type NotificationEventItem = {
 export type NotificationPendingResponse = {
   total: number;
   items: NotificationEventItem[];
+};
+
+export type UserNotificationHistoryItem = {
+  id: string;
+  outbox_id: string;
+  channel: string;
+  status: string;
+  created_at: string;
+  sent_at: string | null;
+  last_error: string | null;
+  payload: NotificationPayload;
+};
+
+export type UserNotificationHistoryResponse = {
+  total: number;
+  items: UserNotificationHistoryItem[];
 };
 
 export function registerUser(payload: {
@@ -351,18 +607,76 @@ export function getCurrentUser(token: string) {
   });
 }
 
-export function adminLogin(payload: { username: string; password: string }) {
-  return request<AdminLoginResponse>({
-    url: "/admin/auth/login",
-    method: "POST",
-    data: payload,
+export function getCurrentUserIdentities(token: string) {
+  return request<UserIdentityListResponse>({
+    url: "/auth/me/identities",
+    method: "GET",
+    headers: {
+      "X-User-Token": token,
+    },
   });
 }
 
-export function adminLogout() {
-  return request<{ status: "ok" }>({
-    url: "/admin/auth/logout",
+export function getCurrentUserAccountOverview(token: string) {
+  return request<UserAccountOverviewResponse>({
+    url: "/auth/me/account",
+    method: "GET",
+    headers: {
+      "X-User-Token": token,
+    },
+  });
+}
+
+export function getCurrentUserPaymentOrders(token: string) {
+  return request<UserPaymentOrderListResponse>({
+    url: "/auth/me/premium-orders",
+    method: "GET",
+    headers: {
+      "X-User-Token": token,
+    },
+  });
+}
+
+export function createCurrentUserPaymentOrder(token: string, payload: UserPaymentOrderCreateRequest) {
+  return request<UserPaymentOrderItem>({
+    url: "/auth/me/premium-orders",
     method: "POST",
+    data: payload,
+    headers: {
+      "X-User-Token": token,
+    },
+  });
+}
+
+export function changeCurrentUserPassword(token: string, payload: { old_password: string; new_password: string }) {
+  return request<{ status: "ok" }>({
+    url: "/auth/me/change-password",
+    method: "POST",
+    data: payload,
+    headers: {
+      "X-User-Token": token,
+    },
+  });
+}
+
+export function getCurrentUserNotificationHistory(token: string, limit = 20) {
+  return request<UserNotificationHistoryResponse>({
+    url: "/auth/me/notifications/history",
+    method: "GET",
+    params: { limit },
+    headers: {
+      "X-User-Token": token,
+    },
+  });
+}
+
+export function createWechatBindCode(token: string) {
+  return request<WechatBindCodeResponse>({
+    url: "/auth/wechat/bind-code",
+    method: "POST",
+    headers: {
+      "X-User-Token": token,
+    },
   });
 }
 
@@ -386,10 +700,54 @@ export function adminUsers(payload: {
   });
 }
 
-export function adminPromoteUser(userId: string) {
+export function adminPromoteUser(userId: string, targetRole: "premium" | "admin" = "admin") {
   return request<AdminUserItem>({
     url: `/admin/users/${encodeURIComponent(userId)}/promote`,
     method: "POST",
+    data: { target_role: targetRole },
+  });
+}
+
+export function adminDemoteUser(userId: string, targetRole: "user" | "premium" = "user", premiumDays = 30) {
+  return request<AdminUserItem>({
+    url: `/admin/users/${encodeURIComponent(userId)}/demote`,
+    method: "POST",
+    data: { target_role: targetRole, premium_days: premiumDays },
+  });
+}
+
+export function adminResetUserPassword(userId: string, newPassword: string) {
+  return request<{ status: "ok"; user_id: string; username: string }>({
+    url: `/admin/users/${encodeURIComponent(userId)}/reset-password`,
+    method: "POST",
+    data: { new_password: newPassword },
+  });
+}
+
+export function adminPaymentOrders(payload?: { status?: string; user_id?: string; limit?: number }) {
+  return request<AdminPaymentOrderListResponse>({
+    url: "/admin/payment-orders",
+    method: "GET",
+    params: payload,
+  });
+}
+
+export function adminMarkPaymentOrderPaid(orderId: string, providerPaymentRef?: string) {
+  return request<AdminPaymentOrderItem>({
+    url: `/admin/payment-orders/${encodeURIComponent(orderId)}/mark-paid`,
+    method: "POST",
+    data: { provider_payment_ref: providerPaymentRef || null },
+  });
+}
+
+export function adminCreateUserPaymentOrder(userId: string, payload?: { duration_days?: number; amount_cents?: number }) {
+  return request<AdminPaymentOrderItem>({
+    url: `/admin/users/${encodeURIComponent(userId)}/payment-orders`,
+    method: "POST",
+    params: {
+      duration_days: payload?.duration_days ?? 30,
+      amount_cents: payload?.amount_cents ?? 0,
+    },
   });
 }
 

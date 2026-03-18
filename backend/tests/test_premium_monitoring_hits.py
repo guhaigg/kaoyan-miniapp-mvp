@@ -189,6 +189,29 @@ def test_monitor_hit_generates_inapp_delivery_without_subscription(client):
     assert payload["items"][0]["payload"]["source_url"] == "https://example.com/pm-hit-3"
 
 
+def test_monitor_hit_matches_alias_keyword_via_system_tags(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_alias")
+    _create_monitor_target_and_keyword(user_id, school_name="中山大学", keyword="复试线")
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "中山大学2026年硕士研究生招生考试复试基本分数线",
+            "body": "现公布复试基本分数线及相关说明，请考生及时查看。",
+            "school_name": "中山大学",
+            "source_url": "https://example.com/pm-hit-alias",
+        },
+        headers=_admin_headers(),
+    )
+    assert ingest_resp.status_code == 200
+
+    with SessionLocal() as db:
+        hits = db.query(HIT_MODEL).filter(HIT_MODEL.user_id == user_id).all()
+        assert len(hits) == 1
+        assert "复试线" in (hits[0].matched_keywords or [])
+
+
 def test_monitor_hit_generates_bark_delivery_when_enabled(client):
     user_id, token = _register_user_and_token(client, "pmhit_bark")
     _create_monitor_target_and_keyword(user_id, school_name="同济大学", keyword="公告")

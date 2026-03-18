@@ -1,15 +1,13 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BellRing, Star, X } from "lucide-react";
 import {
   ApiError,
   NotificationEventItem,
-  getCurrentUser,
-  loginUser,
   logoutUser,
-  registerUser,
 } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import {
@@ -26,88 +24,26 @@ export default function Modals() {
     isWatchlistOpen,
     setWatchlistOpen,
     portalAuth,
-    setPortalAuthFromToken,
-    setPortalProfile,
     clearPortalAuth,
   } = useAppStore();
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [nickname, setNickname] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [watchType, setWatchType] = useState<"school" | "major" | "keyword" | "region">("school");
   const [watchValue, setWatchValue] = useState("");
+  const canSubscribeSchool = Boolean(portalAuth?.isPremium || portalAuth?.isAdmin);
+  const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
 
-  const submitLabel = useMemo(
-    () => (mode === "register" ? "创建账户并登录" : "确认授权"),
-    [mode],
-  );
+  useEffect(() => {
+    if (!canSubscribeSchool && watchType === "school") {
+      setWatchType("major");
+    }
+  }, [canSubscribeSchool, watchType]);
 
   const subscriptionsQuery = useSubscriptionsQuery(isWatchlistOpen);
   const realtimeNoticesQuery = useWatchlistNoticesQuery(isWatchlistOpen);
 
   const createSubscriptionMutation = useAddSubscriptionMutation();
   const deleteSubscriptionMutation = useDeleteSubscriptionMutation();
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting) return;
-
-    if (username.trim().length < 3) {
-      setMessage("用户名至少 3 位");
-      return;
-    }
-    if (password.length < 8) {
-      setMessage("密码至少 8 位");
-      return;
-    }
-
-    setSubmitting(true);
-    setMessage("");
-    try {
-      if (mode === "register") {
-        await registerUser({
-          username: username.trim(),
-          password,
-          nickname: nickname.trim() || undefined,
-        });
-      }
-
-      const login = await loginUser({
-        username: username.trim(),
-        password,
-      });
-      setPortalAuthFromToken({
-        tokenType: login.token_type,
-        accessToken: login.access_token,
-        expiresIn: login.expires_in,
-        refreshExpiresIn: login.refresh_expires_in,
-        userId: login.user_id,
-        username: login.username,
-      });
-
-      try {
-        const profile = await getCurrentUser(login.access_token);
-        setPortalProfile({ nickname: profile.nickname, status: profile.status });
-      } catch {
-        setPortalProfile({ nickname: null, status: "active" });
-      }
-
-      setMessage(mode === "register" ? "注册并登录成功" : "登录成功");
-      setTimeout(() => {
-        setAuthOpen(false);
-      }, 350);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setMessage(`操作失败：${error.message}`);
-      } else {
-        setMessage("操作失败，请稍后重试");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   async function handleLogout() {
     setSubmitting(true);
@@ -131,6 +67,10 @@ export default function Modals() {
     const value = watchValue.trim();
     if (!value) {
       setMessage("请输入你要关注的关键词或院校");
+      return;
+    }
+    if (watchType === "school" && !canSubscribeSchool) {
+      setMessage("院校收藏仅高级用户或管理员可用。");
       return;
     }
     try {
@@ -197,42 +137,57 @@ export default function Modals() {
                   <span className="text-4xl font-black tracking-tighter text-[#2c3e50]">GW</span>
                 </div>
               </div>
-              <h3 className="mb-8 text-center text-2xl font-bold text-white">接入系统</h3>
-              <div className="mb-4 grid grid-cols-2 overflow-hidden rounded-xl border border-white/10 bg-black/30 p-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("register");
-                    setMessage("");
-                  }}
-                  className={`rounded-lg px-3 py-2 text-sm transition-colors ${
-                    mode === "register"
-                      ? "bg-cyan-500 text-white"
-                      : "text-slate-300 hover:bg-white/10"
-                  }`}
-                >
-                  创建账户
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("login");
-                    setMessage("");
-                  }}
-                  className={`rounded-lg px-3 py-2 text-sm transition-colors ${
-                    mode === "login"
-                      ? "bg-cyan-500 text-white"
-                      : "text-slate-300 hover:bg-white/10"
-                  }`}
-                >
-                  登录账户
-                </button>
-              </div>
+              <h3 className="mb-4 text-center text-2xl font-bold text-white">账号入口</h3>
+              <p className="mb-6 text-center text-sm leading-7 text-slate-300">
+                弹窗现在只保留轻入口。完整的登录、注册和退出流程都走稳定页面，不再把表单塞回这里。
+              </p>
 
               {portalAuth ? (
                 <div className="space-y-4">
                   <div className="rounded-xl border border-white/10 bg-black/30 p-4 text-sm text-slate-200">
                     当前账号：{portalAuth.nickname || portalAuth.username}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-400">角色</div>
+                      <div className="mt-2 text-lg font-semibold text-white">{portalAuth.role}</div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-400">状态</div>
+                      <div className="mt-2 text-lg font-semibold text-white">{portalAuth.status}</div>
+                    </div>
+                  </div>
+                  {showUpgradePanel ? (
+                    <div className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.35),rgba(20,24,36,0.92))] p-4">
+                      <div className="text-xs uppercase tracking-[0.28em] text-amber-300">Membership</div>
+                      <div className="mt-2 text-base font-bold text-white">会员开通已迁到账号中心。</div>
+                      <div className="mt-2 text-xs leading-6 text-amber-50/85">
+                        弹窗只保留快速入口，不再塞订单、绑定、通知和改密。
+                      </div>
+                      <Link
+                        href="/account/billing"
+                        onClick={() => setAuthOpen(false)}
+                        className="mt-4 inline-flex rounded-xl bg-amber-500 px-4 py-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-amber-400"
+                      >
+                        去账号中心开通会员
+                      </Link>
+                    </div>
+                  ) : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Link
+                      href="/account"
+                      onClick={() => setAuthOpen(false)}
+                      className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-white/20"
+                    >
+                      进入账号中心
+                    </Link>
+                    <Link
+                      href="/search"
+                      onClick={() => setAuthOpen(false)}
+                      className="rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3 text-center text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20"
+                    >
+                      去检索页
+                    </Link>
                   </div>
                   <button
                     type="button"
@@ -244,40 +199,27 @@ export default function Modals() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <input
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
-                    type="text"
-                    autoComplete="username"
-                    placeholder="用户名（3-64位）"
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-5 py-4 text-white outline-none transition-colors focus:border-cyan-400"
-                  />
-                  {mode === "register" ? (
-                    <input
-                      value={nickname}
-                      onChange={(event) => setNickname(event.target.value)}
-                      type="text"
-                      maxLength={120}
-                      placeholder="昵称（选填）"
-                      className="w-full rounded-xl border border-white/10 bg-black/40 px-5 py-4 text-white outline-none transition-colors focus:border-cyan-400"
-                    />
-                  ) : null}
-                  <input
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    type="password"
-                    autoComplete={mode === "register" ? "new-password" : "current-password"}
-                    placeholder="密码（至少8位）"
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-5 py-4 text-white outline-none transition-colors focus:border-cyan-400"
-                  />
-                  <button
-                    disabled={submitting}
-                    className="mt-6 w-full rounded-xl bg-white py-4 font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:bg-cyan-400 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {submitting ? "提交中..." : submitLabel}
-                  </button>
-                </form>
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-slate-300">
+                    登录页和注册页现在是独立的应用入口，支持完整认证壳和后续跳转，不再依赖弹窗上下文。
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Link
+                      href="/login"
+                      onClick={() => setAuthOpen(false)}
+                      className="rounded-xl bg-cyan-500 px-4 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-cyan-400"
+                    >
+                      去登录
+                    </Link>
+                    <Link
+                      href="/register"
+                      onClick={() => setAuthOpen(false)}
+                      className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-white/20"
+                    >
+                      去注册
+                    </Link>
+                  </div>
+                </div>
               )}
               {message ? (
                 <p className="mt-4 rounded-lg border border-white/10 bg-black/30 px-4 py-2 text-xs text-slate-300">
@@ -335,17 +277,36 @@ export default function Modals() {
                           <button
                             key={x.key}
                             type="button"
+                            disabled={x.key === "school" && !canSubscribeSchool}
                             onClick={() => setWatchType(x.key as "school" | "major" | "keyword" | "region")}
                             className={`rounded-lg px-2 py-1.5 text-xs transition-colors ${
                               watchType === x.key
                                 ? "bg-cyan-500 text-white"
                                 : "bg-white/5 text-slate-300 hover:bg-white/10"
+                            } ${
+                              x.key === "school" && !canSubscribeSchool
+                                ? "cursor-not-allowed opacity-50 hover:bg-white/5"
+                                : ""
                             }`}
                           >
                             {x.label}
                           </button>
                         ))}
                       </div>
+                      {!canSubscribeSchool ? (
+                        <div className="mt-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
+                          <div className="text-[11px] text-amber-200">
+                            院校收藏仅高级用户或管理员可用。普通用户不该只看到一行限制提示，所以这里直接给开通入口。
+                          </div>
+                          <Link
+                            href="/account/billing"
+                            onClick={() => setWatchlistOpen(false)}
+                            className="mt-2 inline-flex rounded-lg border border-amber-300/30 bg-black/20 px-3 py-2 text-xs font-semibold text-amber-100 transition-colors hover:bg-black/30"
+                          >
+                            立即开通高级会员
+                          </Link>
+                        </div>
+                      ) : null}
                       <div className="flex gap-2">
                         <input
                           value={watchValue}
@@ -462,9 +423,29 @@ export default function Modals() {
                 )}
 
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-slate-300">
-                  {portalAuth
-                    ? `当前登录：${portalAuth.nickname || portalAuth.username}`
-                    : "登录后可同步你的关注列表与检索偏好。"}
+                  {portalAuth ? (
+                    <div className="space-y-3">
+                      <div>{`当前登录：${portalAuth.nickname || portalAuth.username}`}</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Link
+                          href="/account"
+                          onClick={() => setWatchlistOpen(false)}
+                          className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-center text-xs font-semibold text-white transition-colors hover:bg-white/10"
+                        >
+                          账号中心
+                        </Link>
+                        <Link
+                          href="/search"
+                          onClick={() => setWatchlistOpen(false)}
+                          className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-center text-xs font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20"
+                        >
+                          去检索页
+                        </Link>
+                      </div>
+                    </div>
+                  ) : (
+                    "登录后可同步你的关注列表与检索偏好。"
+                  )}
                 </div>
               </div>
             </motion.div>

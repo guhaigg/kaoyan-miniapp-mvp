@@ -79,6 +79,7 @@ class SiteSection(Base):
     section_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     discovery_category: Mapped[str] = mapped_column(String(32), default="announcement", nullable=False, index=True)
     list_selector_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    detail_selector_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     enabled: Mapped[int] = mapped_column(Integer, default=1, nullable=False, index=True)
     last_discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_discovery_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -137,7 +138,10 @@ class ContentFile(Base):
 
 class Content(Base):
     __tablename__ = "contents"
-    __table_args__ = (UniqueConstraint("source_url", name="uq_contents_source_url"),)
+    __table_args__ = (
+        UniqueConstraint("source_url", name="uq_contents_source_url"),
+        UniqueConstraint("content_fingerprint", name="uq_contents_content_fingerprint"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
@@ -151,6 +155,7 @@ class Content(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     region: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     major: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    content_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     extra: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
@@ -185,6 +190,7 @@ class CrawlJob(Base):
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class CrawlError(Base):
@@ -224,11 +230,19 @@ class PortalUser(Base):
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
     notify_bark_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notify_bark_enabled: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    premium_monitoring_enabled: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    admin_account: Mapped["AdminAccount | None"] = relationship(back_populates="user", uselist=False)
+    identities: Mapped[list["AccountIdentity"]] = relationship(back_populates="account", cascade="all, delete-orphan")
+    roles: Mapped[list["AccountRole"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan", foreign_keys="AccountRole.account_id"
+    )
+    entitlements: Mapped[list["AccountEntitlement"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan", foreign_keys="AccountEntitlement.account_id"
+    )
+    payment_orders: Mapped[list["AccountPaymentOrder"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan", foreign_keys="AccountPaymentOrder.account_id"
+    )
     sessions: Mapped[list["PortalUserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     subscriptions: Mapped[list["PortalUserSubscription"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -244,18 +258,112 @@ class PortalUser(Base):
     )
 
 
-class AdminAccount(Base):
-    __tablename__ = "admin_accounts"
+class AccountIdentity(Base):
+    __tablename__ = "account_identities"
+    __table_args__ = (
+        UniqueConstraint("identity_type", "login_name", name="uq_account_identities_type_login_name"),
+        UniqueConstraint("identity_type", "provider_subject", "provider_app_id", name="uq_account_identities_type_subject_app"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    user_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, unique=True, index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    identity_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    login_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_unionid: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    provider_app_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    promoted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
-    user: Mapped["PortalUser"] = relationship(back_populates="admin_account")
+    account: Mapped["PortalUser"] = relationship(back_populates="identities")
 
+
+class AccountRole(Base):
+    __tablename__ = "account_roles"
+    __table_args__ = (UniqueConstraint("account_id", "role_code", name="uq_account_roles_account_role_code"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    account_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    role_code: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    granted_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("portal_users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    account: Mapped["PortalUser"] = relationship(back_populates="roles", foreign_keys=[account_id])
+
+
+class AccountEntitlement(Base):
+    __tablename__ = "account_entitlements"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    account_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    entitlement_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    order_ref: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    granted_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("portal_users.id"), nullable=True, index=True)
+    meta_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    account: Mapped["PortalUser"] = relationship(back_populates="entitlements", foreign_keys=[account_id])
+
+
+class AccountPaymentOrder(Base):
+    __tablename__ = "account_payment_orders"
+    __table_args__ = (
+        UniqueConstraint("order_ref", name="uq_account_payment_orders_order_ref"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    account_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    entitlement_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), default="web_pay", nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    duration_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(16), default="CNY", nullable=False)
+    order_ref: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    provider_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_order_ref: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    provider_payment_ref: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    meta_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    account: Mapped["PortalUser"] = relationship(back_populates="payment_orders", foreign_keys=[account_id])
+
+
+class AccountBindCode(Base):
+    __tablename__ = "account_bind_codes"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_account_bind_codes_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    account_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id"), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    bind_type: Mapped[str] = mapped_column(String(32), default="wechat_miniapp", nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    claimed_by_shadow_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    account: Mapped["PortalUser"] = relationship(foreign_keys=[account_id])
+    claimed_by_shadow_user: Mapped["User | None"] = relationship(foreign_keys=[claimed_by_shadow_user_id])
 
 class PortalUserSession(Base):
     __tablename__ = "portal_user_sessions"

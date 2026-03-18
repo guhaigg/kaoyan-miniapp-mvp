@@ -1,16 +1,31 @@
 import httpx
+from datetime import timedelta
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import NotificationDelivery
+from app.models import NotificationDelivery, PortalUser
+from app.models import PortalUserSubscription
+from app.models import utcnow
+from app.services.account_access import ENTITLEMENT_SOURCE_ADMIN_GRANT, upsert_premium_entitlement
 from app.services.notifications import notification_engine
 
 
-def _access_token(client, username: str = "notify_user") -> str:
+def _access_token(client, username: str = "notify_user", *, premium: bool = False) -> str:
     client.post(
         "/api/v1/auth/register",
         json={"username": username, "password": "StrongPass123", "nickname": "通知用户"},
     )
+    if premium:
+        with SessionLocal() as db:
+            user = db.query(PortalUser).filter(PortalUser.username == username).one()
+            upsert_premium_entitlement(
+                db,
+                user_id=user.id,
+                operator_account_id=None,
+                expires_at=None,
+                source=ENTITLEMENT_SOURCE_ADMIN_GRANT,
+            )
+            db.commit()
     login_response = client.post(
         "/api/v1/auth/login",
         json={"username": username, "password": "StrongPass123"},
@@ -20,7 +35,7 @@ def _access_token(client, username: str = "notify_user") -> str:
 
 
 def test_outbox_to_delivery_flow(client):
-    token = _access_token(client)
+    token = _access_token(client, premium=True)
     user_headers = {"X-User-Token": token}
     admin_headers = {"X-Admin-Token": "test-admin-token"}
 
@@ -53,6 +68,7 @@ def test_outbox_to_delivery_flow(client):
     payload = pending_resp.json()
     assert payload["total"] == 1
     assert payload["items"][0]["payload"]["title"] == "电子科技大学调剂通知"
+    assert "调剂" in payload["items"][0]["payload"]["tags"]
 
     pending_again = client.get("/api/v1/notifications/pending", headers=user_headers)
     assert pending_again.status_code == 200
@@ -60,7 +76,7 @@ def test_outbox_to_delivery_flow(client):
 
 
 def test_bark_delivery_flow(client, monkeypatch):
-    token = _access_token(client, username="bark_user")
+    token = _access_token(client, username="bark_user", premium=True)
     user_headers = {"X-User-Token": token}
     admin_headers = {"X-Admin-Token": "test-admin-token"}
 
@@ -133,7 +149,7 @@ def test_bark_delivery_flow(client, monkeypatch):
 
 
 def test_bark_delivery_failure_marks_retry_or_failed(client, monkeypatch):
-    token = _access_token(client, username="bark_retry_user")
+    token = _access_token(client, username="bark_retry_user", premium=True)
     user_headers = {"X-User-Token": token}
     admin_headers = {"X-Admin-Token": "test-admin-token"}
 
@@ -185,3 +201,91 @@ def test_bark_delivery_failure_marks_retry_or_failed(client, monkeypatch):
         bark_row = db.query(NotificationDelivery).filter(NotificationDelivery.channel == "bark").one()
         assert bark_row.status == "failed"
         assert "bark send failed" in (bark_row.last_error or "")
+
+
+def test_expired_premium_user_school_subscription_is_recycled_and_no_school_delivery(client):
+    token = _access_token(client, username="expired_notify_user", premium=True)
+    user_headers = {"X-User-Token": token}
+    admin_headers = {"X-Admin-Token": "test-admin-token"}
+
+    create_sub = client.post(
+        "/api/v1/subscriptions",
+        json={"subscription_type": "school", "value": "南京大学", "category": "all"},
+        headers=user_headers,
+    )
+    assert create_sub.status_code == 200
+
+    with SessionLocal() as db:
+        user = db.query(PortalUser).filter(PortalUser.username == "expired_notify_user").one()
+        entitlement = next(x for x in user.entitlements if x.status == "active")
+        entitlement.expires_at = utcnow() - timedelta(days=1)
+        db.commit()
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "南京大学公告更新",
+            "body": "有新的招生公告",
+            "summary": "测试到期回收逻辑",
+            "school_name": "南京大学",
+            "source_url": "https://example.com/notice-expired-school",
+        },
+        headers=admin_headers,
+    )
+    assert ingest_resp.status_code == 200
+
+    processed = notification_engine.process_outbox_batch()
+    assert processed == 1
+
+    pending_resp = client.get("/api/v1/notifications/pending", headers=user_headers)
+    assert pending_resp.status_code == 200
+    assert pending_resp.json()["total"] == 0
+
+    with SessionLocal() as db:
+        user = db.query(PortalUser).filter(PortalUser.username == "expired_notify_user").one()
+        assert not any(x.status == "active" for x in user.entitlements)
+        sub = (
+            db.query(PortalUserSubscription)
+            .filter(
+                PortalUserSubscription.user_id == user.id,
+                PortalUserSubscription.subscription_type == "school",
+            )
+            .one()
+        )
+        assert sub.status == "deleted"
+
+
+def test_keyword_subscription_matches_system_tag_aliases(client):
+    token = _access_token(client, username="notify_alias_user")
+    user_headers = {"X-User-Token": token}
+    admin_headers = {"X-Admin-Token": "test-admin-token"}
+
+    create_sub = client.post(
+        "/api/v1/subscriptions",
+        json={"subscription_type": "keyword", "value": "复试线", "category": "announcement"},
+        headers=user_headers,
+    )
+    assert create_sub.status_code == 200
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "中山大学2026年硕士研究生招生考试复试基本分数线",
+            "body": "现公布复试基本分数线及相关说明，请考生及时查看。",
+            "school_name": "中山大学",
+            "source_url": "https://example.com/notice-keyword-alias",
+        },
+        headers=admin_headers,
+    )
+    assert ingest_resp.status_code == 200
+
+    processed = notification_engine.process_outbox_batch()
+    assert processed == 1
+
+    pending_resp = client.get("/api/v1/notifications/pending", headers=user_headers)
+    assert pending_resp.status_code == 200
+    payload = pending_resp.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["payload"]["title"] == "中山大学2026年硕士研究生招生考试复试基本分数线"

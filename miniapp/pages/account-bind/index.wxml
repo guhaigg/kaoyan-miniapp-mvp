@@ -1,0 +1,56 @@
+<view class="container">
+  <view class="card">
+    <view class="title">绑定网站账号</view>
+    <view class="muted">{{statusText}}</view>
+  </view>
+
+  <view class="card" wx:if="{{canBind}}">
+    <view class="section-title">方式一：使用绑定码</view>
+    <input placeholder="输入网站端生成的绑定码" value="{{bindCode}}" bindinput="onBindCodeInput" />
+    <button class="btn-primary" style="margin-top: 24rpx;" bindtap="submitBindCode" loading="{{submitting}}">
+      {{submitting ? "绑定中..." : "使用绑定码绑定"}}
+    </button>
+    <view class="helper-text" style="margin-top: 16rpx;">
+      在网站登录后，进入账号身份区域生成绑定码，再回到这里输入即可完成绑定。
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{canBind}}">
+    <view class="section-title">方式二：输入网站账号密码</view>
+    <input placeholder="网站用户名" value="{{username}}" bindinput="onUsernameInput" />
+    <input
+      placeholder="网站密码"
+      password="{{true}}"
+      value="{{password}}"
+      bindinput="onPasswordInput"
+      style="margin-top: 20rpx;"
+    />
+    <button class="btn-primary" style="margin-top: 24rpx;" bindtap="submitBind" loading="{{submitting}}">
+      {{submitting ? "绑定中..." : "登录并绑定"}}
+    </button>
+    <view class="helper-text" style="margin-top: 16rpx;">
+      如果你不方便回网站生成绑定码，也可以直接输入网站账号密码完成绑定。
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{!canBind}}">
+    <view class="section-title">当前绑定信息</view>
+    <view class="detail-row">
+      <text class="detail-label">账号</text>
+      <text class="detail-value">{{linkedUsername || "未命名账号"}}</text>
+    </view>
+    <view class="detail-row">
+      <text class="detail-label">角色</text>
+      <text class="detail-value">{{linkedRoleText}}</text>
+    </view>
+    <view class="detail-row">
+      <text class="detail-label">主账号 ID</text>
+      <text class="detail-value mono">{{linkedPortalUserId}}</text>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{message}}">
+    <view class="section-title">结果</view>
+    <view class="message {{messageType}}">{{message}}</view>
+  </view>
+</view>

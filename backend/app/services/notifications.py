@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..db import SessionLocal
 from ..models import NotificationDelivery, NotificationOutbox, PortalUser, PortalUserSubscription, utcnow
+from .account_access import get_active_admin_user_ids, resolve_portal_access
+from .nlp import keyword_matches_content, normalize_tag
 
 with suppress(Exception):
     import ahocorasick  # type: ignore
@@ -33,6 +35,15 @@ class NotificationMatcher:
         now = utcnow()
         if not force and (now - self._last_checked_at).total_seconds() < settings.notification_cache_refresh_seconds:
             return
+
+        admin_user_ids = get_active_admin_user_ids(db)
+        self._recycle_expired_premium_users(db, admin_user_ids=admin_user_ids)
+        premium_user_ids = {
+            user.id
+            for user in db.query(PortalUser).filter(PortalUser.status == "active").all()
+            if resolve_portal_access(db, user).is_premium
+        }
+        school_allowed_user_ids = premium_user_ids | admin_user_ids
 
         stats = (
             db.query(
@@ -69,6 +80,8 @@ class NotificationMatcher:
             category = (row.category or "all").strip().lower() or "all"
             rule = (row.user_id, value, category)
             if row.subscription_type == "school":
+                if row.user_id not in school_allowed_user_ids:
+                    continue
                 school_rules.append(rule)
             elif row.subscription_type == "major":
                 major_rules.append(rule)
@@ -110,6 +123,8 @@ class NotificationMatcher:
         school_name = str(payload.get("school_name") or "").strip().lower()
         major = str(payload.get("major") or "").strip().lower()
         region = str(payload.get("region") or "").strip().lower()
+        tags = [normalize_tag(tag) for tag in (payload.get("tags") or [])]
+        tags = [tag for tag in tags if tag]
         full_text = " ".join(
             x
             for x in [
@@ -153,16 +168,43 @@ class NotificationMatcher:
                 for user_id, _, rule_category in keyword_rule_map.get(keyword, []):
                     if self._category_match(category, rule_category):
                         matched_user_ids.add(user_id)
-        else:
-            for user_id, value, rule_category in keyword_rules:
-                if value in full_text and self._category_match(category, rule_category):
-                    matched_user_ids.add(user_id)
+        for user_id, value, rule_category in keyword_rules:
+            if not self._category_match(category, rule_category):
+                continue
+            if keyword_matches_content(value, full_text, tags):
+                matched_user_ids.add(user_id)
 
         return matched_user_ids
 
     @staticmethod
     def _category_match(content_category: str, rule_category: str) -> bool:
         return rule_category == "all" or rule_category == content_category
+
+    @staticmethod
+    def _recycle_expired_premium_users(db: Session, *, admin_user_ids: set[str]) -> None:
+        rows = db.query(PortalUser).filter(PortalUser.status == "active").all()
+        expired_user_ids = []
+        for row in rows:
+            if row.id in admin_user_ids:
+                continue
+            state = resolve_portal_access(db, row)
+            if state.expired_premium and not state.is_premium:
+                expired_user_ids.append(row.id)
+        if not expired_user_ids:
+            return
+
+        subscriptions = (
+            db.query(PortalUserSubscription)
+            .filter(
+                PortalUserSubscription.user_id.in_(expired_user_ids),
+                PortalUserSubscription.subscription_type == "school",
+                PortalUserSubscription.status == "active",
+            )
+            .all()
+        )
+        for sub in subscriptions:
+            sub.status = "deleted"
+        db.commit()
 
 
 class NotificationEngine:

@@ -29,12 +29,14 @@ function waitForAuthReady(timeoutMs = 800) {
   });
 }
 
-function request(path, method = "GET", data = null) {
+function request(path, method = "GET", data = null, options = {}) {
   return waitForAuthReady().then(() => {
     const app = getApp();
-    const token = app?.globalData?.visitorToken || "";
+    const visitorToken = app?.globalData?.visitorToken || "";
+    const userToken = app?.globalData?.userAccessToken || "";
     const baseUrl = app?.globalData?.apiBase || getApiBase();
     const requestUrl = `${baseUrl}${path}`;
+    const extraHeaders = options.headers || {};
 
     return new Promise((resolve, reject) => {
       wx.request({
@@ -43,7 +45,9 @@ function request(path, method = "GET", data = null) {
         data,
         header: {
           "Content-Type": "application/json",
-          "X-Visitor-Token": token,
+          "X-Visitor-Token": visitorToken,
+          "X-User-Token": userToken,
+          ...extraHeaders,
         },
         success: (res) => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -77,6 +81,26 @@ function silentLogin(code) {
   return request("/auth/silent-login", "POST", { code });
 }
 
+function loginUser(username, password) {
+  return request("/auth/login", "POST", { username, password });
+}
+
+function refreshUser(refreshToken) {
+  return request("/auth/refresh", "POST", { refresh_token: refreshToken });
+}
+
+function bindWechatAccount(userAccessToken = "") {
+  const headers = {};
+  if (userAccessToken) {
+    headers.Authorization = `Bearer ${userAccessToken}`;
+  }
+  return request("/auth/wechat/bind", "POST", {}, { headers });
+}
+
+function claimWechatBindCode(code) {
+  return request("/auth/wechat/bind-code/claim", "POST", { code });
+}
+
 function searchAnnouncements(payload) {
   return request("/search/announcements", "POST", payload);
 }
@@ -89,6 +113,10 @@ module.exports = {
   getApiBase,
   request,
   silentLogin,
+  loginUser,
+  refreshUser,
+  bindWechatAccount,
+  claimWechatBindCode,
   searchAnnouncements,
   searchAdjustments,
   waitForAuthReady,

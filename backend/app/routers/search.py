@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..dependencies import audit_event, enforce_rate_limit, get_current_user_optional
+from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional
 from ..models import Content, CrawlJob, School
 from ..schemas import (
     AdjustmentSearchRequest,
@@ -14,8 +14,10 @@ from ..schemas import (
     SearchItem,
     SearchResponse,
 )
+from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
+ANONYMOUS_PREVIEW_LIMIT = 2
 
 
 def _apply_common_filters(query, payload: AnnouncementSearchRequest | AdjustmentSearchRequest):
@@ -38,6 +40,10 @@ def _to_response(
     total: int,
     source_breakdown: dict[str, int],
     refresh_job_id: str | None,
+    *,
+    authenticated: bool,
+    access_limited: bool = False,
+    preview_limit: int | None = None,
 ) -> SearchResponse:
     serialized = []
     for row in items:
@@ -49,6 +55,9 @@ def _to_response(
                 school_name=school_name,
                 title=row.title,
                 summary=row.summary,
+                tags=[str(tag) for tag in (dict(row.extra or {}).get("tags") or []) if str(tag or "").strip()],
+                notice_kind=str((dict(row.extra or {}).get("notice_kind") or "")).strip() or None,
+                pdf_parse_status=str((dict(row.extra or {}).get("pdf_parse_status") or "")).strip() or None,
                 source_url=row.source_url,
                 source_type=row.source_type,
                 published_at=row.published_at,
@@ -61,6 +70,9 @@ def _to_response(
     return SearchResponse(
         request_id=request_id,
         mode="hybrid_refresh" if payload.refresh else "cache",
+        authenticated=authenticated,
+        access_limited=access_limited,
+        preview_limit=preview_limit,
         items=serialized,
         total=total,
         page=payload.page,
@@ -68,6 +80,34 @@ def _to_response(
         source_breakdown=source_breakdown,
         last_updated_at=last_updated,
         refresh_job_id=refresh_job_id,
+    )
+
+
+def _normalize_public_search_payload(payload: AnnouncementSearchRequest | AdjustmentSearchRequest):
+    return payload.model_copy(update={"page": 1, "page_size": ANONYMOUS_PREVIEW_LIMIT, "refresh": False})
+
+
+def _audit_search_event(
+    db: Session,
+    request: Request,
+    event_type: str,
+    request_id: str,
+    *,
+    refresh: bool,
+    cache_hit: bool,
+    portal_user_id: str | None,
+) -> None:
+    audit_event(
+        db,
+        request,
+        event_type,
+        None,
+        {
+            "request_id": request_id,
+            "refresh": refresh,
+            "cache_hit": cache_hit,
+            "portal_user_id": portal_user_id,
+        },
     )
 
 
@@ -88,38 +128,88 @@ def _create_refresh_job(db: Session, category: str, payload: dict, user_id: str 
 
 @router.post("/announcements", response_model=SearchResponse)
 def search_announcements(payload: AnnouncementSearchRequest, request: Request, db: Session = Depends(get_db)) -> SearchResponse:
-    user = get_current_user_optional(request, db)
+    user = get_portal_user_optional(request, db)
+    effective_payload = payload if user else _normalize_public_search_payload(payload)
     identity = user.id if user else (request.client.host if request.client else "unknown")
     enforce_rate_limit(request, f"search_announcement:{identity}")
 
     request_id = str(uuid4())
+    cached = search_response_cache.get("announcement", effective_payload, request_id=request_id)
+    if cached is not None:
+        _audit_search_event(
+            db,
+            request,
+            "search.announcements",
+            request_id,
+            refresh=False,
+            cache_hit=True,
+            portal_user_id=user.id if user else None,
+        )
+        return cached
     base_query = db.query(Content).filter(Content.category == "announcement")
-    base_query = _apply_common_filters(base_query, payload)
+    base_query = _apply_common_filters(base_query, effective_payload)
 
     total = base_query.count()
     rows = (
         base_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
-        .offset((payload.page - 1) * payload.page_size)
-        .limit(payload.page_size)
+        .offset((effective_payload.page - 1) * effective_payload.page_size)
+        .limit(effective_payload.page_size)
         .all()
     )
     stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
     source_breakdown = {k: int(v) for k, v in stats_rows}
 
     refresh_job_id = None
-    if payload.refresh:
+    if effective_payload.refresh:
         refresh_job_id = _create_refresh_job(db, "announcement", payload.model_dump(mode="json"), user.id if user else None)
-    audit_event(db, request, "search.announcements", user.id if user else None, {"request_id": request_id, "refresh": payload.refresh})
-    return _to_response(payload, request_id, rows, total, source_breakdown, refresh_job_id)
+    response = _to_response(
+        effective_payload,
+        request_id,
+        rows,
+        total,
+        source_breakdown,
+        refresh_job_id,
+        authenticated=bool(user),
+        access_limited=not bool(user),
+        preview_limit=ANONYMOUS_PREVIEW_LIMIT if not user else None,
+    )
+    search_response_cache.set("announcement", effective_payload, response)
+    _audit_search_event(
+        db,
+        request,
+        "search.announcements",
+        request_id,
+        refresh=effective_payload.refresh,
+        cache_hit=False,
+        portal_user_id=user.id if user else None,
+    )
+    return response
 
 
 @router.post("/adjustments", response_model=SearchResponse)
 def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: Session = Depends(get_db)) -> SearchResponse:
-    user = get_current_user_optional(request, db)
+    user = get_portal_user_optional(request, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="login required for adjustment search",
+        )
     identity = user.id if user else (request.client.host if request.client else "unknown")
     enforce_rate_limit(request, f"search_adjustment:{identity}")
 
     request_id = str(uuid4())
+    cached = search_response_cache.get("adjustment", payload, request_id=request_id)
+    if cached is not None:
+        _audit_search_event(
+            db,
+            request,
+            "search.adjustments",
+            request_id,
+            refresh=False,
+            cache_hit=True,
+            portal_user_id=user.id if user else None,
+        )
+        return cached
     base_query = db.query(Content).filter(Content.category == "adjustment")
     base_query = _apply_common_filters(base_query, payload)
     if payload.major:
@@ -140,5 +230,23 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     refresh_job_id = None
     if payload.refresh:
         refresh_job_id = _create_refresh_job(db, "adjustment", payload.model_dump(mode="json"), user.id if user else None)
-    audit_event(db, request, "search.adjustments", user.id if user else None, {"request_id": request_id, "refresh": payload.refresh})
-    return _to_response(payload, request_id, rows, total, source_breakdown, refresh_job_id)
+    response = _to_response(
+        payload,
+        request_id,
+        rows,
+        total,
+        source_breakdown,
+        refresh_job_id,
+        authenticated=True,
+    )
+    search_response_cache.set("adjustment", payload, response)
+    _audit_search_event(
+        db,
+        request,
+        "search.adjustments",
+        request_id,
+        refresh=payload.refresh,
+        cache_hit=False,
+        portal_user_id=user.id if user else None,
+    )
+    return response

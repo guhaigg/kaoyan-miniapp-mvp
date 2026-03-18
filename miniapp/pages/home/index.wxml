@@ -2,6 +2,7 @@
   <view class="card">
     <view class="title">查院校公告 / 调剂信息</view>
     <view class="muted">{{accessModeText}}</view>
+    <button class="btn-plain" style="margin-top: 16rpx;" bindtap="goBindAccount">{{bindActionText}}</button>
   </view>
 
   <view class="card">

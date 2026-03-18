@@ -6,6 +6,7 @@ from fastapi.routing import APIRoute
 from app.db import SessionLocal
 from app.main import app
 from app.models import Department, PortalUser, School, SiteSection
+from app.services.account_access import ENTITLEMENT_SOURCE_ADMIN_GRANT, upsert_premium_entitlement
 
 
 def _extract_payload(response):
@@ -51,8 +52,13 @@ def _register_and_login(client, username: str) -> tuple[str, dict[str, str]]:
 
 def _enable_premium_for_user(user_id: str) -> None:
     with SessionLocal() as db:
-        user = db.query(PortalUser).filter(PortalUser.id == user_id).one()
-        user.premium_monitoring_enabled = 1
+        upsert_premium_entitlement(
+            db,
+            user_id=user_id,
+            operator_account_id=None,
+            expires_at=None,
+            source=ENTITLEMENT_SOURCE_ADMIN_GRANT,
+        )
         db.commit()
 
 

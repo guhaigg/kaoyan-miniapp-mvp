@@ -24,7 +24,14 @@ export default function AuthBootstrap() {
         if (portalAuth?.accessToken) {
           const profile = await getCurrentUser(portalAuth.accessToken);
           if (!alive) return;
-          setPortalProfile({ nickname: profile.nickname, status: profile.status });
+          setPortalProfile({
+            nickname: profile.nickname,
+            status: profile.status,
+            isAdmin: profile.is_admin,
+            isPremium: profile.is_premium,
+            role: profile.role,
+            premiumExpiresAt: profile.premium_expires_at,
+          });
           return;
         }
 
@@ -45,7 +52,14 @@ export default function AuthBootstrap() {
 
         const profile = await getCurrentUser(refreshed.access_token);
         if (!alive) return;
-        setPortalProfile({ nickname: profile.nickname, status: profile.status });
+        setPortalProfile({
+          nickname: profile.nickname,
+          status: profile.status,
+          isAdmin: profile.is_admin,
+          isPremium: profile.is_premium,
+          role: profile.role,
+          premiumExpiresAt: profile.premium_expires_at,
+        });
       } catch (error) {
         const isUnauthorized = error instanceof ApiError && error.status === 401;
         if (!isUnauthorized) {

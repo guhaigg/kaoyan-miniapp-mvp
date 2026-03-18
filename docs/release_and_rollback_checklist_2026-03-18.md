@@ -33,6 +33,51 @@ CREATE UNIQUE INDEX uq_notification_deliveries_outbox_user_channel
   ON notification_deliveries (outbox_id, user_id, channel);
 ```
 
+如果发布包含“高级用户到期自动回收 / 降级权限”版本，还需要补齐：
+
+```sql
+ALTER TABLE portal_users
+  ADD COLUMN premium_expires_at DATETIME NULL;
+
+CREATE INDEX ix_portal_users_premium_expires_at
+  ON portal_users (premium_expires_at);
+```
+
+仓库内已提供可直接执行的脚本：
+
+- MySQL（幂等，可重复执行）：
+  [2026-03-18_add_premium_expires_at_mysql.sql](/Users/guhai/Documents/New project/gewujl/kaoyan-miniapp-mvp/docs/sql/2026-03-18_add_premium_expires_at_mysql.sql)
+- SQLite（本地/测试兜底）：
+  [2026-03-18_add_premium_expires_at_sqlite.sql](/Users/guhai/Documents/New project/gewujl/kaoyan-miniapp-mvp/docs/sql/2026-03-18_add_premium_expires_at_sqlite.sql)
+
+如果发布包含“栏目选择器配置 / crawl lease timeout 回收”版本，还需要补齐：
+
+```sql
+ALTER TABLE site_sections
+  ADD COLUMN detail_selector_config JSON NOT NULL;
+
+ALTER TABLE crawl_jobs
+  ADD COLUMN updated_at DATETIME NULL;
+
+UPDATE site_sections
+SET detail_selector_config = JSON_OBJECT()
+WHERE detail_selector_config IS NULL;
+
+UPDATE crawl_jobs
+SET updated_at = COALESCE(finished_at, started_at, requested_at, UTC_TIMESTAMP())
+WHERE updated_at IS NULL;
+
+CREATE INDEX ix_crawl_jobs_updated_at
+  ON crawl_jobs (updated_at);
+```
+
+对应脚本：
+
+- MySQL（幂等，可重复执行）：
+  [2026-03-18_add_site_section_selector_and_crawl_job_lease_fields_mysql.sql](/Users/guhai/Documents/New project/gewujl/kaoyan-miniapp-mvp/docs/sql/2026-03-18_add_site_section_selector_and_crawl_job_lease_fields_mysql.sql)
+- SQLite（本地/测试兜底）：
+  [2026-03-18_add_site_section_selector_and_crawl_job_lease_fields_sqlite.sql](/Users/guhai/Documents/New project/gewujl/kaoyan-miniapp-mvp/docs/sql/2026-03-18_add_site_section_selector_and_crawl_job_lease_fields_sqlite.sql)
+
 如果是全新库，可直接由应用启动时建表。
 
 ## 3. Health Check 清单

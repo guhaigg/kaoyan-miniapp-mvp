@@ -16,7 +16,7 @@
 
 - `POST /auth/register`：注册
 - `POST /auth/login`：登录
-- `POST /auth/refresh`：刷新会话（依赖 HttpOnly refresh cookie）
+- `POST /auth/refresh`：刷新会话（支持 HttpOnly refresh cookie，也返回 refresh token）
 - `POST /auth/logout`：退出
 - `GET /auth/me`：当前用户信息（请求头 `X-User-Token`）
 
@@ -27,9 +27,7 @@
 
 ### 管理员体系
 
-- `POST /admin/auth/login`：管理员登录（cookie 会话）
-- `POST /admin/auth/logout`：管理员退出
-- `GET /admin/auth/me`：管理员会话检测
+- `GET /admin/auth/me`：管理员身份检测（直接复用门户管理员 token）
 - `GET /admin/users`：用户列表
 - `POST /admin/users/{user_id}/promote`：提升管理员
 - `GET /admin/audits`：管理员审计日志
@@ -49,7 +47,7 @@
 - `web-ui/src/lib/store.ts`
   - 增加 `portalAuth` 持久化状态（localStorage）
 - `web-ui/src/components/shared/Modals.tsx`
-  - 接入注册/登录/退出真实接口
+  - 降级为轻入口，跳转至 `/login`、`/register`
 - `web-ui/src/components/layout/Header.tsx`
   - 登录后显示当前账号
 - `web-ui/src/app/page.tsx`
@@ -57,7 +55,7 @@
 - `web-ui/src/app/search/page.tsx`
   - 检索条件、查询结果、分页、空态/错误态
 - `web-ui/src/app/admin/page.tsx`
-  - 管理员登录、用户管理、提升管理员、审计日志、健康状态
+  - 直接复用门户管理员登录态，提供用户管理、提权、审计日志、健康状态
 - `web-ui/src/app/layout.tsx`
   - 挂载 `AuthBootstrap`
 
@@ -73,5 +71,5 @@
 ## 5) 后续建议
 
 - 增加统一 401 拦截与静默刷新重试策略（当前为页面级处理）
-- 管理页增加用户状态编辑（`PATCH /admin/users/{id}`）
+- 管理页继续收口成稳定 dashboard/settings 壳
 - 查询页增加筛选项持久化与分页 URL 同步

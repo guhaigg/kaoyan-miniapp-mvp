@@ -5,6 +5,7 @@ Page({
     major: "",
     region: "",
     accessModeText: "正在初始化访问身份...",
+    bindActionText: "绑定网站账号",
   },
 
   onLoad() {
@@ -29,15 +30,27 @@ Page({
 
   syncAccessModeText() {
     const app = getApp();
-    const { authReady, authMode, silentLoginError } = app.globalData || {};
+    const { authReady, authMode, silentLoginError, username } = app.globalData || {};
     let accessModeText = "正在初始化访问身份...";
+    let bindActionText = "绑定网站账号";
     if (authReady) {
-      accessModeText = authMode === "shadow" ? "当前为静默影子账户访问模式" : "当前为匿名访问模式";
+      if (authMode === "portal_bound") {
+        accessModeText = username
+          ? `当前已绑定网站账号：${username}`
+          : "当前已绑定网站账号，可跨端同步收藏、监控和会员权益";
+        bindActionText = "查看绑定状态";
+      } else if (authMode === "shadow") {
+        accessModeText = "当前为静默影子账户访问模式";
+        bindActionText = "绑定网站账号";
+      } else {
+        accessModeText = "当前为匿名访问模式";
+        bindActionText = "等待微信登录";
+      }
       if (silentLoginError) {
         accessModeText += "；静默登录失败，已自动降级为可浏览模式";
       }
     }
-    this.setData({ accessModeText });
+    this.setData({ accessModeText, bindActionText });
   },
 
   onSchoolInput(e) {
@@ -69,6 +82,12 @@ Page({
       url:
         `/pages/adjustments/index?schoolName=${encodeURIComponent(schoolName)}` +
         `&keywords=${encodeURIComponent(keywords)}&major=${encodeURIComponent(major)}&region=${encodeURIComponent(region)}`,
+    });
+  },
+
+  goBindAccount() {
+    wx.navigateTo({
+      url: "/pages/account-bind/index",
     });
   },
 });

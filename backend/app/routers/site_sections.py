@@ -1,12 +1,18 @@
 from datetime import datetime, timezone
+from urllib.parse import urljoin
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..dependencies import audit_event, require_admin_request
-from ..models import CrawlJob, Department, School, SiteSection, SiteSectionLink
+from ..models import ContentFile, CrawlJob, Department, School, SiteSection, SiteSectionLink, utcnow
 from ..schemas import (
+    ContentFileItem,
+    ContentFileListResponse,
+    ContentFileRetryParseResponse,
+    SiteSectionBackfillSelectorConfigRequest,
+    SiteSectionBackfillSelectorConfigResponse,
     SiteSectionCreateRequest,
     SiteSectionDiscoverRequest,
     SiteSectionDiscoverResponse,
@@ -14,7 +20,13 @@ from ..schemas import (
     SiteSectionLinkItem,
     SiteSectionLinkListResponse,
     SiteSectionListResponse,
+    SiteSectionSelectorPreviewLinkItem,
+    SiteSectionSelectorPreviewRequest,
+    SiteSectionSelectorPreviewResponse,
+    SiteSectionUpdateRequest,
 )
+from ..services import crawler as crawler_service
+from ..services.crawler import build_site_section_detail_selector_config, build_site_section_list_selector_config
 
 router = APIRouter(prefix="/site-sections", tags=["site-sections"])
 
@@ -78,6 +90,9 @@ def _to_site_section_item(section: SiteSection) -> SiteSectionItem:
         discovery_category=section.discovery_category,
         enabled=bool(section.enabled),
         list_selector_config=section.list_selector_config or {},
+        detail_selector_config=section.detail_selector_config or {},
+        suggested_list_selector_config=crawler_service._suggest_default_list_selector_config(section),
+        suggested_detail_selector_config=crawler_service._suggest_default_detail_selector_config(section),
         last_discovered_at=section.last_discovered_at,
         last_discovery_status=section.last_discovery_status,
         last_error=section.last_error,
@@ -100,6 +115,49 @@ def _to_link_item(link: SiteSectionLink) -> SiteSectionLinkItem:
         created_at=link.created_at,
         updated_at=link.updated_at,
     )
+
+
+def _to_content_file_item(file_record: ContentFile) -> ContentFileItem:
+    link = file_record.site_section_link
+    section = link.site_section if link else None
+    school = section.school if section else None
+    content = file_record.content
+    text_excerpt = (file_record.text_extracted or "").strip()
+    if text_excerpt:
+        text_excerpt = text_excerpt[:180].rstrip()
+    else:
+        text_excerpt = None
+
+    return ContentFileItem(
+        id=file_record.id,
+        content_id=file_record.content_id,
+        site_section_link_id=file_record.site_section_link_id,
+        site_section_id=section.id if section else None,
+        site_section_name=section.name if section else None,
+        school_name=school.name if school else None,
+        link_title=link.title if link else None,
+        content_title=content.title if content else None,
+        file_url=file_record.file_url,
+        file_type=file_record.file_type,
+        mime_type=file_record.mime_type,
+        text_excerpt=text_excerpt,
+        parse_status=file_record.parse_status,
+        ocr_status=file_record.ocr_status,
+        file_meta=file_record.file_meta or {},
+        created_at=file_record.created_at,
+        updated_at=file_record.updated_at,
+    )
+
+
+def _find_existing_file_parse_job(db: Session, *, content_file_id: str) -> CrawlJob | None:
+    rows = db.query(CrawlJob).filter(CrawlJob.status.in_(["pending", "running"])).order_by(CrawlJob.requested_at.desc()).all()
+    for row in rows:
+        query_payload = dict(row.query or {})
+        if query_payload.get("job_kind") != "file_parse":
+            continue
+        if str(query_payload.get("content_file_id") or "").strip() == content_file_id:
+            return row
+    return None
 
 
 @router.post("", response_model=SiteSectionItem)
@@ -127,8 +185,11 @@ def create_site_section(
         section_url=payload.section_url.strip(),
         discovery_category=payload.discovery_category,
         enabled=1 if payload.enabled else 0,
-        list_selector_config=payload.list_selector_config,
+        list_selector_config={},
+        detail_selector_config={},
     )
+    section.list_selector_config = build_site_section_list_selector_config(section, payload.list_selector_config)
+    section.detail_selector_config = build_site_section_detail_selector_config(section, payload.detail_selector_config)
     db.add(section)
     db.commit()
     db.refresh(section)
@@ -158,6 +219,53 @@ def list_site_sections(
 
     rows = query.order_by(SiteSection.created_at.desc()).all()
     return SiteSectionListResponse(total=len(rows), items=[_to_site_section_item(row) for row in rows])
+
+
+@router.post("/backfill-selector-config", response_model=SiteSectionBackfillSelectorConfigResponse)
+def backfill_site_section_selector_config(
+    payload: SiteSectionBackfillSelectorConfigRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> SiteSectionBackfillSelectorConfigResponse:
+    require_admin_request(request)
+    query = db.query(SiteSection)
+    if payload.school_name:
+        query = query.join(School, isouter=True).filter(School.name.ilike(f"%{payload.school_name.strip()}%"))
+    if payload.department_name:
+        query = query.join(Department, isouter=True).filter(Department.name.ilike(f"%{payload.department_name.strip()}%"))
+    if payload.section_type:
+        query = query.filter(SiteSection.section_type == payload.section_type.strip())
+    if payload.enabled_only:
+        query = query.filter(SiteSection.enabled == 1)
+
+    sections = query.order_by(SiteSection.created_at.asc()).all()
+    updated_ids: list[str] = []
+    for section in sections:
+        existing_list_config = section.list_selector_config or {}
+        existing_detail_config = section.detail_selector_config or {}
+        if existing_list_config and existing_detail_config and not payload.overwrite_existing:
+            continue
+        next_list_config = build_site_section_list_selector_config(
+            section,
+            {} if payload.overwrite_existing else existing_list_config,
+        )
+        next_detail_config = build_site_section_detail_selector_config(
+            section,
+            {} if payload.overwrite_existing else existing_detail_config,
+        )
+        if next_list_config == existing_list_config and next_detail_config == existing_detail_config:
+            continue
+        section.list_selector_config = next_list_config
+        section.detail_selector_config = next_detail_config
+        updated_ids.append(section.id)
+
+    db.commit()
+    audit_event(db, request, "site_section.backfill_selector_config", None, {"site_section_ids": updated_ids})
+    return SiteSectionBackfillSelectorConfigResponse(
+        total_sections=len(sections),
+        updated_sections=len(updated_ids),
+        items=[_to_site_section_item(section) for section in sections],
+    )
 
 
 @router.post("/discover", response_model=SiteSectionDiscoverResponse)
@@ -202,6 +310,154 @@ def discover_site_sections(
     return SiteSectionDiscoverResponse(total_sections=len(sections), job_ids=job_ids)
 
 
+@router.patch("/{site_section_id}", response_model=SiteSectionItem)
+def update_site_section(
+    site_section_id: str,
+    payload: SiteSectionUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> SiteSectionItem:
+    require_admin_request(request)
+    section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+    if section is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="site section not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "name" in updates:
+        section.name = payload.name.strip()  # type: ignore[union-attr]
+    if "section_type" in updates:
+        section.section_type = payload.section_type.strip()  # type: ignore[union-attr]
+    if "section_url" in updates:
+        section.section_url = payload.section_url.strip()  # type: ignore[union-attr]
+    if "discovery_category" in updates:
+        section.discovery_category = payload.discovery_category  # type: ignore[assignment]
+    if "source_id" in updates:
+        section.source_id = payload.source_id
+    if "enabled" in updates:
+        section.enabled = 1 if payload.enabled else 0
+    if "list_selector_config" in updates:
+        section.list_selector_config = build_site_section_list_selector_config(section, payload.list_selector_config or {})
+    if "detail_selector_config" in updates:
+        section.detail_selector_config = build_site_section_detail_selector_config(
+            section,
+            payload.detail_selector_config or {},
+        )
+
+    db.commit()
+    db.refresh(section)
+    audit_event(db, request, "site_section.update", None, {"site_section_id": section.id})
+    return _to_site_section_item(section)
+
+
+@router.post("/{site_section_id}/preview-selectors", response_model=SiteSectionSelectorPreviewResponse)
+def preview_site_section_selectors(
+    site_section_id: str,
+    payload: SiteSectionSelectorPreviewRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> SiteSectionSelectorPreviewResponse:
+    require_admin_request(request)
+    section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+    if section is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="site section not found")
+
+    section_url = str(section.section_url or "").strip()
+    if not section_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="site section url is empty")
+
+    list_config = build_site_section_list_selector_config(section, payload.list_selector_config or {})
+    detail_config = build_site_section_detail_selector_config(section, payload.detail_selector_config or {})
+    suggested_list_config = crawler_service._suggest_default_list_selector_config(section)
+    suggested_detail_config = crawler_service._suggest_default_detail_selector_config(section)
+    warnings: list[str] = []
+
+    try:
+        response = crawler_service._fetch_with_retry(section_url)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"failed to fetch section page: {exc}") from exc
+
+    raw_html = response.text or ""
+    discovered_links = crawler_service._extract_links_by_selector(raw_html, list_config)
+    used_fallback_links = False
+    if not discovered_links and list_config.get("fallback_to_all_links"):
+        discovered_links = crawler_service._extract_links(raw_html)
+        used_fallback_links = True
+        warnings.append("列表选择器未命中，预览已退回到全页链接扫描。")
+
+    preview_items: list[SiteSectionSelectorPreviewLinkItem] = []
+    seen_urls: set[str] = set()
+    for item in discovered_links:
+        href = str(item.get("href") or "").strip()
+        if not href:
+            continue
+        absolute_url = urljoin(section_url, href)
+        link_text = crawler_service._normalize_link_text(str(item.get("text") or ""), absolute_url)
+        if not link_text:
+            continue
+        if not used_fallback_links and not crawler_service._link_matches_selector_config(
+            section_url=section_url,
+            absolute_url=absolute_url,
+            text=link_text,
+            config=list_config,
+        ):
+            continue
+        if absolute_url in seen_urls:
+            continue
+        seen_urls.add(absolute_url)
+        link_type = "pdf" if absolute_url.lower().endswith(".pdf") else "html"
+        preview_items.append(SiteSectionSelectorPreviewLinkItem(url=absolute_url, text=link_text, link_type=link_type))
+        if len(preview_items) >= 5:
+            break
+
+    if not preview_items:
+        warnings.append("当前规则没有匹配到可用列表链接。")
+
+    detail_preview_url = (payload.sample_link_url or "").strip() or None
+    if not detail_preview_url:
+        first_html_item = next((item for item in preview_items if item.link_type == "html"), None)
+        detail_preview_url = first_html_item.url if first_html_item else None
+
+    detail_title: str | None = None
+    detail_excerpt: str | None = None
+    detail_method: str | None = None
+    if detail_preview_url:
+        if detail_preview_url.lower().endswith(".pdf"):
+            warnings.append("当前选中的详情链接是 PDF，正文预览仅支持 HTML 页面。")
+        else:
+            try:
+                detail_response = crawler_service._fetch_with_retry(detail_preview_url)
+                detail_raw_html = detail_response.text or ""
+                detail_body, detail_method, readability_title = crawler_service._extract_detail_body(
+                    detail_raw_html,
+                    detail_selector_config=detail_config,
+                )
+                detail_title = (
+                    crawler_service._extract_title(detail_raw_html)
+                    or readability_title
+                    or next((item.text for item in preview_items if item.url == detail_preview_url), None)
+                )
+                normalized_detail = " ".join(str(detail_body or "").split())
+                detail_excerpt = normalized_detail[:500].rstrip() or None
+                if not detail_excerpt:
+                    warnings.append("详情选择器没有抽到有效正文，请检查正文区域选择器。")
+            except Exception as exc:
+                warnings.append(f"详情页预览失败：{exc}")
+
+    audit_event(db, request, "site_section.preview_selector_config", None, {"site_section_id": section.id})
+    return SiteSectionSelectorPreviewResponse(
+        section_url=section_url,
+        suggested_list_selector_config=suggested_list_config,
+        suggested_detail_selector_config=suggested_detail_config,
+        list_match_count=len(preview_items),
+        list_preview_items=preview_items,
+        detail_preview_url=detail_preview_url,
+        detail_title=detail_title,
+        detail_excerpt=detail_excerpt,
+        detail_extraction_method=detail_method,
+        warnings=warnings,
+    )
+
+
 @router.get("/{site_section_id}/links", response_model=SiteSectionLinkListResponse)
 def list_site_section_links(
     site_section_id: str,
@@ -215,3 +471,94 @@ def list_site_section_links(
         query = query.filter(SiteSectionLink.link_type == link_type.strip())
     rows = query.order_by(SiteSectionLink.created_at.desc()).all()
     return SiteSectionLinkListResponse(total=len(rows), items=[_to_link_item(row) for row in rows])
+
+
+@router.get("/content-files", response_model=ContentFileListResponse)
+def list_content_files(
+    request: Request,
+    db: Session = Depends(get_db),
+    parse_status: str | None = Query(default=None),
+    ocr_status: str | None = Query(default=None),
+    site_section_id: str | None = Query(default=None),
+    file_type: str | None = Query(default="pdf"),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> ContentFileListResponse:
+    require_admin_request(request)
+    query = db.query(ContentFile)
+    if parse_status:
+        query = query.filter(ContentFile.parse_status == parse_status.strip())
+    if ocr_status:
+        query = query.filter(ContentFile.ocr_status == ocr_status.strip())
+    if site_section_id:
+        query = query.filter(ContentFile.site_section_link_id.is_not(None)).join(SiteSectionLink).filter(
+            SiteSectionLink.site_section_id == site_section_id
+        )
+    if file_type:
+        query = query.filter(ContentFile.file_type == file_type.strip())
+
+    total = query.count()
+    rows = query.order_by(ContentFile.updated_at.desc()).limit(page_size).all()
+    return ContentFileListResponse(total=total, items=[_to_content_file_item(row) for row in rows])
+
+
+@router.post("/content-files/{content_file_id}/retry-parse", response_model=ContentFileRetryParseResponse)
+def retry_content_file_parse(
+    content_file_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> ContentFileRetryParseResponse:
+    require_admin_request(request)
+    file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one_or_none()
+    if file_record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="content file not found")
+
+    existing_job = _find_existing_file_parse_job(db, content_file_id=content_file_id)
+    if existing_job is not None:
+        return ContentFileRetryParseResponse(
+            content_file_id=file_record.id,
+            job_id=existing_job.id,
+            status="existing",
+            parse_status=file_record.parse_status,
+        )
+
+    link = file_record.site_section_link
+    section = link.site_section if link else None
+    job = CrawlJob(
+        category=section.discovery_category if section else "announcement",
+        status="pending",
+        requested_at=utcnow(),
+        message=f"queued manual retry parse for content file {file_record.id}",
+        query={
+            "job_kind": "file_parse",
+            "content_file_id": file_record.id,
+            "site_section_id": section.id if section else None,
+            "site_section_link_id": link.id if link else None,
+            "source_url": file_record.file_url,
+            "title": link.title if link else None,
+            "school_name": section.school.name if section and section.school else None,
+            "department_name": section.department.name if section and section.department else None,
+            "section_type": section.section_type if section else None,
+        },
+    )
+    db.add(job)
+    db.flush()
+
+    file_record.parse_status = "pending"
+    file_record.ocr_status = "not_started"
+    file_record.file_meta = {
+        **dict(file_record.file_meta or {}),
+        "retry_parse_job_id": job.id,
+        "retry_requested_at": utcnow().isoformat(),
+    }
+    if link is not None:
+        link.crawl_job_id = job.id
+        link.status = "file_recorded"
+
+    db.commit()
+    audit_event(db, request, "site_section.content_file.retry_parse", None, {"content_file_id": file_record.id, "job_id": job.id})
+    return ContentFileRetryParseResponse(
+        content_file_id=file_record.id,
+        job_id=job.id,
+        status="queued",
+        parse_status=file_record.parse_status,
+    )

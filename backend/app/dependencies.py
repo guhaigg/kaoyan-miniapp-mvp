@@ -6,11 +6,16 @@ from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import AdminAccount, PortalUser, User, UserEvent
+from .db import SessionLocal
+from .models import PortalUser, PortalUserSubscription, User, UserEvent, utcnow
 from .security import parse_visitor_token
+from .services.account_access import (
+    get_active_admin_user_ids,
+    resolve_portal_access,
+)
+from .services.search_cache import search_response_cache
 
 _in_memory_rate_limit: dict[str, tuple[int, int]] = defaultdict(lambda: (0, 0))
-_in_memory_admin_login_failures: dict[str, tuple[int, int, int]] = {}
 
 
 def get_request_id() -> str:
@@ -72,21 +77,49 @@ def require_portal_user(request: Request, db: Session) -> PortalUser:
 
 
 def is_portal_admin(db: Session, portal_user_id: str) -> bool:
-    count = (
-        db.query(AdminAccount.id)
+    return portal_user_id in get_active_admin_user_ids(db)
+
+
+def recycle_expired_premium_access_for_user(db: Session, user: PortalUser) -> bool:
+    state = resolve_portal_access(db, user)
+    if state.is_admin or state.is_premium or not state.expired_premium:
+        return False
+
+    rows = (
+        db.query(PortalUserSubscription)
         .filter(
-            AdminAccount.user_id == portal_user_id,
-            AdminAccount.status == "active",
+            PortalUserSubscription.user_id == user.id,
+            PortalUserSubscription.subscription_type == "school",
+            PortalUserSubscription.status == "active",
         )
-        .count()
+        .all()
     )
-    return count > 0
+    for row in rows:
+        row.status = "deleted"
+    db.commit()
+    db.refresh(user)
+    return True
 
 
 def has_premium_monitoring_access(db: Session, user: PortalUser) -> bool:
-    if is_portal_admin(db, user.id):
+    state = resolve_portal_access(db, user)
+    if state.is_admin or state.is_premium:
         return True
-    return bool(user.premium_monitoring_enabled)
+    if state.expired_premium:
+        rows = (
+            db.query(PortalUserSubscription)
+            .filter(
+                PortalUserSubscription.user_id == user.id,
+                PortalUserSubscription.subscription_type == "school",
+                PortalUserSubscription.status == "active",
+            )
+            .all()
+        )
+        for row in rows:
+            row.status = "deleted"
+        db.commit()
+        db.refresh(user)
+    return False
 
 
 def require_premium_or_admin(request: Request, db: Session) -> PortalUser:
@@ -145,32 +178,24 @@ def audit_event(
     db.commit()
 
 
-def get_admin_session_token(request: Request) -> str | None:
-    cookie_token = (request.cookies.get("gw_admin_session") or "").strip()
-    if cookie_token:
-        return cookie_token
-
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header.replace("Bearer ", "", 1).strip()
-        if token:
-            return token
-
-    header_token = request.headers.get("X-Admin-Session", "").strip()
-    return header_token or None
-
-
-def _parse_admin_session_payload(request: Request) -> dict | None:
+def _get_portal_admin_identity(request: Request) -> str | None:
     settings = get_settings()
-    session_token = get_admin_session_token(request)
-    if not session_token:
+    token = get_portal_access_token(request)
+    if not token:
         return None
-    payload = parse_visitor_token(session_token, settings.secret_key, settings.admin_session_ttl_seconds)
-    if not payload:
+    payload = parse_visitor_token(token, settings.secret_key, settings.user_session_ttl_seconds)
+    if not payload or payload.get("typ") != "user":
         return None
-    if payload.get("typ") != "admin":
+    user_id = str(payload.get("uid", "")).strip()
+    if not user_id:
         return None
-    return payload
+    with SessionLocal() as db:
+        user = db.query(PortalUser).filter(PortalUser.id == user_id, PortalUser.status == "active").one_or_none()
+        if user is None:
+            return None
+        if not is_portal_admin(db, user.id):
+            return None
+        return user.username
 
 
 def get_admin_identity(request: Request) -> str | None:
@@ -179,11 +204,10 @@ def get_admin_identity(request: Request) -> str | None:
     if legacy_token and legacy_token == settings.admin_token:
         return settings.admin_username
 
-    payload = _parse_admin_session_payload(request)
-    if not payload:
-        return None
-    username = str(payload.get("usr", "")).strip()
-    return username or None
+    portal_admin_username = _get_portal_admin_identity(request)
+    if portal_admin_username:
+        return portal_admin_username
+    return None
 
 
 def is_admin_request(request: Request) -> bool:
@@ -195,44 +219,6 @@ def require_admin_request(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="admin login required")
 
 
-def _admin_failure_state(username: str) -> tuple[int, int, int]:
-    # count, window_start_ts, locked_until_ts
-    return _in_memory_admin_login_failures.get(username, (0, 0, 0))
-
-
-def ensure_admin_not_locked(username: str) -> None:
-    settings = get_settings()
-    now = int(time.time())
-    count, window_start, locked_until = _admin_failure_state(username)
-
-    if locked_until > now:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="admin login temporarily locked")
-
-    if window_start == 0 or now - window_start > settings.admin_login_lock_seconds:
-        _in_memory_admin_login_failures[username] = (0, now, 0)
-
-
-def record_admin_login_failure(username: str) -> None:
-    settings = get_settings()
-    now = int(time.time())
-    count, window_start, locked_until = _admin_failure_state(username)
-    if window_start == 0 or now - window_start > settings.admin_login_lock_seconds:
-        count = 0
-        window_start = now
-        locked_until = 0
-
-    count += 1
-    if count >= settings.admin_login_fail_limit:
-        _in_memory_admin_login_failures[username] = (0, now, now + settings.admin_login_lock_seconds)
-    else:
-        _in_memory_admin_login_failures[username] = (count, window_start, locked_until)
-
-
-def clear_admin_login_failures(username: str) -> None:
-    now = int(time.time())
-    _in_memory_admin_login_failures[username] = (0, now, 0)
-
-
 def reset_runtime_state_for_tests() -> None:
     _in_memory_rate_limit.clear()
-    _in_memory_admin_login_failures.clear()
+    search_response_cache.clear()
