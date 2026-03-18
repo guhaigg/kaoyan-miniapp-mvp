@@ -94,12 +94,13 @@ class SiteSection(Base):
 
 class SiteSectionLink(Base):
     __tablename__ = "site_section_links"
-    __table_args__ = (UniqueConstraint("site_section_id", "link_url", name="uq_site_section_links_section_url"),)
+    __table_args__ = (UniqueConstraint("site_section_id", "link_url_hash", name="uq_site_section_links_section_url_hash"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     site_section_id: Mapped[str] = mapped_column(ForeignKey("site_sections.id"), nullable=False, index=True)
     crawl_job_id: Mapped[str | None] = mapped_column(ForeignKey("crawl_jobs.id"), nullable=True, index=True)
     link_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    link_url_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     link_type: Mapped[str] = mapped_column(String(32), default="html", nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), default="discovered", nullable=False, index=True)

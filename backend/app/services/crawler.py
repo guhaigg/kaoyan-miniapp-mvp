@@ -1,3 +1,4 @@
+import hashlib
 import re
 from datetime import datetime
 from html import unescape
@@ -106,6 +107,10 @@ def _fallback_link_title(url: str) -> str:
     return name or url
 
 
+def _url_hash(url: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+
 class CrawlEngine:
     def process_job_batch(self) -> int:
         settings = get_settings()
@@ -200,9 +205,9 @@ class CrawlEngine:
             section.last_error = None
             return None, "discovery done: 0 new links"
 
-        existing_urls = {
+        existing_url_hashes = {
             row[0]
-            for row in db.query(SiteSectionLink.link_url)
+            for row in db.query(SiteSectionLink.link_url_hash)
             .filter(SiteSectionLink.site_section_id == section.id)
             .all()
         }
@@ -216,7 +221,8 @@ class CrawlEngine:
                 continue
 
             absolute_url = urljoin(section_url, href)
-            if absolute_url in existing_urls:
+            url_hash = _url_hash(absolute_url)
+            if url_hash in existing_url_hashes:
                 continue
 
             link_type = "pdf" if _is_pdf_url(absolute_url) else "html"
@@ -224,6 +230,7 @@ class CrawlEngine:
             link = SiteSectionLink(
                 site_section_id=section.id,
                 link_url=absolute_url,
+                link_url_hash=url_hash,
                 title=title,
                 link_type=link_type,
                 status="discovered",
@@ -235,7 +242,7 @@ class CrawlEngine:
             )
             db.add(link)
             db.flush()
-            existing_urls.add(absolute_url)
+            existing_url_hashes.add(url_hash)
             new_links += 1
 
             if link_type == "pdf":
