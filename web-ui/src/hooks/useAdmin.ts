@@ -6,6 +6,7 @@ import {
   createAdminPaymentOrderForUser,
   demoteAdminUser,
   fetchAdminContentFingerprintStats,
+  fetchAdminRawDatasets,
   fetchContentFiles,
   fetchAdminAudits,
   fetchAdminMe,
@@ -14,6 +15,7 @@ import {
   fetchAdminUsers,
   fetchHealthStatus,
   importAdjustmentPriorityTargets,
+  importAdjustmentExpandedTargets,
   importAdjustmentSupplementalTargets,
   fetchSiteSections,
   markAdminPaymentOrderPaid,
@@ -34,6 +36,7 @@ const adminQueryKeys = {
   siteSections: ["admin", "site-sections"] as const,
   contentFiles: ["admin", "content-files"] as const,
   schoolImportSeeds: ["admin", "school-import-seeds"] as const,
+  rawDatasets: ["admin", "raw-datasets"] as const,
 };
 
 export function useAdminMeQuery(enabled: boolean = true) {
@@ -108,6 +111,14 @@ export function useAdminSchoolImportSeedSummariesQuery(enabled: boolean) {
   return useQuery({
     queryKey: adminQueryKeys.schoolImportSeeds,
     queryFn: fetchSchoolImportSeedSummaries,
+    enabled,
+  });
+}
+
+export function useAdminRawDatasetsQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: adminQueryKeys.rawDatasets,
+    queryFn: fetchAdminRawDatasets,
     enabled,
   });
 }
@@ -255,6 +266,17 @@ export function useAdminImportAdjustmentSupplementalTargetsMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: importAdjustmentSupplementalTargets,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.schoolImportSeeds });
+    },
+  });
+}
+
+export function useAdminImportAdjustmentExpandedTargetsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: importAdjustmentExpandedTargets,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.schoolImportSeeds });

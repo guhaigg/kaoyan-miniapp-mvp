@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -13,6 +14,9 @@ def new_id() -> str:
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+LONGTEXT_TYPE = Text().with_variant(mysql.LONGTEXT(), "mysql")
 
 
 class School(Base):
@@ -176,6 +180,36 @@ class ContentSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     content: Mapped["Content"] = relationship(back_populates="snapshots")
+
+
+class RawDatasetArchive(Base):
+    __tablename__ = "raw_dataset_archives"
+    __table_args__ = (
+        UniqueConstraint("dataset_key", name="uq_raw_dataset_archives_dataset_key"),
+        Index("ix_raw_dataset_archives_type_created", "dataset_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    dataset_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    dataset_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_path: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    workbook_format: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    file_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_encoding: Mapped[str] = mapped_column(String(32), default="gzip_base64", nullable=False)
+    raw_file_payload: Mapped[str] = mapped_column(LONGTEXT_TYPE, nullable=False)
+    sheet_names: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    primary_sheet_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    total_rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_columns: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    header_row: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    preview_rows: Mapped[list[list[str]]] = mapped_column(JSON, default=list, nullable=False)
+    summary_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class CrawlJob(Base):

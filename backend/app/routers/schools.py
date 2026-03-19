@@ -48,6 +48,30 @@ def _adjustment_landing_summary_path() -> Path:
     return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_landing_2025_summary.json"
 
 
+def _adjustment_snapshot_2024_0414_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_snapshot_2024_0414_summary.json"
+
+
+def _program_catalog_2026_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "admission_program_catalog_2026_summary.json"
+
+
+def _adjustment_stats_2025_full_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_stats_2025_full_summary.json"
+
+
+def _adjustment_announcement_2025_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_announcement_2025_summary.json"
+
+
+def _adjustment_landing_2024_summary_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_landing_2024_summary.json"
+
+
+def _adjustment_expanded_targets_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data" / "adjustment_expanded_priority_targets_2024_2026.json"
+
+
 def _department_type_for_name(name: str) -> str:
     return "graduate_school" if "研究生院" in name else "college"
 
@@ -150,6 +174,12 @@ def _load_school_import_seed_summaries() -> list[SchoolImportSeedSummaryItem]:
     supplemental_targets = json.loads(_adjustment_supplemental_targets_path().read_text(encoding="utf-8"))
     landing_summary = json.loads(_adjustment_landing_summary_path().read_text(encoding="utf-8"))
     mentor_reviews = json.loads(_mentor_review_summary_path().read_text(encoding="utf-8"))
+    snapshot_2024 = json.loads(_adjustment_snapshot_2024_0414_summary_path().read_text(encoding="utf-8"))
+    program_catalog_2026 = json.loads(_program_catalog_2026_summary_path().read_text(encoding="utf-8"))
+    stats_2025_full = json.loads(_adjustment_stats_2025_full_summary_path().read_text(encoding="utf-8"))
+    announcement_2025 = json.loads(_adjustment_announcement_2025_summary_path().read_text(encoding="utf-8"))
+    landing_2024 = json.loads(_adjustment_landing_2024_summary_path().read_text(encoding="utf-8"))
+    expanded_targets = json.loads(_adjustment_expanded_targets_path().read_text(encoding="utf-8"))
 
     return [
         SchoolImportSeedSummaryItem(
@@ -192,6 +222,26 @@ def _load_school_import_seed_summaries() -> list[SchoolImportSeedSummaryItem]:
                 f"学习形式：{', '.join(f'{k} {v}' for k, v in list(landing_summary.get('study_mode_counts', {}).items())[:3])}",
             ],
             top_schools=_summary_top_school_items(landing_summary.get("top_schools", [])),
+        ),
+        SchoolImportSeedSummaryItem(
+            source_key="adjustment_expanded_bundle_2024_2026",
+            title="24 / 25 / 26 扩展资产包",
+            description="用 2024 调剂快照、2025 公告与完整统计、2024 上岸画像、2026 招生专业目录继续补学校/学院资产。",
+            total_rows=
+            int(snapshot_2024["total_rows"])
+            + int(program_catalog_2026["total_rows"])
+            + int(stats_2025_full["total_rows"])
+            + int(announcement_2025["total_rows"])
+            + int(landing_2024["total_rows"]),
+            target_rows=len(expanded_targets),
+            unique_schools=len({str(row.get("school_name") or "").strip() for row in expanded_targets if str(row.get("school_name") or "").strip()}),
+            import_endpoint="/schools/import/adjustment-expanded-targets",
+            highlights=[
+                f"2024 调剂快照：{snapshot_2024['total_rows']} 条，学校 {snapshot_2024['unique_schools']} 所",
+                f"2025 公告：{announcement_2025['total_rows']} 条，学校 {announcement_2025['unique_schools']} 所",
+                f"2026 专业目录：{program_catalog_2026['total_rows']} 条，学校 {program_catalog_2026['unique_schools']} 所",
+            ],
+            top_schools=_summary_top_school_items(announcement_2025.get("top_schools", [])),
         ),
         SchoolImportSeedSummaryItem(
             source_key="mentor_reviews",
@@ -254,6 +304,17 @@ def import_adjustment_supplemental_targets(request: Request, db: Session = Depen
         request=request,
         db=db,
         event_type="schools.import_adjustment_supplemental_targets",
+    )
+
+
+@router.post("/import/adjustment-expanded-targets", response_model=SchoolBulkImportResponse)
+def import_adjustment_expanded_targets(request: Request, db: Session = Depends(get_db)) -> SchoolBulkImportResponse:
+    require_admin_request(request)
+    return _import_school_targets_from_path(
+        _adjustment_expanded_targets_path(),
+        request=request,
+        db=db,
+        event_type="schools.import_adjustment_expanded_targets",
     )
 
 

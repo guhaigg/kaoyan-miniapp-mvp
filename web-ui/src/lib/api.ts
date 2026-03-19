@@ -341,6 +341,33 @@ export type SchoolImportSeedSummaryListResponse = {
   items: SchoolImportSeedSummaryItem[];
 };
 
+export type RawDatasetArchiveItem = {
+  id: string;
+  dataset_key: string;
+  title: string;
+  dataset_type: string;
+  source_filename: string;
+  source_path: string | null;
+  workbook_format: string;
+  file_sha256: string;
+  file_size_bytes: number;
+  storage_encoding: string;
+  sheet_names: string[];
+  primary_sheet_name: string | null;
+  total_rows: number | null;
+  total_columns: number | null;
+  header_row: string[];
+  preview_rows: string[][];
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RawDatasetArchiveListResponse = {
+  total: number;
+  items: RawDatasetArchiveItem[];
+};
+
 export type AdminMeResponse = {
   username: string;
   authenticated: boolean;

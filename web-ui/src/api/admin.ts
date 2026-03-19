@@ -15,6 +15,7 @@ import {
   type SiteSectionSelectorConfig,
   type SchoolBulkImportResponse,
   type SchoolImportSeedSummaryListResponse,
+  type RawDatasetArchiveListResponse,
   adminCreateUserPaymentOrder,
   adminMarkPaymentOrderPaid,
   adminPaymentOrders,
@@ -125,8 +126,14 @@ export const retryContentFileParse = (contentFileId: string) =>
 export const fetchSchoolImportSeedSummaries = () =>
   api.get<SchoolImportSeedSummaryListResponse>("/schools/import/seed-summaries").then((response) => response.data);
 
+export const fetchAdminRawDatasets = () =>
+  api.get<RawDatasetArchiveListResponse>("/admin/raw-datasets").then((response) => response.data);
+
 export const importAdjustmentPriorityTargets = () =>
   api.post<SchoolBulkImportResponse>("/schools/import/adjustment-priority-targets").then((response) => response.data);
 
 export const importAdjustmentSupplementalTargets = () =>
   api.post<SchoolBulkImportResponse>("/schools/import/adjustment-supplemental-targets").then((response) => response.data);
+
+export const importAdjustmentExpandedTargets = () =>
+  api.post<SchoolBulkImportResponse>("/schools/import/adjustment-expanded-targets").then((response) => response.data);

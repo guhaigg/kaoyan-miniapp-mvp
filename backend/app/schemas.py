@@ -405,6 +405,33 @@ class AdminContentFingerprintStatsResponse(BaseModel):
     coverage_ratio: float
 
 
+class RawDatasetArchiveItem(BaseModel):
+    id: str
+    dataset_key: str
+    title: str
+    dataset_type: str
+    source_filename: str
+    source_path: str | None = None
+    workbook_format: str
+    file_sha256: str
+    file_size_bytes: int
+    sheet_names: list[str] = Field(default_factory=list)
+    primary_sheet_name: str | None = None
+    total_rows: int | None = None
+    total_columns: int | None = None
+    header_row: list[str] = Field(default_factory=list)
+    preview_rows: list[list[str]] = Field(default_factory=list)
+    summary_json: dict[str, Any] = Field(default_factory=dict)
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RawDatasetArchiveListResponse(BaseModel):
+    total: int
+    items: list[RawDatasetArchiveItem] = Field(default_factory=list)
+
+
 class ContentIn(BaseModel):
     category: Literal["announcement", "adjustment"]
     title: str = Field(min_length=1, max_length=500)

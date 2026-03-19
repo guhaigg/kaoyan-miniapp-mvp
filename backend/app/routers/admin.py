@@ -11,7 +11,7 @@ from ..dependencies import (
     get_admin_identity,
     require_admin_request,
 )
-from ..models import AccountPaymentOrder, Content, PortalUser, PortalUserSubscription, School, UserEvent
+from ..models import AccountPaymentOrder, Content, PortalUser, PortalUserSubscription, RawDatasetArchive, School, UserEvent
 from ..schemas import (
     AdminAuditItem,
     AdminAuditListResponse,
@@ -32,6 +32,8 @@ from ..schemas import (
     AdminRoleAssignmentItem,
     AdminUserItem,
     AdminUserListResponse,
+    RawDatasetArchiveItem,
+    RawDatasetArchiveListResponse,
     AdminUserPromoteRequest,
     AdminUserUpdateRequest,
     ContentIn,
@@ -136,6 +138,30 @@ def _to_admin_payment_order_item(order: AccountPaymentOrder, username: str) -> A
         canceled_at=order.canceled_at,
         created_at=order.created_at,
         meta_json=dict(order.meta_json or {}),
+    )
+
+
+def _to_raw_dataset_archive_item(row: RawDatasetArchive) -> RawDatasetArchiveItem:
+    return RawDatasetArchiveItem(
+        id=row.id,
+        dataset_key=row.dataset_key,
+        title=row.title,
+        dataset_type=row.dataset_type,
+        source_filename=row.source_filename,
+        source_path=row.source_path,
+        workbook_format=row.workbook_format,
+        file_sha256=row.file_sha256,
+        file_size_bytes=row.file_size_bytes,
+        sheet_names=list(row.sheet_names or []),
+        primary_sheet_name=row.primary_sheet_name,
+        total_rows=row.total_rows,
+        total_columns=row.total_columns,
+        header_row=list(row.header_row or []),
+        preview_rows=list(row.preview_rows or []),
+        summary_json=dict(row.summary_json or {}),
+        notes=row.notes,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
@@ -318,6 +344,13 @@ def admin_me(request: Request) -> AdminMeResponse:
 def admin_content_fingerprint_stats(request: Request, db: Session = Depends(get_db)) -> AdminContentFingerprintStatsResponse:
     require_admin_request(request)
     return _content_fingerprint_stats(db)
+
+
+@router.get("/raw-datasets", response_model=RawDatasetArchiveListResponse)
+def list_raw_datasets(request: Request, db: Session = Depends(get_db)) -> RawDatasetArchiveListResponse:
+    require_admin_request(request)
+    rows = db.query(RawDatasetArchive).order_by(RawDatasetArchive.created_at.desc()).all()
+    return RawDatasetArchiveListResponse(total=len(rows), items=[_to_raw_dataset_archive_item(row) for row in rows])
 
 
 @router.post("/auth/register", response_model=AdminRegisterResponse)

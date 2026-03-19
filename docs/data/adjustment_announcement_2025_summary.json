@@ -1,0 +1,173 @@
+{
+  "source_file": "/Users/guhai/Downloads/2025年调剂信息公告.xls",
+  "sheet_name": "2025年2026年01月12日13时52分38秒最新调剂信息",
+  "total_rows": 29345,
+  "unique_schools": 709,
+  "verification_counts": {
+    "官网": 22950,
+    "来源于官网": 6352,
+    "未知": 43
+  },
+  "top_schools": [
+    {
+      "rank": 1,
+      "school_name": "昆明理工大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 570,
+      "top_departments": [],
+      "top_url": "https://www.kmust.edu.cn/info/1166/50565.htm"
+    },
+    {
+      "rank": 2,
+      "school_name": "青岛大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 418,
+      "top_departments": [],
+      "top_url": "https://grad.qdu.edu.cn/info/1118/4026.htm"
+    },
+    {
+      "rank": 3,
+      "school_name": "江苏大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 401,
+      "top_departments": [],
+      "top_url": "https://yz.ujs.edu.cn/info/1010/7237.htm"
+    },
+    {
+      "rank": 4,
+      "school_name": "云南大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 354,
+      "top_departments": [],
+      "top_url": "http://www.grs.ynu.edu.cn/info/1008/4962.htm"
+    },
+    {
+      "rank": 5,
+      "school_name": "安徽医科大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 261,
+      "top_departments": [],
+      "top_url": "https://yjsxy.ahmu.edu.cn/2025/0403/c7773a175327/page.htm"
+    },
+    {
+      "rank": 6,
+      "school_name": "安徽农业大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 254,
+      "top_departments": [],
+      "top_url": "http://yjs.ahau.edu.cn/info/1171/42634.htm"
+    },
+    {
+      "rank": 7,
+      "school_name": "兰州大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 246,
+      "top_departments": [],
+      "top_url": "https://yz.lzu.edu.cn/shuoshishengzhaosheng/shuoshikaoshi/2025/0401/295343.html"
+    },
+    {
+      "rank": 8,
+      "school_name": "河北大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 237,
+      "top_departments": [],
+      "top_url": "https://yjsy.hbu.edu.cn/info/1159/3853.htm"
+    },
+    {
+      "rank": 9,
+      "school_name": "锦州医科大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 230,
+      "top_departments": [],
+      "top_url": "https://yjsc.jzmu.edu.cn/info/1097/4960.htm"
+    },
+    {
+      "rank": 10,
+      "school_name": "福建农林大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 223,
+      "top_departments": [],
+      "top_url": "https://jjglxy.fafu.edu.cn/2c/75/c269a404597/page.htm"
+    },
+    {
+      "rank": 11,
+      "school_name": "中国矿业大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 218,
+      "top_departments": [],
+      "top_url": "https://yz.cumt.edu.cn/info/1004/2355.htm"
+    },
+    {
+      "rank": 12,
+      "school_name": "广西大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 197,
+      "top_departments": [],
+      "top_url": "https://yjsc.gxu.edu.cn/info/1007/3718.htm"
+    },
+    {
+      "rank": 13,
+      "school_name": "云南师范大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 192,
+      "top_departments": [],
+      "top_url": "https://zsb.ynnu.edu.cn/info/1013/1973.htm"
+    },
+    {
+      "rank": 14,
+      "school_name": "北京科技大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 191,
+      "top_departments": [],
+      "top_url": "https://ncms.ustb.edu.cn/rcpy/tzgg/3e28202c559c4611a8562d4cc9b603a1.htm"
+    },
+    {
+      "rank": 15,
+      "school_name": "大连医科大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 189,
+      "top_departments": [],
+      "top_url": "https://yjs.dmu.edu.cn/info/1017/8855.htm"
+    },
+    {
+      "rank": 16,
+      "school_name": "北华大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 187,
+      "top_departments": [],
+      "top_url": "https://grad.beihua.edu.cn/info/1071/3025.htm"
+    },
+    {
+      "rank": 17,
+      "school_name": "安徽理工大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 183,
+      "top_departments": [],
+      "top_url": "https://yjszs.aust.edu.cn/info/1013/1599.htm"
+    },
+    {
+      "rank": 18,
+      "school_name": "江西师范大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 182,
+      "top_departments": [],
+      "top_url": "https://yz.jxnu.edu.cn/2025/0401/c6249a270478/page.htm"
+    },
+    {
+      "rank": 19,
+      "school_name": "山东师范大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 181,
+      "top_departments": [],
+      "top_url": "http://www.yjszs.sdnu.edu.cn/info/1026/4405.htm"
+    },
+    {
+      "rank": 20,
+      "school_name": "南方医科大学",
+      "school_category": "2025调剂信息公告",
+      "adjustment_count": 179,
+      "top_departments": [],
+      "top_url": "https://portal.smu.edu.cn/yzw/info/1002/11081.htm"
+    }
+  ]
+}

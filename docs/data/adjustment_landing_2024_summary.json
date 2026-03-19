@@ -1,0 +1,370 @@
+{
+  "source_file": "/Users/guhai/Downloads/24考研调剂上岸名单.xlsx",
+  "sheet_name": "总表",
+  "total_rows": 211945,
+  "unique_schools": 636,
+  "category_counts": {
+    "普本": 164935,
+    "211": 31713,
+    "双一流": 7743,
+    "985": 5263,
+    "研究所": 1819,
+    "党校": 366,
+    "军校": 70,
+    "赔本": 26
+  },
+  "region_counts": {
+    "江苏省": 12987,
+    "上海市": 12307,
+    "辽宁省": 12086,
+    "山东省": 11554,
+    "北京市": 11075,
+    "河北省": 10381,
+    "浙江省": 9615,
+    "广东省": 9612,
+    "广西壮族自治区": 9402,
+    "湖北省": 9146
+  },
+  "top_schools": [
+    {
+      "rank": 1,
+      "school_code": "10593",
+      "school_name": "广西大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 2355,
+      "top_departments": [
+        {
+          "department_name": "资源环境与材料学院",
+          "count": 307
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 197
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "school_code": "10075",
+      "school_name": "河北大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 2296,
+      "top_departments": [
+        {
+          "department_name": "生命科学学院",
+          "count": 307
+        },
+        {
+          "department_name": "物理科学与技术学院",
+          "count": 224
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "school_code": "10674",
+      "school_name": "昆明理工大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 2054,
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 243
+        },
+        {
+          "department_name": "国土资源工程学院",
+          "count": 212
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "school_code": "10299",
+      "school_name": "江苏大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1880,
+      "top_departments": [
+        {
+          "department_name": "管理学院",
+          "count": 165
+        },
+        {
+          "department_name": "流体机械工程技术研究中心",
+          "count": 141
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "school_code": "10216",
+      "school_name": "燕山大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1820,
+      "top_departments": [
+        {
+          "department_name": "电气工程学院",
+          "count": 312
+        },
+        {
+          "department_name": "机械工程学院",
+          "count": 308
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "school_code": "10730",
+      "school_name": "兰州大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1789,
+      "top_departments": [
+        {
+          "department_name": "资源环境学院",
+          "count": 162
+        },
+        {
+          "department_name": "化学化工学院",
+          "count": 123
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "school_code": "11065",
+      "school_name": "青岛大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1753,
+      "top_departments": [
+        {
+          "department_name": "医学部",
+          "count": 231
+        },
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 176
+        }
+      ]
+    },
+    {
+      "rank": 8,
+      "school_code": "10755",
+      "school_name": "新疆大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1747,
+      "top_departments": [
+        {
+          "department_name": "化工学院",
+          "count": 193
+        },
+        {
+          "department_name": "智能制造现代产业学院",
+          "count": 139
+        }
+      ]
+    },
+    {
+      "rank": 9,
+      "school_code": "10270",
+      "school_name": "上海师范大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1696,
+      "top_departments": [
+        {
+          "department_name": "哲学与法政学院",
+          "count": 377
+        },
+        {
+          "department_name": "化学与材料科学学院",
+          "count": 208
+        }
+      ]
+    },
+    {
+      "rank": 10,
+      "school_code": "10217",
+      "school_name": "哈尔滨工程大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1543,
+      "top_departments": [
+        {
+          "department_name": "烟台研究院",
+          "count": 534
+        },
+        {
+          "department_name": "青岛基地",
+          "count": 477
+        }
+      ]
+    },
+    {
+      "rank": 11,
+      "school_code": "10602",
+      "school_name": "广西师范大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1416,
+      "top_departments": [
+        {
+          "department_name": "经济管理学院",
+          "count": 161
+        },
+        {
+          "department_name": "法学院",
+          "count": 140
+        }
+      ]
+    },
+    {
+      "rank": 12,
+      "school_code": "10280",
+      "school_name": "上海大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1365,
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 279
+        },
+        {
+          "department_name": "理学院",
+          "count": 170
+        }
+      ]
+    },
+    {
+      "rank": 13,
+      "school_code": "10856",
+      "school_name": "上海工程技术大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1358,
+      "top_departments": [
+        {
+          "department_name": "管理学院",
+          "count": 289
+        },
+        {
+          "department_name": "机械与汽车工程学院",
+          "count": 233
+        }
+      ]
+    },
+    {
+      "rank": 14,
+      "school_code": "10736",
+      "school_name": "西北师范大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1355,
+      "top_departments": [
+        {
+          "department_name": "化学化工学院",
+          "count": 160
+        },
+        {
+          "department_name": "地理与环境科学学院",
+          "count": 101
+        }
+      ]
+    },
+    {
+      "rank": 15,
+      "school_code": "10732",
+      "school_name": "兰州交通大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1334,
+      "top_departments": [
+        {
+          "department_name": "经济管理学院",
+          "count": 184
+        },
+        {
+          "department_name": "环境与市政工程学院",
+          "count": 136
+        }
+      ]
+    },
+    {
+      "rank": 16,
+      "school_code": "10389",
+      "school_name": "福建农林大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1294,
+      "top_departments": [
+        {
+          "department_name": "未来技术学院",
+          "count": 200
+        },
+        {
+          "department_name": "经济与管理学院",
+          "count": 128
+        }
+      ]
+    },
+    {
+      "rank": 17,
+      "school_code": "10475",
+      "school_name": "河南大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1236,
+      "top_departments": [
+        {
+          "department_name": "纳米材料工程研究中心",
+          "count": 254
+        },
+        {
+          "department_name": "药学院",
+          "count": 126
+        }
+      ]
+    },
+    {
+      "rank": 18,
+      "school_code": "10595",
+      "school_name": "桂林电子科技大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1224,
+      "top_departments": [
+        {
+          "department_name": "计算机与信息安全学院",
+          "count": 196
+        },
+        {
+          "department_name": "机电工程学院",
+          "count": 158
+        }
+      ]
+    },
+    {
+      "rank": 19,
+      "school_code": "10596",
+      "school_name": "桂林理工大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1194,
+      "top_departments": [
+        {
+          "department_name": "材料科学与工程学院",
+          "count": 224
+        },
+        {
+          "department_name": "环境科学与工程学院",
+          "count": 206
+        }
+      ]
+    },
+    {
+      "rank": 20,
+      "school_code": "10127",
+      "school_name": "内蒙古科技大学",
+      "school_category": "2024调剂上岸画像",
+      "adjustment_count": 1177,
+      "top_departments": [
+        {
+          "department_name": "包头医学院",
+          "count": 192
+        },
+        {
+          "department_name": "文法学院",
+          "count": 160
+        }
+      ]
+    }
+  ]
+}

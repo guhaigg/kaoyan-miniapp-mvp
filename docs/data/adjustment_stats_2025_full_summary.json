@@ -1,0 +1,455 @@
+{
+  "source_file": "/Users/guhai/Downloads/25 调剂信息统计_完整版（含调剂人数，最低分，平均分）.xlsx",
+  "sheet_name": "调剂统计（含平均分）",
+  "total_rows": 20603,
+  "unique_schools": 710,
+  "study_mode_counts": {
+    "全日制": 19022,
+    "非全日制": 1581
+  },
+  "total_people": 255016,
+  "min_score_floor": 118,
+  "avg_score_mean": 319.55,
+  "top_schools": [
+    {
+      "rank": 1,
+      "school_code": "10674",
+      "school_name": "昆明理工大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 178,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(085410)人工智能",
+          "count": 2
+        },
+        {
+          "major": "(086001)生物技术与工程",
+          "count": 2
+        },
+        {
+          "major": "(010101)马克思主义哲学",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "school_code": "11065",
+      "school_name": "青岛大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 178,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(035101)法律(非法学)",
+          "count": 2
+        },
+        {
+          "major": "(045109)学科教学(历史)",
+          "count": 2
+        },
+        {
+          "major": "(020100)理论经济学",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "school_code": "10075",
+      "school_name": "河北大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 172,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(025100)金融",
+          "count": 2
+        },
+        {
+          "major": "(035101)法律(非法学)",
+          "count": 2
+        },
+        {
+          "major": "(035102)法律(法学)",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "school_code": "10270",
+      "school_name": "上海师范大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 138,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(045109)学科教学(历史)",
+          "count": 2
+        },
+        {
+          "major": "(055101)英语笔译",
+          "count": 2
+        },
+        {
+          "major": "(125100)工商管理",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "school_code": "10299",
+      "school_name": "江苏大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 125,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(025100)金融",
+          "count": 2
+        },
+        {
+          "major": "(035102)法律(法学)",
+          "count": 2
+        },
+        {
+          "major": "(035400)知识产权",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 6,
+      "school_code": "10730",
+      "school_name": "兰州大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 118,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(035101)法律(非法学)",
+          "count": 2
+        },
+        {
+          "major": "(035102)法律(法学)",
+          "count": 2
+        },
+        {
+          "major": "(035200)社会工作",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 7,
+      "school_code": "10673",
+      "school_name": "云南大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 112,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(135600)美术与书法01方向",
+          "count": 2
+        },
+        {
+          "major": "(135600)美术与书法02方向",
+          "count": 2
+        },
+        {
+          "major": "(135700)设计01方向",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 8,
+      "school_code": "10736",
+      "school_name": "西北师范大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 105,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(035101)法律(非法学)",
+          "count": 2
+        },
+        {
+          "major": "(125100)工商管理",
+          "count": 2
+        },
+        {
+          "major": "(125400)旅游管理",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 9,
+      "school_code": "11117",
+      "school_name": "扬州大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 100,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(045106)学科教学(化学)",
+          "count": 2
+        },
+        {
+          "major": "(085601)材料工程",
+          "count": 2
+        },
+        {
+          "major": "(085802)动力工程",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 10,
+      "school_code": "10560",
+      "school_name": "汕头大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 99,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(035101)法律(非法学)",
+          "count": 2
+        },
+        {
+          "major": "(055200)新闻与传播",
+          "count": 2
+        },
+        {
+          "major": "(105300)公共卫生",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 11,
+      "school_code": "10140",
+      "school_name": "辽宁大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 98,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(010101)马克思主义哲学",
+          "count": 1
+        },
+        {
+          "major": "(010102)中国哲学",
+          "count": 1
+        },
+        {
+          "major": "(010103)外国哲学",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "rank": 12,
+      "school_code": "10212",
+      "school_name": "黑龙江大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 95,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(035101)法律(非法学)",
+          "count": 2
+        },
+        {
+          "major": "(045101)教育管理",
+          "count": 2
+        },
+        {
+          "major": "(125100)工商管理",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 13,
+      "school_code": "10759",
+      "school_name": "石河子大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 95,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(045104)学科教学(数学)",
+          "count": 2
+        },
+        {
+          "major": "(045105)学科教学(物理)",
+          "count": 2
+        },
+        {
+          "major": "(045107)学科教学(生物)",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 14,
+      "school_code": "10108",
+      "school_name": "山西大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 87,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(035102)法律(法学)",
+          "count": 2
+        },
+        {
+          "major": "(085701)环境工程",
+          "count": 2
+        },
+        {
+          "major": "(010102)中国哲学",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "rank": 15,
+      "school_code": "10159",
+      "school_name": "中国医科大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 87,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(085409)生物医学工程",
+          "count": 2
+        },
+        {
+          "major": "(010105)伦理学",
+          "count": 1
+        },
+        {
+          "major": "(045400)应用心理",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "rank": 16,
+      "school_code": "10424",
+      "school_name": "山东科技大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 87,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(085400)电子信息",
+          "count": 2
+        },
+        {
+          "major": "(085404)计算机技术(产教融合)",
+          "count": 2
+        },
+        {
+          "major": "(085411)大数据技术与工程",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rank": 17,
+      "school_code": "10304",
+      "school_name": "南通大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 86,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(020200)应用经济学",
+          "count": 1
+        },
+        {
+          "major": "(025200)应用统计",
+          "count": 1
+        },
+        {
+          "major": "(025400)国际商务",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "rank": 18,
+      "school_code": "10718",
+      "school_name": "陕西师范大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 84,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(045116)心理健康教育",
+          "count": 2
+        },
+        {
+          "major": "(010102)中国哲学",
+          "count": 1
+        },
+        {
+          "major": "(010103)外国哲学",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "rank": 19,
+      "school_code": "10490",
+      "school_name": "武汉工程大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 84,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(085701)环境工程",
+          "count": 2
+        },
+        {
+          "major": "(135700)设计",
+          "count": 2
+        },
+        {
+          "major": "(025100)金融",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "rank": 20,
+      "school_code": "10731",
+      "school_name": "兰州理工大学",
+      "school_category": "2025调剂统计完整版",
+      "adjustment_count": 84,
+      "top_departments": [],
+      "top_majors": [
+        {
+          "major": "(025400)国际商务",
+          "count": 1
+        },
+        {
+          "major": "(030100)法学",
+          "count": 1
+        },
+        {
+          "major": "(030500)马克思主义理论",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

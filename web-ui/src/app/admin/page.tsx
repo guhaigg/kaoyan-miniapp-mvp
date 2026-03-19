@@ -22,12 +22,14 @@ import {
   useAdminContentFilesQuery,
   useAdminDemoteMutation,
   useAdminHealthQuery,
+  useAdminImportAdjustmentExpandedTargetsMutation,
   useAdminImportAdjustmentPriorityTargetsMutation,
   useAdminImportAdjustmentSupplementalTargetsMutation,
   useAdminMarkPaymentOrderPaidMutation,
   useAdminMeQuery,
   useAdminPaymentOrdersQuery,
   useAdminPromoteMutation,
+  useAdminRawDatasetsQuery,
   useAdminResetPasswordMutation,
   useAdminSchoolImportSeedSummariesQuery,
   useAdminSiteSectionBackfillMutation,
@@ -69,6 +71,7 @@ export default function AdminPage() {
   const [markingPaymentOrderId, setMarkingPaymentOrderId] = useState<string | null>(null);
   const [importingAdjustmentTargets, setImportingAdjustmentTargets] = useState(false);
   const [importingSupplementalTargets, setImportingSupplementalTargets] = useState(false);
+  const [importingExpandedTargets, setImportingExpandedTargets] = useState(false);
   const [resolvingAdminRole, setResolvingAdminRole] = useState(false);
   const [selectorView, setSelectorView] = useState<"all" | "attention" | "preview-warning">("all");
   const roleRefreshAttemptedTokenRef = useRef<string | null>(null);
@@ -94,6 +97,7 @@ export default function AdminPage() {
   const siteSectionsQuery = useAdminSiteSectionsQuery(isAuthenticated);
   const contentFilesQuery = useAdminContentFilesQuery(isAuthenticated, isDocumentVisible);
   const schoolImportSeedsQuery = useAdminSchoolImportSeedSummariesQuery(isAuthenticated);
+  const rawDatasetsQuery = useAdminRawDatasetsQuery(isAuthenticated);
 
   const promoteMutation = useAdminPromoteMutation();
   const demoteMutation = useAdminDemoteMutation();
@@ -101,6 +105,7 @@ export default function AdminPage() {
   const createPaymentOrderMutation = useAdminCreatePaymentOrderMutation();
   const importAdjustmentTargetsMutation = useAdminImportAdjustmentPriorityTargetsMutation();
   const importAdjustmentSupplementalTargetsMutation = useAdminImportAdjustmentSupplementalTargetsMutation();
+  const importAdjustmentExpandedTargetsMutation = useAdminImportAdjustmentExpandedTargetsMutation();
   const markPaymentOrderPaidMutation = useAdminMarkPaymentOrderPaidMutation();
   const updateSiteSectionMutation = useAdminSiteSectionUpdateMutation();
   const backfillSiteSectionMutation = useAdminSiteSectionBackfillMutation();
@@ -462,6 +467,25 @@ export default function AdminPage() {
       }
     } finally {
       setImportingSupplementalTargets(false);
+    }
+  }
+
+  async function handleImportAdjustmentExpandedTargets() {
+    setImportingExpandedTargets(true);
+    setMessage("");
+    try {
+      const result = await importAdjustmentExpandedTargetsMutation.mutateAsync();
+      setMessage(
+        `24/25/26 扩展资产包已导入：学校新增 ${result.created_schools}，学校已存在 ${result.existing_schools}，院系新增 ${result.created_departments}。`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`导入 24/25/26 扩展资产包失败：${error.message}`);
+      } else {
+        setMessage("导入 24/25/26 扩展资产包失败，请稍后重试");
+      }
+    } finally {
+      setImportingExpandedTargets(false);
     }
   }
 
@@ -952,10 +976,26 @@ export default function AdminPage() {
 
           <div className="mb-6 grid gap-4 xl:grid-cols-3">
             {(schoolImportSeedsQuery.data?.items || []).map((seed) => {
-              const isPrimarySeed = seed.source_key === "adjustment_stats_2023_2025";
-              const importBusy = isPrimarySeed ? importingAdjustmentTargets : importingSupplementalTargets;
-              const buttonLabel = isPrimarySeed ? "导入调剂重点学校" : "导入 24/25 补充学校";
-              const buttonHandler = isPrimarySeed ? handleImportAdjustmentPriorityTargets : handleImportAdjustmentSupplementalTargets;
+              const importConfig =
+                seed.source_key === "adjustment_stats_2023_2025"
+                  ? {
+                      busy: importingAdjustmentTargets,
+                      label: "导入调剂重点学校",
+                      onClick: handleImportAdjustmentPriorityTargets,
+                    }
+                  : seed.source_key === "adjustment_supplemental_2024_2025"
+                    ? {
+                        busy: importingSupplementalTargets,
+                        label: "导入 24/25 补充学校",
+                        onClick: handleImportAdjustmentSupplementalTargets,
+                      }
+                    : seed.source_key === "adjustment_expanded_bundle_2024_2026"
+                      ? {
+                          busy: importingExpandedTargets,
+                          label: "导入 24/25/26 扩展资产包",
+                          onClick: handleImportAdjustmentExpandedTargets,
+                        }
+                      : null;
               return (
                 <div
                   key={seed.source_key}
@@ -973,11 +1013,11 @@ export default function AdminPage() {
                     {seed.import_endpoint ? (
                       <button
                         type="button"
-                        onClick={buttonHandler}
-                        disabled={importBusy}
+                        onClick={importConfig?.onClick}
+                        disabled={Boolean(importConfig?.busy)}
                         className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-50 transition-colors hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-70"
                       >
-                        {importBusy ? "导入中..." : buttonLabel}
+                        {importConfig?.busy ? "导入中..." : importConfig?.label || "导入"}
                       </button>
                     ) : (
                       <span className="rounded-xl border border-violet-500/30 bg-violet-500/15 px-3 py-2 text-xs font-semibold text-violet-100">
@@ -1039,6 +1079,53 @@ export default function AdminPage() {
                 </div>
               );
             })}
+          </div>
+
+          <div className="mb-6 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold text-white">原始 Excel 归档</div>
+                <p className="mt-1 text-xs leading-6 text-slate-400">
+                  用户发来的原始表会完整压缩进数据库，保留文件哈希、工作表结构和预览行，防止只留下本地文件路径。
+                </p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300">
+                已归档 {rawDatasetsQuery.data?.total || 0} 份
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              {(rawDatasetsQuery.data?.items || []).slice(0, 8).map((dataset) => (
+                <div key={dataset.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{dataset.title}</div>
+                      <div className="mt-1 text-[11px] uppercase tracking-[0.22em] text-slate-500">{dataset.dataset_type}</div>
+                    </div>
+                    <div className="text-xs text-slate-400">{dataset.workbook_format.toUpperCase()}</div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="text-slate-500">行数</div>
+                      <div className="mt-1 font-semibold text-white">{dataset.total_rows?.toLocaleString() || "--"}</div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="text-slate-500">列数</div>
+                      <div className="mt-1 font-semibold text-white">{dataset.total_columns?.toLocaleString() || "--"}</div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="text-slate-500">文件大小</div>
+                      <div className="mt-1 font-semibold text-white">{formatBytes(dataset.file_size_bytes)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-slate-400">
+                    <div>文件：{dataset.source_filename}</div>
+                    <div className="mt-1">工作表：{dataset.sheet_names.slice(0, 3).join(" / ") || "--"}</div>
+                    <div className="mt-1">指纹：{dataset.file_sha256.slice(0, 12)}...</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -1515,6 +1602,12 @@ function hasSelectorAttention(item: SiteSectionItem, preview?: SiteSectionSelect
 function average(values: number[]) {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function statusBadgeClass(status: string) {

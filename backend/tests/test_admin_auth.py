@@ -327,12 +327,13 @@ def test_admin_can_view_school_import_seed_summaries(client):
     response = client.get("/api/v1/schools/import/seed-summaries", headers=admin_headers)
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["items"]) >= 4
+    assert len(payload["items"]) >= 5
 
     source_keys = {item["source_key"] for item in payload["items"]}
     assert "adjustment_stats_2023_2025" in source_keys
     assert "adjustment_supplemental_2024_2025" in source_keys
     assert "adjustment_landing_2025" in source_keys
+    assert "adjustment_expanded_bundle_2024_2026" in source_keys
     assert "mentor_reviews" in source_keys
 
 
@@ -349,3 +350,18 @@ def test_admin_can_import_adjustment_supplemental_targets(client):
     assert suggest_response.status_code == 200
     names = [item["name"] for item in suggest_response.json()["items"]]
     assert "青岛大学" in names
+
+
+def test_admin_can_import_adjustment_expanded_targets(client):
+    admin_headers = _bootstrap_admin_headers(client, "portal_admin_import_adjustment_bundle")
+
+    import_response = client.post("/api/v1/schools/import/adjustment-expanded-targets", headers=admin_headers)
+    assert import_response.status_code == 200
+    payload = import_response.json()
+    assert payload["total_rows"] >= 30
+    assert payload["created_schools"] >= 10
+
+    suggest_response = client.get("/api/v1/schools/suggest?q=大连")
+    assert suggest_response.status_code == 200
+    names = [item["name"] for item in suggest_response.json()["items"]]
+    assert "大连医科大学" in names
