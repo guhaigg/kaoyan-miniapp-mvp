@@ -1,7 +1,15 @@
-import { api, type AdjustmentSearchRequest, type SearchBaseRequest, type SearchResponse } from "@/lib/api";
+import { request, type AdjustmentSearchRequest, type SearchBaseRequest, type SearchResponse } from "@/lib/api";
 
 export const fetchAnnouncementResults = (payload: SearchBaseRequest) =>
-  api.post<SearchResponse>("/search/announcements", payload).then((response) => response.data);
+  request<SearchResponse>({
+    method: "POST",
+    url: "/search/announcements",
+    data: payload,
+  });
 
 export const fetchAdjustmentResults = (payload: AdjustmentSearchRequest) =>
-  api.post<SearchResponse>("/search/adjustments", payload).then((response) => response.data);
+  request<SearchResponse>({
+    method: "POST",
+    url: "/search/adjustments",
+    data: payload,
+  });

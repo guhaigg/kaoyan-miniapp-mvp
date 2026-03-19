@@ -56,17 +56,21 @@ function extractMessage(payload: unknown, fallback: string) {
   return fallback;
 }
 
-function normalizeApiError(error: unknown): ApiError {
+export function normalizeApiError(error: unknown): ApiError {
   if (error instanceof ApiError) {
     return error;
   }
   if (axios.isAxiosError(error)) {
     const status = error.response?.status ?? 0;
     const payload = error.response?.data;
-    const fallback = status ? `Request failed with status ${status}` : "Network request failed";
+    const lowerMessage = String(error.message || "").toLowerCase();
+    if (error.code === "ECONNABORTED" || lowerMessage.includes("timeout")) {
+      return new ApiError("请求超时，请稍后重试。", status, payload);
+    }
+    const fallback = status ? `Request failed with status ${status}` : "网络连接失败，请检查网络后重试。";
     return new ApiError(extractMessage(payload, fallback), status, payload);
   }
-  return new ApiError("Network request failed", 0, null);
+  return new ApiError("网络连接失败，请检查网络后重试。", 0, null);
 }
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -139,7 +143,7 @@ api.interceptors.response.use(
   },
 );
 
-async function request<T>(config: AxiosRequestConfig): Promise<T> {
+export async function request<T>(config: AxiosRequestConfig): Promise<T> {
   try {
     const response = await api.request<T>(config);
     return response.data;

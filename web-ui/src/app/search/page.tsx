@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   Target,
   TrendingUp,
+  ChevronDown,
 } from "lucide-react";
 import FilterDrawer, { type SchoolTier, type StudyMode } from "@/components/search/FilterDrawer";
 import FeedCard, { FeedCardSkeleton } from "@/components/shared/FeedCard";
@@ -32,6 +33,7 @@ export default function SearchPage() {
   const [majorFilter, setMajorFilter] = useState("");
   const [regionFilter, setRegionFilter] = useState("");
   const [candidateScoreFilter, setCandidateScoreFilter] = useState("");
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [schoolTiers, setSchoolTiers] = useState<SchoolTier[]>([]);
   const [studyMode, setStudyMode] = useState<StudyMode>("all");
   const [onlyHistoryBacked, setOnlyHistoryBacked] = useState(false);
@@ -135,8 +137,16 @@ export default function SearchPage() {
     queryType === "adjustments" ? adjustmentQueryIntent.keywords : keywords.trim();
   const primaryInputPlaceholder =
     queryType === "adjustments"
-      ? "输入学校名、专业名或专业代码；系统会自动做宽匹配..."
+      ? "学校名、专业名或专业代码"
       : "输入院校代码、名称、学院或招生关键字...";
+  const adjustmentIntent = getAdjustmentIntentMeta({
+    keywords,
+    schoolName,
+    majorFilter,
+  });
+  const hasAdvancedAdjustmentFilters = Boolean(
+    schoolName.trim() || majorFilter.trim() || regionFilter.trim() || candidateScoreFilter.trim(),
+  );
 
   const calculateMatch = () => {
     if (isAnonymous) {
@@ -196,7 +206,7 @@ export default function SearchPage() {
       if (error instanceof ApiError) {
         setMessage(`查询失败：${error.message}`);
       } else {
-        setMessage("数据源响应超时，请稍后重连。");
+        setMessage("查询失败：发生未识别的前端错误，请刷新页面后重试。");
       }
     }
   }
@@ -282,7 +292,11 @@ export default function SearchPage() {
                   ? "bg-cyan-500 text-white"
                   : "text-slate-300 hover:bg-white/10"
               }`}
-              onClick={() => setQueryType("announcements")}
+              onClick={() => {
+                setQueryType("announcements");
+                setMessage("");
+                setSearchResult(null);
+              }}
             >
               公告检索
             </button>
@@ -299,6 +313,8 @@ export default function SearchPage() {
                   return;
                 }
                 setQueryType("adjustments");
+                setMessage("");
+                setSearchResult(null);
               }}
               disabled={adjustmentLocked}
             >
@@ -325,61 +341,133 @@ export default function SearchPage() {
             </button>
           </div>
           <div className="mt-2 text-xs text-slate-500">
-              {queryType === "adjustments"
-                ? "调剂模式下，主搜索框会自动识别明确的学校名或专业代码；其他输入按学校名、专业名、标题和正文做宽匹配。"
-                : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
+            {queryType === "adjustments"
+              ? `当前识别：${adjustmentIntent.label}。${adjustmentIntent.description}`
+              : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
           </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-5">
-            <input
-              value={schoolName}
-              onChange={(event) => setSchoolName(event.target.value)}
-              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-              placeholder={queryType === "adjustments" ? "院校名（可留空）" : "院校名（可选）"}
-              className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-            />
-            <input
-              value={majorFilter}
-              onChange={(event) => setMajorFilter(event.target.value)}
-              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-              placeholder={queryType === "adjustments" ? "专业（主框已填专业可留空）" : "专业（调剂模式可选）"}
-              className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-            />
-            <input
-              value={regionFilter}
-              onChange={(event) => setRegionFilter(event.target.value)}
-              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-              placeholder="地区（调剂模式可选）"
-              className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-            />
-            <input
-              value={candidateScoreFilter}
-              onChange={(event) => setCandidateScoreFilter(event.target.value)}
-              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-              placeholder="你的分数（调剂模式可选）"
-              className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setKeywords("");
-                setSchoolName("");
-                setMajorFilter("");
-                setRegionFilter("");
-                setCandidateScoreFilter("");
-                setSchoolTiers([]);
-                setStudyMode("all");
-                setOnlyHistoryBacked(false);
-                setOnlyLongTrack(false);
-                setOnlyWithReferenceLinks(false);
-                setHideMentorWarnings(false);
-                setSearchResult(null);
-                setMessage("");
-              }}
-              className="rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10"
-            >
-              清空筛选
-            </button>
-          </div>
+          {queryType === "adjustments" ? (
+            <div className="mt-3 rounded-2xl border border-white/8 bg-black/15">
+              <button
+                type="button"
+                onClick={() => setAdvancedFiltersOpen((value) => !value)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-slate-300"
+              >
+                <div>
+                  <div className="font-semibold text-white">高级条件</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    用于精确限定院校、专业、地区和分数；不填也可以直接搜。
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {hasAdvancedAdjustmentFilters ? (
+                    <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
+                      已启用 {[
+                        schoolName.trim() && "院校",
+                        majorFilter.trim() && "专业",
+                        regionFilter.trim() && "地区",
+                        candidateScoreFilter.trim() && "分数",
+                      ]
+                        .filter(Boolean)
+                        .join(" / ")}
+                    </span>
+                  ) : null}
+                  <ChevronDown
+                    size={18}
+                    className={`text-slate-400 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`}
+                  />
+                </div>
+              </button>
+              {advancedFiltersOpen ? (
+                <div className="grid gap-2 border-t border-white/8 px-4 pb-4 pt-3 md:grid-cols-5">
+                  <input
+                    value={schoolName}
+                    onChange={(event) => setSchoolName(event.target.value)}
+                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+                    placeholder="精确院校（可选）"
+                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                  />
+                  <input
+                    value={majorFilter}
+                    onChange={(event) => setMajorFilter(event.target.value)}
+                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+                    placeholder="精确专业/代码（可选）"
+                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                  />
+                  <input
+                    value={regionFilter}
+                    onChange={(event) => setRegionFilter(event.target.value)}
+                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+                    placeholder="地区（如 湖北、武汉）"
+                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                  />
+                  <input
+                    value={candidateScoreFilter}
+                    onChange={(event) => setCandidateScoreFilter(event.target.value)}
+                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+                    placeholder="你的分数（可选）"
+                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKeywords("");
+                      setSchoolName("");
+                      setMajorFilter("");
+                      setRegionFilter("");
+                      setCandidateScoreFilter("");
+                      setSchoolTiers([]);
+                      setStudyMode("all");
+                      setOnlyHistoryBacked(false);
+                      setOnlyLongTrack(false);
+                      setOnlyWithReferenceLinks(false);
+                      setHideMentorWarnings(false);
+                      setSearchResult(null);
+                      setMessage("");
+                    }}
+                    className="rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10"
+                  >
+                    清空筛选
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <input
+                value={schoolName}
+                onChange={(event) => setSchoolName(event.target.value)}
+                onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+                placeholder="院校名（可选）"
+                className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+              />
+              <input
+                value={majorFilter}
+                onChange={(event) => setMajorFilter(event.target.value)}
+                onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+                placeholder="专业（可选）"
+                className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setKeywords("");
+                  setSchoolName("");
+                  setMajorFilter("");
+                  setSchoolTiers([]);
+                  setStudyMode("all");
+                  setOnlyHistoryBacked(false);
+                  setOnlyLongTrack(false);
+                  setOnlyWithReferenceLinks(false);
+                  setHideMentorWarnings(false);
+                  setSearchResult(null);
+                  setMessage("");
+                }}
+                className="rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10"
+              >
+                清空筛选
+              </button>
+            </div>
+          )}
         </div>
 
         <button
@@ -1258,6 +1346,51 @@ function resolveAdjustmentQueryIntent(filters: {
   };
 }
 
+function getAdjustmentIntentMeta(filters: {
+  keywords: string;
+  schoolName: string;
+  majorFilter: string;
+}) {
+  const keyword = filters.keywords.trim();
+  const schoolName = filters.schoolName.trim();
+  const major = filters.majorFilter.trim();
+
+  if (schoolName) {
+    return {
+      label: "精确院校",
+      description: "院校名会作为精确筛选，主搜索框继续做补充匹配。",
+    };
+  }
+  if (major) {
+    return {
+      label: "精确专业",
+      description: "专业或专业代码会优先收窄结果，主搜索框保留宽匹配。",
+    };
+  }
+  if (!keyword) {
+    return {
+      label: "宽匹配待输入",
+      description: "直接输入学校名、专业名、专业代码或关键词即可开始检索。",
+    };
+  }
+  if (isSchoolLikeQuery(keyword)) {
+    return {
+      label: "院校名",
+      description: "已按学校名理解，同时会补充宽匹配学校名、标题和正文。",
+    };
+  }
+  if (isMajorCodeLikeQuery(keyword)) {
+    return {
+      label: "专业代码",
+      description: "已按专业代码理解，同时会兼容相关专业名和标题内容。",
+    };
+  }
+  return {
+    label: "宽匹配",
+    description: "会同时匹配学校名、专业名、标题和正文；需要更准就展开高级条件。",
+  };
+}
+
 function buildEmptyResultMessage(
   queryType: "announcements" | "adjustments",
   filters: {
@@ -1281,13 +1414,16 @@ function buildEmptyResultMessage(
       return "当前地区和专业条件过窄，没有命中调剂结果，建议先放宽地区或专业。";
     }
     if (schoolName) {
-      return "当前院校名没有命中调剂结果，建议先补一个专业条件，或暂时去掉院校名只看全国范围。";
+      return "当前精确院校条件没有命中调剂结果。先试学校简称，或清空院校名只保留主搜索词再试。";
     }
     if (schoolLikeKeyword) {
-      return "当前院校名没有命中调剂结果，建议把学校名填到“院校名”里，或再补一个专业条件重试。";
+      return "当前学校名没有命中调剂结果。可以试学校简称、补一个专业条件，或改成地区范围先看机会。";
+    }
+    if (isMajorCodeLikeQuery(keyword)) {
+      return "当前专业代码没有命中调剂结果。可以试四位代码、专业名称，或补一个学校/地区条件。";
     }
     if (keyword) {
-      return "当前关键词没有命中调剂结果，建议改成学校名、专业名或专业代码重试。";
+      return "当前主搜索词没有命中调剂结果。系统已经按学校名、专业名、标题和正文做了宽匹配，建议换更短的词，或补一个学校/地区条件。";
     }
     return "暂时没有命中调剂结果，建议先输入学校、专业或地区，再逐步收窄条件。";
   }
