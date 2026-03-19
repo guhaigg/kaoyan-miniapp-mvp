@@ -64,6 +64,12 @@ def _build_school_search_terms(value: str) -> list[str]:
     return _dedupe_terms(terms)
 
 
+def _build_exact_school_terms(value: str) -> list[str]:
+    raw = value.strip()
+    compact = re.sub(r"\s+", "", raw)
+    return _dedupe_terms([raw, compact])
+
+
 def _build_keyword_terms(value: str) -> list[str]:
     raw = value.strip()
     compact = re.sub(r"\s+", "", raw)
@@ -87,7 +93,7 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
     if payload.school_name or payload.keywords:
         query = query.join(School, isouter=True)
     if payload.school_name:
-        terms = _build_school_search_terms(payload.school_name.strip())
+        terms = _build_exact_school_terms(payload.school_name.strip())
         query = query.filter(or_(*[School.name.ilike(f"%{term}%") for term in terms]))
     if payload.keywords:
         keyword_terms = _build_keyword_terms(payload.keywords.strip())
@@ -114,7 +120,7 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
 
 def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchRequest):
     if payload.school_name:
-        terms = _build_school_search_terms(payload.school_name.strip())
+        terms = _build_exact_school_terms(payload.school_name.strip())
         query = query.filter(or_(*[AdjustmentOpportunity.school_name.ilike(f"%{term}%") for term in terms]))
     if payload.keywords:
         keyword_terms = _build_keyword_terms(payload.keywords.strip())

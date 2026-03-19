@@ -268,6 +268,79 @@ def test_adjustment_search_keyword_matches_region_in_structured_opportunities(cl
     assert payload["items"][0]["region"] == "山东"
 
 
+def test_adjustment_search_exact_school_filter_does_not_expand_to_school_prefixes(client):
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                AdjustmentOpportunity(
+                    opportunity_key="opp-hubu",
+                    source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                    source_type="snapshot",
+                    year=2025,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北",
+                    school_tier=None,
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="025200",
+                    major_name="应用统计",
+                    major_name_normalized="应用统计",
+                    study_mode="fulltime",
+                    vacancy_count=2,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    verification_status="官网",
+                    title="湖北大学应用统计调剂信息",
+                    summary="湖北大学调剂信息",
+                    source_url="https://example.com/hubu-adjustment",
+                    meta_json={},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="opp-hbzyy",
+                    source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                    source_type="snapshot",
+                    year=2025,
+                    school_name="湖北中医药大学",
+                    school_name_normalized="湖北中医药大学",
+                    school_code="10507",
+                    region_name="湖北",
+                    school_tier=None,
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="055101",
+                    major_name="英语笔译",
+                    major_name_normalized="英语笔译",
+                    study_mode="fulltime",
+                    vacancy_count=2,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    verification_status="官网",
+                    title="湖北中医药大学英语笔译调剂信息",
+                    summary="湖北中医药大学调剂信息",
+                    source_url="https://example.com/hbzyy-adjustment",
+                    meta_json={},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_exact_school_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "湖北大学"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    schools = {item["school_name"] for item in payload["items"]}
+    assert "湖北大学" in schools
+    assert "湖北中医药大学" not in schools
+
+
 def test_adjustment_search_uses_adjustment_notice_label_for_table_results(client):
     with SessionLocal() as db:
         db.add(
