@@ -260,7 +260,7 @@ def _risk_tags_and_level(review_text: str) -> tuple[list[str], str | None]:
 def replace_historical_adjustment_profiles(db: Session, profiles: list[dict[str, Any]]) -> dict[str, int]:
     db.query(HistoricalAdjustmentProfile).delete()
     db.commit()
-    batch_size = 1000
+    batch_size = 5000
     for start in range(0, len(profiles), batch_size):
         timestamp = utcnow()
         batch = []
@@ -281,7 +281,7 @@ def replace_historical_adjustment_profiles(db: Session, profiles: list[dict[str,
 def replace_mentor_evaluations(db: Session, evaluations: list[dict[str, Any]]) -> dict[str, int]:
     db.query(MentorEvaluation).delete()
     db.commit()
-    batch_size = 1000
+    batch_size = 5000
     for start in range(0, len(evaluations), batch_size):
         timestamp = utcnow()
         batch = []
