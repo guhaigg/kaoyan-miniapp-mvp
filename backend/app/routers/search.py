@@ -935,6 +935,22 @@ def _split_search_items_by_department(items: list[SearchItem]) -> list[list[Sear
     return groups
 
 
+def _drop_ambiguous_school_level_search_items(items: list[SearchItem]) -> list[SearchItem]:
+    if not items:
+        return []
+    explicit_groups: dict[str, list[SearchItem]] = defaultdict(list)
+    missing_items: list[SearchItem] = []
+    for item in items:
+        department_token = _normalize_search_item_department_token(item)
+        if department_token:
+            explicit_groups[department_token].append(item)
+        else:
+            missing_items.append(item)
+    if len(explicit_groups) <= 1 or not missing_items:
+        return items
+    return [item for group in explicit_groups.values() for item in group]
+
+
 def _search_item_priority(item: SearchItem) -> tuple[int, int, int, float]:
     has_explicit_department = int(bool(_normalize_search_item_department_token(item)))
     has_reference_link = int(bool(item.source_url) or bool(item.school_intelligence and item.school_intelligence.reference_urls))
@@ -977,7 +993,8 @@ def _merge_search_items_by_business_key(items: list[SearchItem]) -> list[SearchI
     merged_items: list[SearchItem] = []
     for grouped_items in grouped.values():
         for study_mode_scoped_items in _split_search_items_by_study_mode(grouped_items):
-            for scoped_items in _split_search_items_by_department(study_mode_scoped_items):
+            scoped_candidates = _drop_ambiguous_school_level_search_items(study_mode_scoped_items)
+            for scoped_items in _split_search_items_by_department(scoped_candidates):
                 primary = _pick_primary_search_item(scoped_items)
                 merged_count = sum(max(1, int(item.merged_count or 1)) for item in scoped_items)
                 department_names = _dedupe_strings([item.department_name for item in scoped_items])

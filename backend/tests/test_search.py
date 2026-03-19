@@ -401,6 +401,106 @@ def test_adjustment_search_merges_missing_department_into_unique_department_grou
     assert "https://example.com/fzu-merge-2" in urls
 
 
+def test_adjustment_search_drops_school_level_aggregate_when_multiple_departments_exist(client):
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                AdjustmentOpportunity(
+                    opportunity_key="merge-opp-ambiguous-1",
+                    source_dataset_key="adjustment_stats_2025_full_raw",
+                    source_type="stats",
+                    year=2025,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北省",
+                    school_tier="普本",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085600",
+                    major_name="材料与化工",
+                    major_name_normalized="材料与化工",
+                    study_mode="fulltime",
+                    vacancy_count=219,
+                    min_score=260,
+                    avg_score=288.2,
+                    max_score=353,
+                    verification_status="历史统计",
+                    title="湖北大学 材料与化工 历史统计",
+                    summary="学校级汇总行",
+                    source_url="https://example.com/hubu-material-aggregate",
+                    meta_json={},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="merge-opp-ambiguous-2",
+                    source_dataset_key="adjustment_stats_2025_full_raw",
+                    source_type="stats",
+                    year=2025,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北省",
+                    school_tier="普本",
+                    department_name="材料科学与工程学院",
+                    department_name_normalized="材料科学与工程学院",
+                    major_code="085600",
+                    major_name="材料与化工",
+                    major_name_normalized="材料与化工",
+                    study_mode="fulltime",
+                    vacancy_count=107,
+                    min_score=260,
+                    avg_score=286.0,
+                    max_score=338,
+                    verification_status="历史统计",
+                    title="湖北大学 材料与化工 历史统计",
+                    summary="材料科学与工程学院",
+                    source_url="https://example.com/hubu-material-science",
+                    meta_json={},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="merge-opp-ambiguous-3",
+                    source_dataset_key="adjustment_stats_2025_full_raw",
+                    source_type="stats",
+                    year=2025,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北省",
+                    school_tier="普本",
+                    department_name="化学化工学院",
+                    department_name_normalized="化学化工学院",
+                    major_code="085600",
+                    major_name="材料与化工",
+                    major_name_normalized="材料与化工",
+                    study_mode="fulltime",
+                    vacancy_count=41,
+                    min_score=261,
+                    avg_score=295.4,
+                    max_score=353,
+                    verification_status="历史统计",
+                    title="湖北大学 材料与化工 历史统计",
+                    summary="化学化工学院",
+                    source_url="https://example.com/hubu-material-chem",
+                    meta_json={},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_aggregate_drop_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "湖北大学", "year": 2025, "page_size": 20},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 2
+    department_names = {item["department_name"] for item in payload["items"]}
+    assert department_names == {"材料科学与工程学院", "化学化工学院"}
+    assert all(item["source_url"] != "https://example.com/hubu-material-aggregate" for item in payload["items"])
+
+
 def test_adjustment_search_infers_department_from_title_when_missing(client):
     with SessionLocal() as db:
         db.add(
