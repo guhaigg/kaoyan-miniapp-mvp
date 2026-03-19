@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -1274,6 +1274,18 @@ function AdjustmentDetailDrawer({
   error: string;
   onClose: () => void;
 }) {
+  const [showAllMentorReviews, setShowAllMentorReviews] = useState(false);
+
+  useEffect(() => {
+    setShowAllMentorReviews(false);
+  }, [item?.id, detail?.id]);
+
+  const visibleMentorReviews = detail
+    ? showAllMentorReviews
+      ? detail.mentor_reviews
+      : detail.mentor_reviews.slice(0, 3)
+    : [];
+
   return (
     <AnimatePresence>
       {item ? (
@@ -1347,40 +1359,61 @@ function AdjustmentDetailDrawer({
                   <DetailStat label="最高分" value={detail.max_score} />
                 </div>
 
-                <DetailBlock title="时间与来源">
-                  <DetailRow label="发布时间" value={detail.published_at ? formatIntelTime(detail.published_at) : null} />
-                  <DetailRow label="采集时间" value={detail.captured_at ? formatIntelTime(detail.captured_at) : null} />
-                  <DetailRow label="更新时间" value={formatIntelTime(detail.updated_at)} />
-                  <DetailRow label="结果来源" value={detail.source_type} />
-                  <DetailRow label="数据集" value={detail.source_dataset_key} />
+                <DetailBlock title="调剂判断">
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-cyan-400/15 bg-cyan-500/10 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">系统判断</div>
+                      <div className="mt-2 text-sm leading-7 text-slate-100">
+                        {detail.historical_adjustment?.outlook_label
+                          ? `历史样本判断：${detail.historical_adjustment.outlook_label}。`
+                          : "当前没有足够历史分数样本，暂不输出胜率判断。"}
+                        {" "}
+                        {detail.release_timing?.signal_detail || "发布时间规律样本不足。"}
+                      </div>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <DetailRow label="历史样本" value={`${detail.historical_adjustment?.sample_count ?? 0}`} />
+                      <DetailRow label="活跃度" value={detail.school_intelligence?.confidence_label || null} />
+                      <DetailRow label="导师预警" value={detail.mentor_radar?.risk_label || "暂无明显预警"} />
+                      <DetailRow label="发布时间规律" value={detail.release_timing?.signal_label || null} />
+                    </div>
+                  </div>
                 </DetailBlock>
 
-                <DetailBlock title="站内内容">
+                <DetailBlock title="真实内容">
                   <div className="space-y-3 text-sm leading-7 text-slate-300">
                     <p>{detail.summary || "暂无摘要。"}</p>
-                    <p>{detail.body || "这条结果来自结构化调剂表，站内详情会展示结构化字段和原始链接；如需原文，请打开下方来源链接。"}</p>
+                    <p>
+                      {detail.body ||
+                        "这条结果来自结构化调剂表。当前可直接查看结构化字段、导师评价原文和真实来源；如果需要完整原始通知，请再打开底部原文来源。"}
+                    </p>
                   </div>
                 </DetailBlock>
 
                 <div className="grid gap-3 md:grid-cols-2">
+                  <DetailBlock title="时间与来源">
+                    <DetailRow label="发布时间" value={detail.published_at ? formatIntelTime(detail.published_at) : null} />
+                    <DetailRow label="采集时间" value={detail.captured_at ? formatIntelTime(detail.captured_at) : null} />
+                    <DetailRow label="更新时间" value={formatIntelTime(detail.updated_at)} />
+                    <DetailRow label="结果来源" value={detail.source_type} />
+                    <DetailRow label="数据集" value={detail.source_dataset_key} />
+                  </DetailBlock>
                   <DetailBlock title="导师雷达">
                     <DetailRow label="风险等级" value={detail.mentor_radar?.risk_label || "暂无明显预警"} />
                     <DetailRow label="评价数" value={`${detail.mentor_radar?.review_count ?? 0}`} />
                     <DetailRow label="预警数" value={`${detail.mentor_radar?.warning_count ?? 0}`} />
                     <DetailRow label="高频标签" value={detail.mentor_radar?.top_tags?.slice(0, 4).join(" / ") || "暂无"} />
                   </DetailBlock>
-                  <DetailBlock title="历史与节奏">
-                    <DetailRow label="历史样本" value={`${detail.historical_adjustment?.sample_count ?? 0}`} />
-                    <DetailRow label="活跃年份" value={detail.school_intelligence?.active_years?.slice(0, 6).join(" / ") || null} />
-                    <DetailRow label="高频时段" value={detail.release_timing?.signal_label || null} />
-                    <DetailRow label="活跃度" value={detail.school_intelligence?.confidence_label || null} />
-                  </DetailBlock>
                 </div>
 
-                <DetailBlock title="评价内容">
+                <DetailBlock title="导师真实评价">
                   <div className="space-y-3">
                     {detail.mentor_reviews.length > 0 ? (
-                      detail.mentor_reviews.map((review, index) => (
+                      <>
+                        <div className="rounded-2xl border border-amber-400/15 bg-amber-500/10 p-4 text-sm leading-7 text-amber-50">
+                          这里展示的是命中该院校/学院的真实评价片段。先看这里，再决定要不要打开原始链接。
+                        </div>
+                        {visibleMentorReviews.map((review, index) => (
                         <div key={`${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold text-white">{review.mentor_name}</span>
@@ -1412,17 +1445,33 @@ function AdjustmentDetailDrawer({
                           ) : null}
                           <p className="mt-3 text-sm leading-7 text-slate-300">{review.review_text}</p>
                         </div>
-                      ))
+                        ))}
+                        {detail.mentor_reviews.length > 3 ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllMentorReviews((value) => !value)}
+                            className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/[0.08]"
+                          >
+                            {showAllMentorReviews
+                              ? "收起更多评价"
+                              : `查看其余 ${detail.mentor_reviews.length - 3} 条评价`}
+                          </button>
+                        ) : null}
+                      </>
                     ) : (
                       <div className="text-sm text-slate-500">当前没有可展示的导师评价原文片段。</div>
                     )}
                   </div>
                 </DetailBlock>
 
-                <DetailBlock title="真实来源">
+                <DetailBlock title="来源与原文">
                   <div className="space-y-2">
                     {detail.links.length > 0 ? (
-                      detail.links.map((link) => (
+                      <>
+                        <div className="text-sm leading-7 text-slate-400">
+                          这里保留原始链接用于二次核验。正常使用时，优先看上面的结构化内容和导师评价。
+                        </div>
+                        {detail.links.map((link) => (
                         <a
                           key={`${link.source || "source"}-${link.url}`}
                           href={link.url}
@@ -1436,7 +1485,8 @@ function AdjustmentDetailDrawer({
                           </div>
                           <ExternalLink size={16} className="text-slate-400" />
                         </a>
-                      ))
+                        ))}
+                      </>
                     ) : (
                       <div className="text-sm text-slate-500">当前没有可点击的原始链接。</div>
                     )}
