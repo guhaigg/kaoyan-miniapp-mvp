@@ -1193,13 +1193,19 @@ function buildEmptyResultMessage(
   },
 ) {
   const keyword = filters.keywords.trim();
+  const schoolName = filters.schoolName.trim();
+  const majorFilter = filters.majorFilter.trim();
+  const regionFilter = filters.regionFilter.trim();
   const schoolLikeKeyword = isSchoolLikeQuery(keyword);
   if (queryType === "adjustments") {
-    if (filters.schoolName.trim() && filters.majorFilter.trim()) {
+    if (schoolName && majorFilter) {
       return "当前学校和专业组合下没有查到调剂结果，先去掉其中一个条件再试。";
     }
-    if (filters.regionFilter.trim() && filters.majorFilter.trim()) {
+    if (regionFilter && majorFilter) {
       return "当前地区和专业条件过窄，没有命中调剂结果，建议先放宽地区或专业。";
+    }
+    if (schoolName) {
+      return "当前院校名没有命中调剂结果，建议先补一个专业条件，或暂时去掉院校名只看全国范围。";
     }
     if (schoolLikeKeyword) {
       return "当前院校名没有命中调剂结果，建议把学校名填到“院校名”里，或再补一个专业条件重试。";
@@ -1212,8 +1218,11 @@ function buildEmptyResultMessage(
   if (schoolLikeKeyword) {
     return "当前院校名没有命中公告，建议把学校名填到“院校名”里，或再补一个学院/招生关键词重试。";
   }
-  if (filters.schoolName.trim() && filters.keywords.trim()) {
+  if (schoolName && keyword) {
     return "当前学校和关键词组合没有命中公告，建议先保留学校名或只搜核心词。";
+  }
+  if (schoolName) {
+    return "当前院校名没有命中公告，建议补一个学院或招生关键词，或先只搜更短的学校简称。";
   }
   if (keyword) {
     return "当前关键词没有命中公告，建议改成学校简称、学院名或更短的核心词。";
