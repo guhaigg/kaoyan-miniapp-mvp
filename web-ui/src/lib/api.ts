@@ -286,6 +286,14 @@ export type SearchItem = {
     outlook_label: string | null;
     future_program_count: number | null;
   } | null;
+  mentor_radar: {
+    review_count: number;
+    mentor_count: number;
+    warning_count: number;
+    positive_count: number;
+    top_tags: string[];
+    risk_label: string | null;
+  } | null;
   updated_at: string;
 };
 
@@ -506,16 +514,27 @@ export type AdjustmentIntelligenceSchoolItem = {
   categories: string[];
 };
 
+export type AdjustmentMentorRadarSchoolItem = {
+  school_name: string;
+  review_count: number;
+  warning_count: number;
+  mentor_count: number;
+  top_tags: string[];
+};
+
 export type AdjustmentIntelligenceResponse = {
   raw_dataset_total: number;
   raw_dataset_total_bytes: number;
   source_cards: AdjustmentIntelligenceSourceItem[];
   school_leaderboard: AdjustmentIntelligenceSchoolItem[];
+  mentor_school_leaderboard: AdjustmentMentorRadarSchoolItem[];
   study_mode_breakdown: AdjustmentIntelligenceBreakdownItem[];
   province_breakdown: AdjustmentIntelligenceBreakdownItem[];
   verification_breakdown: AdjustmentIntelligenceBreakdownItem[];
   category_breakdown: AdjustmentIntelligenceBreakdownItem[];
   score_band_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  mentor_risk_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  mentor_tag_breakdown: AdjustmentIntelligenceBreakdownItem[];
 };
 
 export type HealthResponse = {

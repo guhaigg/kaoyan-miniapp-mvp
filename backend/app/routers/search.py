@@ -14,7 +14,12 @@ from ..schemas import (
     SearchItem,
     SearchResponse,
 )
-from ..services.historical_intelligence import build_search_insight, load_profiles_for_search, normalize_school_name
+from ..services.historical_intelligence import (
+    build_search_insight,
+    load_mentor_radar_for_search,
+    load_profiles_for_search,
+    normalize_school_name,
+)
 from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -55,6 +60,7 @@ def _to_response(
         if isinstance(payload, AdjustmentSearchRequest)
         else {}
     )
+    mentor_radar = load_mentor_radar_for_search(db, [row.school.name if row.school else "" for row in items])
     serialized = []
     for row in items:
         school_name = row.school.name if row.school else None
@@ -72,6 +78,7 @@ def _to_response(
             )
             if insight is not None:
                 historical_adjustment = insight.__dict__
+        mentor_signal = mentor_radar.get(normalize_school_name(school_name)) if school_name else None
         serialized.append(
             SearchItem(
                 id=row.id,
@@ -99,6 +106,7 @@ def _to_response(
                     else None
                 ),
                 historical_adjustment=historical_adjustment,
+                mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
                 updated_at=row.updated_at,
             )
         )

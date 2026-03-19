@@ -416,6 +416,11 @@ export default function SearchPage() {
                               item.historical_adjustment.sample_count > 0
                                 ? `样本 ${item.historical_adjustment.sample_count}`
                                 : null,
+                              item.mentor_radar?.warning_count
+                                ? `导师预警 ${item.mentor_radar.warning_count}`
+                                : item.mentor_radar?.review_count
+                                  ? `导师评价 ${item.mentor_radar.review_count}`
+                                  : null,
                             ]
                               .filter(Boolean)
                               .join(" · ")
@@ -442,6 +447,12 @@ export default function SearchPage() {
                           : []),
                         ...(item.category === "adjustment" && item.historical_adjustment?.min_score !== null
                           ? [{ label: `历史最低 ${item.historical_adjustment?.min_score}`, tone: "sky" as const }]
+                          : []),
+                        ...(item.mentor_radar?.warning_count
+                          ? [{ label: `导师预警 ${item.mentor_radar.warning_count}`, tone: "amber" as const }]
+                          : []),
+                        ...(!item.mentor_radar?.warning_count && (item.mentor_radar?.review_count || 0) > 0
+                          ? [{ label: `导师评价 ${item.mentor_radar?.review_count}`, tone: "sky" as const }]
                           : []),
                       ],
                       publishTime: item.published_at || item.updated_at,

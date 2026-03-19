@@ -1,6 +1,6 @@
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
-from app.models import HistoricalAdjustmentProfile
+from app.models import HistoricalAdjustmentProfile, MentorEvaluation
 from app.services.search_cache import search_response_cache
 
 
@@ -211,6 +211,38 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
                 ),
             ]
         )
+        db.add_all(
+            [
+                MentorEvaluation(
+                    review_key="review-1",
+                    source_dataset_key="mentor_reviews_raw",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    department_name=None,
+                    department_name_normalized=None,
+                    mentor_name="张老师",
+                    mentor_name_normalized="张老师",
+                    review_text="不推荐，存在压榨和延毕风险。",
+                    review_tags=["不推荐", "压榨", "延毕"],
+                    risk_level="warning",
+                    meta_json={},
+                ),
+                MentorEvaluation(
+                    review_key="review-2",
+                    source_dataset_key="mentor_reviews_raw",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    department_name=None,
+                    department_name_normalized=None,
+                    mentor_name="李老师",
+                    mentor_name_normalized="李老师",
+                    review_text="经费充足，相处融洽。",
+                    review_tags=["经费充足", "相处融洽"],
+                    risk_level="positive",
+                    meta_json={},
+                ),
+            ]
+        )
         db.commit()
 
     token = _register_and_login(client, "adjustment_search_history_user")
@@ -227,6 +259,9 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
     assert item["historical_adjustment"]["avg_score"] == 330.0
     assert item["historical_adjustment"]["outlook"] == "high"
     assert item["historical_adjustment"]["future_program_count"] == 3
+    assert item["mentor_radar"]["review_count"] == 2
+    assert item["mentor_radar"]["warning_count"] == 1
+    assert item["mentor_radar"]["risk_label"] == "有导师预警"
 
 
 def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):

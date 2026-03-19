@@ -755,6 +755,38 @@ export default function AdminPage() {
               accentClass="from-rose-500 to-orange-300"
             />
           </div>
+
+          <div className="mt-6 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="mb-3 text-sm font-semibold text-white">导师避坑雷达</div>
+              <div className="space-y-3">
+                {(adjustmentIntelligenceQuery.data?.mentor_school_leaderboard || []).map((item, index) => (
+                  <div key={item.school_name} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center justify-between gap-3 text-sm text-white">
+                      <span>#{index + 1} {item.school_name}</span>
+                      <span className="text-amber-200">预警 {item.warning_count} / 评价 {item.review_count}</span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-400">
+                      导师 {item.mentor_count} 人 · {item.top_tags.join(" / ") || "暂未提炼标签"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <InsightBarCard
+                title="导师风险分布"
+                items={adjustmentIntelligenceQuery.data?.mentor_risk_breakdown || []}
+                accentClass="from-red-500 to-amber-300"
+              />
+              <InsightBarCard
+                title="导师评价高频标签"
+                items={adjustmentIntelligenceQuery.data?.mentor_tag_breakdown || []}
+                accentClass="from-indigo-500 to-fuchsia-300"
+              />
+            </div>
+          </div>
         </section>
 
         <section id="users" className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-2xl md:col-span-2">

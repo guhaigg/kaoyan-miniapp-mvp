@@ -13,7 +13,7 @@ from ..dependencies import (
     get_admin_identity,
     require_admin_request,
 )
-from ..models import AccountPaymentOrder, Content, PortalUser, PortalUserSubscription, RawDatasetArchive, School, UserEvent
+from ..models import AccountPaymentOrder, Content, MentorEvaluation, PortalUser, PortalUserSubscription, RawDatasetArchive, School, UserEvent
 from ..schemas import (
     AdminAuditItem,
     AdminAuditListResponse,
@@ -21,6 +21,7 @@ from ..schemas import (
     AdminChangePasswordResponse,
     AdminContentFingerprintStatsResponse,
     AdjustmentIntelligenceBreakdownItem,
+    AdjustmentMentorRadarSchoolItem,
     AdjustmentIntelligenceResponse,
     AdjustmentIntelligenceSchoolItem,
     AdjustmentIntelligenceSourceItem,
@@ -371,6 +372,8 @@ def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
     verification_counts: Counter[str] = Counter()
     category_counts: Counter[str] = Counter()
     score_band_counts: Counter[str] = Counter()
+    mentor_risk_counts: Counter[str] = Counter()
+    mentor_tag_counts: Counter[str] = Counter()
     source_cards: list[AdjustmentIntelligenceSourceItem] = []
 
     for source_key, title, summary, target_rows in summary_rows:
@@ -431,17 +434,55 @@ def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
     raw_dataset_total, raw_dataset_total_bytes = (
         db.query(func.count(RawDatasetArchive.id), func.coalesce(func.sum(RawDatasetArchive.file_size_bytes), 0)).one()
     )
+    mentor_rows = db.query(MentorEvaluation).all()
+    mentor_school_scores: defaultdict[str, dict] = defaultdict(
+        lambda: {"review_count": 0, "warning_count": 0, "mentor_names": set(), "tag_counts": Counter()}
+    )
+    for row in mentor_rows:
+        school_name = str(row.school_name or "").strip()
+        if not school_name:
+            continue
+        bucket = mentor_school_scores[school_name]
+        bucket["review_count"] += 1
+        if row.mentor_name:
+            bucket["mentor_names"].add(row.mentor_name_normalized or row.mentor_name)
+        level = str(row.risk_level or "neutral").strip() or "neutral"
+        mentor_risk_counts[level] += 1
+        if level == "warning":
+            bucket["warning_count"] += 1
+        for tag in row.review_tags or []:
+            clean_tag = str(tag or "").strip()
+            if clean_tag:
+                mentor_tag_counts[clean_tag] += 1
+                bucket["tag_counts"][clean_tag] += 1
+
+    mentor_school_leaderboard = [
+        AdjustmentMentorRadarSchoolItem(
+            school_name=school_name,
+            review_count=int(payload["review_count"]),
+            warning_count=int(payload["warning_count"]),
+            mentor_count=len(payload["mentor_names"]),
+            top_tags=[label for label, _count in payload["tag_counts"].most_common(3)],
+        )
+        for school_name, payload in sorted(
+            mentor_school_scores.items(),
+            key=lambda item: (-int(item[1]["warning_count"]), -int(item[1]["review_count"]), item[0]),
+        )[:10]
+    ]
 
     return AdjustmentIntelligenceResponse(
         raw_dataset_total=int(raw_dataset_total or 0),
         raw_dataset_total_bytes=int(raw_dataset_total_bytes or 0),
         source_cards=source_cards,
         school_leaderboard=school_leaderboard,
+        mentor_school_leaderboard=mentor_school_leaderboard,
         study_mode_breakdown=_to_breakdown_items(study_mode_counts),
         province_breakdown=_to_breakdown_items(province_counts),
         verification_breakdown=_to_breakdown_items(verification_counts),
         category_breakdown=_to_breakdown_items(category_counts),
         score_band_breakdown=_to_breakdown_items(score_band_counts),
+        mentor_risk_breakdown=_to_breakdown_items(mentor_risk_counts),
+        mentor_tag_breakdown=_to_breakdown_items(mentor_tag_counts),
     )
 
 

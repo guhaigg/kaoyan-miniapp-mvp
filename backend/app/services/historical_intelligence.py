@@ -4,7 +4,7 @@ import base64
 import gzip
 import hashlib
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -503,6 +503,16 @@ class HistoricalAdjustmentInsightResult:
     future_program_count: int | None
 
 
+@dataclass
+class MentorRadarInsightResult:
+    review_count: int
+    mentor_count: int
+    warning_count: int
+    positive_count: int
+    top_tags: list[str]
+    risk_label: str | None
+
+
 def _match_profile(
     profile: HistoricalAdjustmentProfile,
     *,
@@ -607,3 +617,49 @@ def load_profiles_for_search(db: Session, school_names: list[str]) -> dict[str, 
     for row in rows:
         grouped[row.school_name_normalized].append(row)
     return grouped
+
+
+def load_mentor_radar_for_search(db: Session, school_names: list[str]) -> dict[str, MentorRadarInsightResult]:
+    normalized_names = sorted({normalize_school_name(name) for name in school_names if normalize_school_name(name)})
+    if not normalized_names:
+        return {}
+    rows = (
+        db.query(MentorEvaluation)
+        .filter(MentorEvaluation.school_name_normalized.in_(normalized_names))
+        .all()
+    )
+    grouped: dict[str, list[MentorEvaluation]] = defaultdict(list)
+    for row in rows:
+        grouped[row.school_name_normalized].append(row)
+
+    result: dict[str, MentorRadarInsightResult] = {}
+    for school_name_normalized, evaluations in grouped.items():
+        mentor_names = {
+            row.mentor_name_normalized
+            for row in evaluations
+            if row.mentor_name_normalized
+        }
+        warning_count = sum(1 for row in evaluations if row.risk_level == "warning")
+        positive_count = sum(1 for row in evaluations if row.risk_level == "positive")
+        tag_counter: Counter[str] = Counter()
+        for row in evaluations:
+            for tag in row.review_tags or []:
+                clean_tag = str(tag or "").strip()
+                if clean_tag:
+                    tag_counter[clean_tag] += 1
+        risk_label = None
+        if warning_count >= 5:
+            risk_label = "导师预警较多"
+        elif warning_count > 0:
+            risk_label = "有导师预警"
+        elif positive_count > 0:
+            risk_label = "存在正向评价"
+        result[school_name_normalized] = MentorRadarInsightResult(
+            review_count=len(evaluations),
+            mentor_count=len(mentor_names),
+            warning_count=warning_count,
+            positive_count=positive_count,
+            top_tags=[label for label, _count in tag_counter.most_common(4)],
+            risk_label=risk_label,
+        )
+    return result

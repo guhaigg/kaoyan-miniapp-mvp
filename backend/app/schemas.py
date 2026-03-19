@@ -453,16 +453,27 @@ class AdjustmentIntelligenceSchoolItem(BaseModel):
     categories: list[str] = Field(default_factory=list)
 
 
+class AdjustmentMentorRadarSchoolItem(BaseModel):
+    school_name: str
+    review_count: int
+    warning_count: int
+    mentor_count: int
+    top_tags: list[str] = Field(default_factory=list)
+
+
 class AdjustmentIntelligenceResponse(BaseModel):
     raw_dataset_total: int
     raw_dataset_total_bytes: int
     source_cards: list[AdjustmentIntelligenceSourceItem] = Field(default_factory=list)
     school_leaderboard: list[AdjustmentIntelligenceSchoolItem] = Field(default_factory=list)
+    mentor_school_leaderboard: list[AdjustmentMentorRadarSchoolItem] = Field(default_factory=list)
     study_mode_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     province_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     verification_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     category_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     score_band_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    mentor_risk_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    mentor_tag_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
 
 
 class ContentIn(BaseModel):
@@ -807,6 +818,15 @@ class HistoricalAdjustmentInsight(BaseModel):
     future_program_count: int | None = None
 
 
+class MentorRadarInsight(BaseModel):
+    review_count: int = 0
+    mentor_count: int = 0
+    warning_count: int = 0
+    positive_count: int = 0
+    top_tags: list[str] = Field(default_factory=list)
+    risk_label: str | None = None
+
+
 class SearchItem(BaseModel):
     id: str
     category: str
@@ -825,6 +845,7 @@ class SearchItem(BaseModel):
     adjustment_study_modes: list[str] = Field(default_factory=list)
     adjustment_has_vacancy: bool | None = None
     historical_adjustment: HistoricalAdjustmentInsight | None = None
+    mentor_radar: MentorRadarInsight | None = None
     updated_at: datetime
 
 
