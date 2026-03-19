@@ -106,6 +106,13 @@ export default function SearchPage() {
   const hasLocalFilters =
     schoolTiers.length > 0 ||
     studyMode !== "all";
+  const activeServerQuickFilters = [
+    onlyHistoryBacked ? "有历史样本" : null,
+    onlyLongTrack ? "连续活跃" : null,
+    onlyWithReferenceLinks ? "带历史链接" : null,
+    hideMentorWarnings ? "排除导师预警" : null,
+  ].filter(Boolean) as string[];
+  const hasServerQuickFilters = activeServerQuickFilters.length > 0;
   const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
   const adjustmentLocked = isAnonymous;
   const previewLimit = searchResult?.preview_limit ?? 2;
@@ -778,6 +785,12 @@ export default function SearchPage() {
               <span>
                 总记录 <span className="text-white">{searchResult.total}</span>
               </span>
+              {hasServerQuickFilters ? (
+                <>
+                  <span className="text-slate-500">/</span>
+                  <span className="text-emerald-300">服务端快筛：{activeServerQuickFilters.join(" / ")}</span>
+                </>
+              ) : null}
               {searchResult.access_limited ? (
                 <>
                   <span className="text-slate-500">/</span>
@@ -924,10 +937,12 @@ export default function SearchPage() {
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
                   {queryType === "adjustments" ? (
                     <>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">先去掉一个筛选条件</span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">优先尝试学校名或专业代码</span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">城市和院校类别可单独试</span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">必要时取消情报快筛</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">先去掉一个筛选条件</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">优先尝试学校名或专业代码</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">城市和院校类别可单独试</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                        {hasServerQuickFilters ? "必要时取消服务端情报快筛" : "必要时取消情报快筛"}
+                      </span>
                     </>
                   ) : (
                     <>
