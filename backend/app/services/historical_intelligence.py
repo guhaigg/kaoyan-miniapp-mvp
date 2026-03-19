@@ -602,6 +602,7 @@ def _replace_rows_by_unique_key(
         db.commit()
 
     dialect = (db.bind.dialect.name if db.bind is not None else "sqlite").lower()
+    physical_columns = {column.name for column in model.__table__.columns}
     for start in range(0, len(rows), batch_size):
         timestamp = utcnow()
         batch = [
@@ -620,7 +621,7 @@ def _replace_rows_by_unique_key(
             update_map = {
                 key: getattr(stmt.inserted, key)
                 for key in batch[0].keys()
-                if key not in {"id", "created_at"}
+                if key not in {"id", "created_at"} and key in physical_columns
             }
             db.execute(stmt.on_duplicate_key_update(**update_map))
         elif dialect == "sqlite":
@@ -628,7 +629,7 @@ def _replace_rows_by_unique_key(
             update_map = {
                 key: getattr(stmt.excluded, key)
                 for key in batch[0].keys()
-                if key not in {"id", "created_at"}
+                if key not in {"id", "created_at"} and key in physical_columns
             }
             db.execute(stmt.on_conflict_do_update(index_elements=[key_field], set_=update_map))
         else:
