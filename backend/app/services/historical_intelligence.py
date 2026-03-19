@@ -9,12 +9,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from html import unescape
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from ..models import (
     AdjustmentOpportunity,
@@ -337,7 +338,35 @@ def _resolve_region_and_city(row: dict[str, Any], *columns: str) -> tuple[str | 
 
 
 def decode_raw_archive_bytes(archive: RawDatasetArchive) -> bytes:
+    source_path = Path(str(archive.source_path or "").strip()).expanduser()
+    if source_path and source_path.exists() and source_path.is_file():
+        return source_path.read_bytes()
     return gzip.decompress(base64.b64decode(archive.raw_file_payload))
+
+
+def _load_archives_by_keys(
+    db: Session,
+    dataset_keys: list[str],
+) -> dict[str, RawDatasetArchive]:
+    if not dataset_keys:
+        return {}
+    rows = (
+        db.query(RawDatasetArchive)
+        .options(
+            load_only(
+                RawDatasetArchive.dataset_key,
+                RawDatasetArchive.title,
+                RawDatasetArchive.dataset_type,
+                RawDatasetArchive.source_filename,
+                RawDatasetArchive.source_path,
+                RawDatasetArchive.workbook_format,
+                RawDatasetArchive.primary_sheet_name,
+            )
+        )
+        .filter(RawDatasetArchive.dataset_key.in_(dataset_keys))
+        .all()
+    )
+    return {row.dataset_key: row for row in rows}
 
 
 def load_archive_dataframe(archive: RawDatasetArchive, *, sheet_name: str | None = None) -> pd.DataFrame:
@@ -705,24 +734,18 @@ def _apply_department_scope(
 
 
 def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
-    archives = {
-        row.dataset_key: row
-        for row in db.query(RawDatasetArchive)
-        .filter(
-            RawDatasetArchive.dataset_key.in_(
-                [
-                    "adjustment_stats_2025_full_raw",
-                    "adjustment_stats_2023_2025_raw",
-                    "adjustment_landing_2024_raw",
-                    "adjustment_landing_2025_raw",
-                    "admission_program_catalog_2026_raw",
-                    "adjustment_snapshot_2025_0409_raw",
-                    "adjustment_announcement_2025_raw",
-                ]
-            )
-        )
-        .all()
-    }
+    archives = _load_archives_by_keys(
+        db,
+        [
+            "adjustment_stats_2025_full_raw",
+            "adjustment_stats_2023_2025_raw",
+            "adjustment_landing_2024_raw",
+            "adjustment_landing_2025_raw",
+            "admission_program_catalog_2026_raw",
+            "adjustment_snapshot_2025_0409_raw",
+            "adjustment_announcement_2025_raw",
+        ],
+    )
     school_lookup = _school_lookup(db)
     profiles: list[dict[str, Any]] = []
 
@@ -1130,10 +1153,20 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
 
 
 def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, Any]]:
-    archives = {
-        row.dataset_key: row
-        for row in db.query(RawDatasetArchive).all()
-    }
+    archives = _load_archives_by_keys(
+        db,
+        [
+            "admission_program_catalog_2026_raw",
+            "adjustment_snapshot_2025_0409_raw",
+            "adjustment_opportunity_2024_raw",
+            "adjustment_snapshot_2024_0414_raw",
+            "adjustment_announcement_2025_raw",
+            "adjustment_stats_2025_full_raw",
+            "adjustment_landing_2024_raw",
+            "adjustment_landing_2025_raw",
+            "adjustment_stats_2023_2025_raw",
+        ],
+    )
     school_lookup = _school_lookup(db)
     opportunities: list[dict[str, Any]] = []
 
@@ -1793,11 +1826,7 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
 
 
 def build_mentor_evaluations_from_archives(db: Session) -> list[dict[str, Any]]:
-    archive = (
-        db.query(RawDatasetArchive)
-        .filter(RawDatasetArchive.dataset_key == "mentor_reviews_raw")
-        .one_or_none()
-    )
+    archive = _load_archives_by_keys(db, ["mentor_reviews_raw"]).get("mentor_reviews_raw")
     if archive is None:
         return []
     df = load_archive_dataframe(archive)
@@ -2550,18 +2579,15 @@ def load_mentor_review_excerpts(
 
 def build_release_timing_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
     school_lookup = _school_lookup(db)
-    archives = (
-        db.query(RawDatasetArchive)
-        .filter(
-            RawDatasetArchive.dataset_key.in_(
-                [
-                    "adjustment_snapshot_2024_0414_raw",
-                    "adjustment_snapshot_2025_0409_raw",
-                    "adjustment_announcement_2025_raw",
-                ]
-            )
-        )
-        .all()
+    archives = list(
+        _load_archives_by_keys(
+            db,
+            [
+                "adjustment_snapshot_2024_0414_raw",
+                "adjustment_snapshot_2025_0409_raw",
+                "adjustment_announcement_2025_raw",
+            ],
+        ).values()
     )
     grouped_events: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for archive in archives:
