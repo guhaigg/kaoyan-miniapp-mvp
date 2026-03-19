@@ -337,6 +337,18 @@ def test_admin_can_view_school_import_seed_summaries(client):
     assert "mentor_reviews" in source_keys
 
 
+def test_admin_can_view_adjustment_intelligence(client):
+    admin_headers = _bootstrap_admin_headers(client, "portal_admin_adjustment_intel")
+
+    response = client.get("/api/v1/admin/adjustment-intelligence", headers=admin_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["raw_dataset_total"] >= 0
+    assert len(payload["source_cards"]) >= 5
+    assert len(payload["school_leaderboard"]) >= 5
+    assert len(payload["study_mode_breakdown"]) >= 1
+
+
 def test_admin_can_import_adjustment_supplemental_targets(client):
     admin_headers = _bootstrap_admin_headers(client, "portal_admin_import_adjustment_extra")
 

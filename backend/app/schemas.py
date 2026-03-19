@@ -432,6 +432,39 @@ class RawDatasetArchiveListResponse(BaseModel):
     items: list[RawDatasetArchiveItem] = Field(default_factory=list)
 
 
+class AdjustmentIntelligenceSourceItem(BaseModel):
+    source_key: str
+    title: str
+    total_rows: int
+    unique_schools: int | None = None
+    target_rows: int | None = None
+
+
+class AdjustmentIntelligenceBreakdownItem(BaseModel):
+    label: str
+    count: int
+
+
+class AdjustmentIntelligenceSchoolItem(BaseModel):
+    school_name: str
+    source_hits: int
+    score: int
+    sources: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+
+
+class AdjustmentIntelligenceResponse(BaseModel):
+    raw_dataset_total: int
+    raw_dataset_total_bytes: int
+    source_cards: list[AdjustmentIntelligenceSourceItem] = Field(default_factory=list)
+    school_leaderboard: list[AdjustmentIntelligenceSchoolItem] = Field(default_factory=list)
+    study_mode_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    province_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    verification_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    category_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    score_band_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+
+
 class ContentIn(BaseModel):
     category: Literal["announcement", "adjustment"]
     title: str = Field(min_length=1, max_length=500)

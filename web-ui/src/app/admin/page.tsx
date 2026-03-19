@@ -16,6 +16,7 @@ import {
 import { useAppStore } from "@/lib/store";
 import {
   useAdminAuditsQuery,
+  useAdminAdjustmentIntelligenceQuery,
   useAdminCreatePaymentOrderMutation,
   useAdminContentFingerprintStatsQuery,
   useAdminContentFileRetryMutation,
@@ -50,6 +51,7 @@ type SelectorPreviewMap = Record<string, SiteSectionSelectorPreviewResponse>;
 
 const ADMIN_NAV_ITEMS = [
   { id: "overview", label: "总览", description: "健康、吞吐和覆盖率", icon: LayoutDashboard },
+  { id: "intelligence", label: "调剂情报", description: "多源数据图表", icon: WandSparkles },
   { id: "users", label: "用户管理", description: "角色、密码和权益", icon: UserCog },
   { id: "audits", label: "审计事件", description: "管理员动作轨迹", icon: ScrollText },
   { id: "payments", label: "会员订单", description: "订单到账本和放权", icon: CreditCard },
@@ -92,6 +94,7 @@ export default function AdminPage() {
   const usersQuery = useAdminUsersQuery(isAuthenticated);
 
   const auditsQuery = useAdminAuditsQuery(isAuthenticated);
+  const adjustmentIntelligenceQuery = useAdminAdjustmentIntelligenceQuery(isAuthenticated);
   const fingerprintStatsQuery = useAdminContentFingerprintStatsQuery(isAuthenticated, isDocumentVisible);
   const paymentOrdersQuery = useAdminPaymentOrdersQuery(isAuthenticated, isDocumentVisible);
   const siteSectionsQuery = useAdminSiteSectionsQuery(isAuthenticated);
@@ -663,6 +666,95 @@ export default function AdminPage() {
             <div>碰撞 {fingerprintStatsQuery.data?.collision_contents ?? "--"}</div>
           </div>
         </div>
+        </section>
+
+        <section id="intelligence" className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-2xl md:col-span-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="flex items-center gap-2 text-lg font-semibold text-white">
+                <WandSparkles size={18} className="text-fuchsia-300" />
+                调剂情报面板
+              </h3>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                把 23-26 调剂统计、快照、公告、上岸画像和 2026 招生目录收成一套运营面板，用来判断热点学校、覆盖盲区和后续栏目治理优先级。
+              </p>
+            </div>
+            <div className="rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/10 px-4 py-3 text-right">
+              <div className="text-[11px] uppercase tracking-[0.22em] text-fuchsia-200/70">Raw Archive</div>
+              <div className="mt-1 text-2xl font-semibold text-white">{adjustmentIntelligenceQuery.data?.raw_dataset_total || 0}</div>
+              <div className="text-xs text-slate-400">{formatBytes(adjustmentIntelligenceQuery.data?.raw_dataset_total_bytes || 0)}</div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-4">
+            {(adjustmentIntelligenceQuery.data?.source_cards || []).map((item) => (
+              <div key={item.source_key} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="text-sm font-semibold text-white">{item.title}</div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-slate-500">样本</div>
+                    <div className="mt-1 font-semibold text-white">{item.total_rows.toLocaleString()}</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-slate-500">学校</div>
+                    <div className="mt-1 font-semibold text-white">{item.unique_schools?.toLocaleString() || "--"}</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-slate-500">seed</div>
+                    <div className="mt-1 font-semibold text-white">{item.target_rows?.toLocaleString() || "--"}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="mb-3 text-sm font-semibold text-white">热点学校榜</div>
+              <div className="space-y-3">
+                {(adjustmentIntelligenceQuery.data?.school_leaderboard || []).map((item, index) => (
+                  <div key={item.school_name} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center justify-between gap-3 text-sm text-white">
+                      <span>#{index + 1} {item.school_name}</span>
+                      <span className="text-fuchsia-200">命中 {item.source_hits} 源 / 分值 {item.score}</span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-400">{item.categories.slice(0, 2).join(" / ") || "未分类"}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <InsightBarCard
+                title="学习形式分布"
+                items={adjustmentIntelligenceQuery.data?.study_mode_breakdown || []}
+                accentClass="from-cyan-500 to-sky-300"
+              />
+              <InsightBarCard
+                title="地区 / 省份分布"
+                items={adjustmentIntelligenceQuery.data?.province_breakdown || []}
+                accentClass="from-emerald-500 to-lime-300"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-3">
+            <InsightBarCard
+              title="验证状态"
+              items={adjustmentIntelligenceQuery.data?.verification_breakdown || []}
+              accentClass="from-amber-500 to-yellow-300"
+            />
+            <InsightBarCard
+              title="院校层级"
+              items={adjustmentIntelligenceQuery.data?.category_breakdown || []}
+              accentClass="from-violet-500 to-fuchsia-300"
+            />
+            <InsightBarCard
+              title="分数带"
+              items={adjustmentIntelligenceQuery.data?.score_band_breakdown || []}
+              accentClass="from-rose-500 to-orange-300"
+            />
+          </div>
         </section>
 
         <section id="users" className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-2xl md:col-span-2">
@@ -1602,6 +1694,40 @@ function hasSelectorAttention(item: SiteSectionItem, preview?: SiteSectionSelect
 function average(values: number[]) {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function InsightBarCard({
+  title,
+  items,
+  accentClass,
+}: {
+  title: string;
+  items: Array<{ label: string; count: number }>;
+  accentClass: string;
+}) {
+  const max = items.reduce((current, item) => Math.max(current, item.count), 0) || 1;
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="mb-3 text-sm font-semibold text-white">{title}</div>
+      <div className="space-y-3">
+        {items.slice(0, 8).map((item) => (
+          <div key={`${title}-${item.label}`} className="space-y-1">
+            <div className="flex items-center justify-between gap-3 text-xs text-slate-300">
+              <span>{item.label}</span>
+              <span>{item.count.toLocaleString()}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full bg-gradient-to-r ${accentClass}`}
+                style={{ width: `${Math.max(8, (item.count / max) * 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+        {items.length === 0 ? <div className="text-xs text-slate-500">暂无数据</div> : null}
+      </div>
+    </div>
+  );
 }
 
 function formatBytes(bytes: number) {

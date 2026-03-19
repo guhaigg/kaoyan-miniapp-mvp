@@ -472,6 +472,39 @@ export type AdminContentFingerprintStatsResponse = {
   coverage_ratio: number;
 };
 
+export type AdjustmentIntelligenceSourceItem = {
+  source_key: string;
+  title: string;
+  total_rows: number;
+  unique_schools: number | null;
+  target_rows: number | null;
+};
+
+export type AdjustmentIntelligenceBreakdownItem = {
+  label: string;
+  count: number;
+};
+
+export type AdjustmentIntelligenceSchoolItem = {
+  school_name: string;
+  source_hits: number;
+  score: number;
+  sources: string[];
+  categories: string[];
+};
+
+export type AdjustmentIntelligenceResponse = {
+  raw_dataset_total: number;
+  raw_dataset_total_bytes: number;
+  source_cards: AdjustmentIntelligenceSourceItem[];
+  school_leaderboard: AdjustmentIntelligenceSchoolItem[];
+  study_mode_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  province_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  verification_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  category_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  score_band_breakdown: AdjustmentIntelligenceBreakdownItem[];
+};
+
 export type HealthResponse = {
   status: "ok" | "degraded";
   app_env: string;

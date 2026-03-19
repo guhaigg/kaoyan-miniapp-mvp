@@ -5,6 +5,7 @@ import {
   backfillSiteSectionSelectorConfig,
   createAdminPaymentOrderForUser,
   demoteAdminUser,
+  fetchAdminAdjustmentIntelligence,
   fetchAdminContentFingerprintStats,
   fetchAdminRawDatasets,
   fetchContentFiles,
@@ -31,6 +32,7 @@ const adminQueryKeys = {
   health: ["admin", "health"] as const,
   users: ["admin", "users"] as const,
   audits: ["admin", "audits"] as const,
+  adjustmentIntelligence: ["admin", "adjustment-intelligence"] as const,
   contentFingerprintStats: ["admin", "content-fingerprint-stats"] as const,
   paymentOrders: ["admin", "payment-orders"] as const,
   siteSections: ["admin", "site-sections"] as const,
@@ -68,6 +70,14 @@ export function useAdminAuditsQuery(enabled: boolean) {
   return useQuery({
     queryKey: adminQueryKeys.audits,
     queryFn: () => fetchAdminAudits({ page: 1, page_size: 24, prefix: "admin." }),
+    enabled,
+  });
+}
+
+export function useAdminAdjustmentIntelligenceQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: adminQueryKeys.adjustmentIntelligence,
+    queryFn: fetchAdminAdjustmentIntelligence,
     enabled,
   });
 }

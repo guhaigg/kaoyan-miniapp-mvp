@@ -2,6 +2,7 @@ import {
   api,
   type AdminAuditListResponse,
   type AdminContentFingerprintStatsResponse,
+  type AdjustmentIntelligenceResponse,
   type ContentFileListResponse,
   type ContentFileRetryParseResponse,
   type AdminMeResponse,
@@ -70,6 +71,9 @@ export const fetchAdminAudits = (params?: {
 
 export const fetchAdminContentFingerprintStats = () =>
   api.get<AdminContentFingerprintStatsResponse>("/admin/content-fingerprint-stats").then((response) => response.data);
+
+export const fetchAdminAdjustmentIntelligence = () =>
+  api.get<AdjustmentIntelligenceResponse>("/admin/adjustment-intelligence").then((response) => response.data);
 
 export const fetchHealthStatus = () =>
   api.get<HealthResponse>("/health").then((response) => response.data);

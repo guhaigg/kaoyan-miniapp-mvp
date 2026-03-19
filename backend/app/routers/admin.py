@@ -1,4 +1,6 @@
-from collections import Counter
+import json
+from collections import Counter, defaultdict
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from sqlalchemy import func, or_
@@ -18,6 +20,10 @@ from ..schemas import (
     AdminChangePasswordRequest,
     AdminChangePasswordResponse,
     AdminContentFingerprintStatsResponse,
+    AdjustmentIntelligenceBreakdownItem,
+    AdjustmentIntelligenceResponse,
+    AdjustmentIntelligenceSchoolItem,
+    AdjustmentIntelligenceSourceItem,
     AdminEntitlementItem,
     AdminIdentityItem,
     AdminMarkPaymentOrderPaidRequest,
@@ -334,6 +340,111 @@ def _content_fingerprint_stats(db: Session) -> AdminContentFingerprintStatsRespo
     )
 
 
+def _adjustment_data_dir() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "data"
+
+
+def _load_adjustment_summary(name: str) -> dict:
+    return json.loads((_adjustment_data_dir() / name).read_text(encoding="utf-8"))
+
+
+def _to_breakdown_items(counter: Counter[str], limit: int = 8) -> list[AdjustmentIntelligenceBreakdownItem]:
+    return [AdjustmentIntelligenceBreakdownItem(label=label, count=count) for label, count in counter.most_common(limit)]
+
+
+def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
+    summary_rows = [
+        ("adjustment_stats_2023_2025", "23-25 调剂统计", _load_adjustment_summary("adjustment_stats_2023_2025_summary.json"), 208),
+        ("adjustment_opportunity_2024", "2024 调剂机会", _load_adjustment_summary("adjustment_opportunity_2024_summary.json"), None),
+        ("adjustment_snapshot_2025_0409", "2025 调剂快照", _load_adjustment_summary("adjustment_opportunity_2025_snapshot_summary.json"), None),
+        ("adjustment_landing_2025", "2025 调剂上岸画像", _load_adjustment_summary("adjustment_landing_2025_summary.json"), None),
+        ("adjustment_snapshot_2024_0414", "2024-04-14 调剂快照", _load_adjustment_summary("adjustment_snapshot_2024_0414_summary.json"), None),
+        ("program_catalog_2026", "2026 招生专业目录", _load_adjustment_summary("admission_program_catalog_2026_summary.json"), None),
+        ("adjustment_stats_2025_full", "2025 调剂统计完整版", _load_adjustment_summary("adjustment_stats_2025_full_summary.json"), 127),
+        ("adjustment_announcement_2025", "2025 调剂公告", _load_adjustment_summary("adjustment_announcement_2025_summary.json"), None),
+        ("adjustment_landing_2024", "2024 调剂上岸画像", _load_adjustment_summary("adjustment_landing_2024_summary.json"), None),
+    ]
+
+    school_scores: defaultdict[str, dict] = defaultdict(lambda: {"score": 0, "source_hits": 0, "sources": set(), "categories": set()})
+    study_mode_counts: Counter[str] = Counter()
+    province_counts: Counter[str] = Counter()
+    verification_counts: Counter[str] = Counter()
+    category_counts: Counter[str] = Counter()
+    score_band_counts: Counter[str] = Counter()
+    source_cards: list[AdjustmentIntelligenceSourceItem] = []
+
+    for source_key, title, summary, target_rows in summary_rows:
+        source_cards.append(
+            AdjustmentIntelligenceSourceItem(
+                source_key=source_key,
+                title=title,
+                total_rows=int(summary.get("total_rows") or 0),
+                unique_schools=int(summary["unique_schools"]) if summary.get("unique_schools") is not None else None,
+                target_rows=target_rows,
+            )
+        )
+
+        for label, count in (summary.get("study_mode_counts") or {}).items():
+            study_mode_counts[str(label)] += int(count)
+        for label, count in (summary.get("province_counts") or {}).items():
+            province_counts[str(label)] += int(count)
+        for label, count in (summary.get("region_counts") or {}).items():
+            province_counts[str(label)] += int(count)
+        for label, count in (summary.get("validation_state_counts") or {}).items():
+            verification_counts[str(label)] += int(count)
+        for label, count in (summary.get("verification_counts") or {}).items():
+            verification_counts[str(label)] += int(count)
+        for label, count in (summary.get("category_counts") or {}).items():
+            category_counts[str(label)] += int(count)
+        for label, count in (summary.get("score_bucket_counts") or {}).items():
+            score_band_counts[str(label)] += int(count)
+
+        for row in summary.get("top_schools") or []:
+            school_name = str(row.get("school_name") or "").strip()
+            if not school_name:
+                continue
+            rank = int(row.get("rank") or 26)
+            score = max(1, 26 - rank)
+            item = school_scores[school_name]
+            if source_key not in item["sources"]:
+                item["sources"].add(source_key)
+                item["source_hits"] += 1
+            item["score"] += score
+            category = str(row.get("school_category") or "").strip()
+            if category:
+                item["categories"].add(category)
+
+    school_leaderboard = [
+        AdjustmentIntelligenceSchoolItem(
+            school_name=school_name,
+            source_hits=int(payload["source_hits"]),
+            score=int(payload["score"]),
+            sources=sorted(payload["sources"]),
+            categories=sorted(payload["categories"]),
+        )
+        for school_name, payload in sorted(
+            school_scores.items(),
+            key=lambda item: (-int(item[1]["source_hits"]), -int(item[1]["score"]), item[0]),
+        )[:12]
+    ]
+
+    raw_dataset_total, raw_dataset_total_bytes = (
+        db.query(func.count(RawDatasetArchive.id), func.coalesce(func.sum(RawDatasetArchive.file_size_bytes), 0)).one()
+    )
+
+    return AdjustmentIntelligenceResponse(
+        raw_dataset_total=int(raw_dataset_total or 0),
+        raw_dataset_total_bytes=int(raw_dataset_total_bytes or 0),
+        source_cards=source_cards,
+        school_leaderboard=school_leaderboard,
+        study_mode_breakdown=_to_breakdown_items(study_mode_counts),
+        province_breakdown=_to_breakdown_items(province_counts),
+        verification_breakdown=_to_breakdown_items(verification_counts),
+        category_breakdown=_to_breakdown_items(category_counts),
+        score_band_breakdown=_to_breakdown_items(score_band_counts),
+    )
+
+
 @router.get("/auth/me", response_model=AdminMeResponse)
 def admin_me(request: Request) -> AdminMeResponse:
     require_admin_request(request)
@@ -344,6 +455,12 @@ def admin_me(request: Request) -> AdminMeResponse:
 def admin_content_fingerprint_stats(request: Request, db: Session = Depends(get_db)) -> AdminContentFingerprintStatsResponse:
     require_admin_request(request)
     return _content_fingerprint_stats(db)
+
+
+@router.get("/adjustment-intelligence", response_model=AdjustmentIntelligenceResponse)
+def admin_adjustment_intelligence(request: Request, db: Session = Depends(get_db)) -> AdjustmentIntelligenceResponse:
+    require_admin_request(request)
+    return _adjustment_intelligence(db)
 
 
 @router.get("/raw-datasets", response_model=RawDatasetArchiveListResponse)
