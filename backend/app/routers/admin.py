@@ -13,7 +13,17 @@ from ..dependencies import (
     get_admin_identity,
     require_admin_request,
 )
-from ..models import AccountPaymentOrder, Content, MentorEvaluation, PortalUser, PortalUserSubscription, RawDatasetArchive, School, UserEvent
+from ..models import (
+    AccountPaymentOrder,
+    Content,
+    HistoricalReleaseTimingProfile,
+    MentorEvaluation,
+    PortalUser,
+    PortalUserSubscription,
+    RawDatasetArchive,
+    School,
+    UserEvent,
+)
 from ..schemas import (
     AdminAuditItem,
     AdminAuditListResponse,
@@ -25,6 +35,7 @@ from ..schemas import (
     AdjustmentIntelligenceResponse,
     AdjustmentIntelligenceSchoolItem,
     AdjustmentIntelligenceSourceItem,
+    AdjustmentTimingSchoolItem,
     AdminEntitlementItem,
     AdminIdentityItem,
     AdminMarkPaymentOrderPaidRequest,
@@ -374,6 +385,7 @@ def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
     score_band_counts: Counter[str] = Counter()
     mentor_risk_counts: Counter[str] = Counter()
     mentor_tag_counts: Counter[str] = Counter()
+    timing_hour_counts: Counter[str] = Counter()
     source_cards: list[AdjustmentIntelligenceSourceItem] = []
 
     for source_key, title, summary, target_rows in summary_rows:
@@ -470,12 +482,32 @@ def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
         )[:10]
     ]
 
+    timing_rows = db.query(HistoricalReleaseTimingProfile).all()
+    for row in timing_rows:
+        if row.peak_hour_bucket:
+            timing_hour_counts[row.peak_hour_bucket] += int(row.sample_count or 0)
+    timing_school_leaderboard = [
+        AdjustmentTimingSchoolItem(
+            school_name=row.school_name,
+            sample_count=int(row.sample_count),
+            peak_hour=row.peak_hour,
+            peak_hour_bucket=row.peak_hour_bucket,
+            window_start_md=row.window_start_md,
+            window_end_md=row.window_end_md,
+        )
+        for row in sorted(
+            timing_rows,
+            key=lambda item: (-int(item.sample_count or 0), item.school_name),
+        )[:10]
+    ]
+
     return AdjustmentIntelligenceResponse(
         raw_dataset_total=int(raw_dataset_total or 0),
         raw_dataset_total_bytes=int(raw_dataset_total_bytes or 0),
         source_cards=source_cards,
         school_leaderboard=school_leaderboard,
         mentor_school_leaderboard=mentor_school_leaderboard,
+        timing_school_leaderboard=timing_school_leaderboard,
         study_mode_breakdown=_to_breakdown_items(study_mode_counts),
         province_breakdown=_to_breakdown_items(province_counts),
         verification_breakdown=_to_breakdown_items(verification_counts),
@@ -483,6 +515,7 @@ def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
         score_band_breakdown=_to_breakdown_items(score_band_counts),
         mentor_risk_breakdown=_to_breakdown_items(mentor_risk_counts),
         mentor_tag_breakdown=_to_breakdown_items(mentor_tag_counts),
+        timing_hour_breakdown=_to_breakdown_items(timing_hour_counts),
     )
 
 

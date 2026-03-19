@@ -787,6 +787,35 @@ export default function AdminPage() {
               />
             </div>
           </div>
+
+          <div className="mt-6 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="mb-3 text-sm font-semibold text-white">发榜时间规律</div>
+              <div className="space-y-3">
+                {(adjustmentIntelligenceQuery.data?.timing_school_leaderboard || []).map((item, index) => (
+                  <div key={item.school_name} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center justify-between gap-3 text-sm text-white">
+                      <span>#{index + 1} {item.school_name}</span>
+                      <span className="text-cyan-200">{item.sample_count} 条样本</span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-400">
+                      {item.window_start_md && item.window_end_md ? `${item.window_start_md} - ${item.window_end_md}` : "时间窗待补充"}
+                      {" · "}
+                      {item.peak_hour_bucket ? `${item.peak_hour_bucket}${item.peak_hour ?? "--"}点` : "时段待补充"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <InsightBarCard
+                title="发榜时段分布"
+                items={adjustmentIntelligenceQuery.data?.timing_hour_breakdown || []}
+                accentClass="from-cyan-500 to-blue-300"
+              />
+            </div>
+          </div>
         </section>
 
         <section id="users" className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-2xl md:col-span-2">

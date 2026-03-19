@@ -1,6 +1,6 @@
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
-from app.models import HistoricalAdjustmentProfile, MentorEvaluation
+from app.models import HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation
 from app.services.search_cache import search_response_cache
 
 
@@ -241,6 +241,18 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
                     risk_level="positive",
                     meta_json={},
                 ),
+                HistoricalReleaseTimingProfile(
+                    profile_key="timing-1",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    sample_count=3,
+                    peak_hour=20,
+                    peak_hour_bucket="晚间",
+                    window_start_md="04-09",
+                    window_end_md="04-12",
+                    consistency_ratio=0.6667,
+                    meta_json={"sample_years": [2024, 2025]},
+                ),
             ]
         )
         db.commit()
@@ -262,6 +274,9 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
     assert item["mentor_radar"]["review_count"] == 2
     assert item["mentor_radar"]["warning_count"] == 1
     assert item["mentor_radar"]["risk_label"] == "有导师预警"
+    assert item["release_timing"]["peak_hour"] == 20
+    assert item["release_timing"]["peak_hour_bucket"] == "晚间"
+    assert item["release_timing"]["signal_label"] == "晚间高发"
 
 
 def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):

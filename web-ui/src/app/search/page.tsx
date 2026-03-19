@@ -953,6 +953,12 @@ function getAdjustmentProbability(score?: number, min?: number | null, avg?: num
 }
 
 function getTimingSignal(item: SearchItem) {
+  if (item.release_timing?.signal_detail) {
+    return {
+      title: item.release_timing.signal_label || "历史发榜规律",
+      detail: item.release_timing.signal_detail,
+    };
+  }
   const value = item.published_at || item.updated_at;
   const date = new Date(value);
   const hour = date.getHours();

@@ -461,12 +461,22 @@ class AdjustmentMentorRadarSchoolItem(BaseModel):
     top_tags: list[str] = Field(default_factory=list)
 
 
+class AdjustmentTimingSchoolItem(BaseModel):
+    school_name: str
+    sample_count: int
+    peak_hour: int | None = None
+    peak_hour_bucket: str | None = None
+    window_start_md: str | None = None
+    window_end_md: str | None = None
+
+
 class AdjustmentIntelligenceResponse(BaseModel):
     raw_dataset_total: int
     raw_dataset_total_bytes: int
     source_cards: list[AdjustmentIntelligenceSourceItem] = Field(default_factory=list)
     school_leaderboard: list[AdjustmentIntelligenceSchoolItem] = Field(default_factory=list)
     mentor_school_leaderboard: list[AdjustmentMentorRadarSchoolItem] = Field(default_factory=list)
+    timing_school_leaderboard: list[AdjustmentTimingSchoolItem] = Field(default_factory=list)
     study_mode_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     province_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     verification_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
@@ -474,6 +484,7 @@ class AdjustmentIntelligenceResponse(BaseModel):
     score_band_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     mentor_risk_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     mentor_tag_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    timing_hour_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
 
 
 class ContentIn(BaseModel):
@@ -827,6 +838,17 @@ class MentorRadarInsight(BaseModel):
     risk_label: str | None = None
 
 
+class ReleaseTimingInsight(BaseModel):
+    sample_count: int = 0
+    sample_years: list[int] = Field(default_factory=list)
+    peak_hour: int | None = None
+    peak_hour_bucket: str | None = None
+    window_start_md: str | None = None
+    window_end_md: str | None = None
+    signal_label: str | None = None
+    signal_detail: str | None = None
+
+
 class SearchItem(BaseModel):
     id: str
     category: str
@@ -846,6 +868,7 @@ class SearchItem(BaseModel):
     adjustment_has_vacancy: bool | None = None
     historical_adjustment: HistoricalAdjustmentInsight | None = None
     mentor_radar: MentorRadarInsight | None = None
+    release_timing: ReleaseTimingInsight | None = None
     updated_at: datetime
 
 

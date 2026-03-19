@@ -12,8 +12,10 @@ if str(ROOT) not in sys.path:
 from app.db import SessionLocal, init_db
 from app.services.historical_intelligence import (  # noqa: E402
     build_historical_profiles_from_archives,
+    build_release_timing_profiles_from_archives,
     build_mentor_evaluations_from_archives,
     replace_historical_adjustment_profiles,
+    replace_release_timing_profiles,
     replace_mentor_evaluations,
 )
 
@@ -27,6 +29,8 @@ def main() -> None:
     with SessionLocal() as db:
         profiles = build_historical_profiles_from_archives(db)
         profile_result = replace_historical_adjustment_profiles(db, profiles)
+        timing_profiles = build_release_timing_profiles_from_archives(db)
+        timing_result = replace_release_timing_profiles(db, timing_profiles)
 
         mentor_result = {"evaluations": 0}
         if not args.skip_mentor:
@@ -37,6 +41,7 @@ def main() -> None:
         json.dumps(
             {
                 "historical_profiles": profile_result["profiles"],
+                "release_timing_profiles": timing_result["profiles"],
                 "mentor_evaluations": mentor_result["evaluations"],
             },
             ensure_ascii=False,

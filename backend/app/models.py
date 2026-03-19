@@ -279,6 +279,31 @@ class MentorEvaluation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
+class HistoricalReleaseTimingProfile(Base):
+    __tablename__ = "historical_release_timing_profiles"
+    __table_args__ = (
+        UniqueConstraint("profile_key", name="uq_historical_release_timing_profiles_profile_key"),
+        Index("ix_historical_release_timing_profiles_school", "school_name_normalized"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    profile_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    school_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    school_name_normalized: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    peak_hour: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    peak_hour_bucket: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    window_start_md: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    window_end_md: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    consistency_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    meta_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    school: Mapped["School | None"] = relationship()
+
+
 class CrawlJob(Base):
     __tablename__ = "crawl_jobs"
 

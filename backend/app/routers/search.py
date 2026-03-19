@@ -16,8 +16,10 @@ from ..schemas import (
 )
 from ..services.historical_intelligence import (
     build_search_insight,
+    build_release_timing_insight,
     load_mentor_radar_for_search,
     load_profiles_for_search,
+    load_release_timing_for_search,
     normalize_school_name,
 )
 from ..services.search_cache import search_response_cache
@@ -61,6 +63,7 @@ def _to_response(
         else {}
     )
     mentor_radar = load_mentor_radar_for_search(db, [row.school.name if row.school else "" for row in items])
+    release_timings = load_release_timing_for_search(db, [row.school.name if row.school else "" for row in items])
     serialized = []
     for row in items:
         school_name = row.school.name if row.school else None
@@ -79,6 +82,11 @@ def _to_response(
             if insight is not None:
                 historical_adjustment = insight.__dict__
         mentor_signal = mentor_radar.get(normalize_school_name(school_name)) if school_name else None
+        release_timing_signal = (
+            build_release_timing_insight(release_timings.get(normalize_school_name(school_name)))
+            if school_name
+            else None
+        )
         serialized.append(
             SearchItem(
                 id=row.id,
@@ -107,6 +115,7 @@ def _to_response(
                 ),
                 historical_adjustment=historical_adjustment,
                 mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
+                release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
                 updated_at=row.updated_at,
             )
         )

@@ -6,13 +6,22 @@ import hashlib
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Any
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from ..models import HistoricalAdjustmentProfile, MentorEvaluation, RawDatasetArchive, School, new_id, utcnow
+from ..models import (
+    HistoricalAdjustmentProfile,
+    HistoricalReleaseTimingProfile,
+    MentorEvaluation,
+    RawDatasetArchive,
+    School,
+    new_id,
+    utcnow,
+)
 
 
 def _strip_text(value: Any) -> str:
@@ -118,6 +127,51 @@ def load_archive_dataframe(archive: RawDatasetArchive, *, sheet_name: str | None
     if archive.workbook_format == "xls":
         return pd.read_excel(data, sheet_name=target_sheet, engine="xlrd")
     return pd.read_excel(data, sheet_name=target_sheet, engine="openpyxl")
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    text = _strip_text(value)
+    if not text:
+        return None
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    if isinstance(parsed, pd.Timestamp):
+        return parsed.to_pydatetime()
+    if isinstance(parsed, datetime):
+        return parsed
+    return None
+
+
+def _parse_capture_datetime_from_filename(value: Any) -> datetime | None:
+    text = _strip_text(value)
+    matched = re.search(r"(\d{2})年(\d{1,2})月(\d{1,2})日(\d{1,2})时(\d{1,2})分", text)
+    if not matched:
+        return None
+    year = 2000 + int(matched.group(1))
+    month = int(matched.group(2))
+    day = int(matched.group(3))
+    hour = int(matched.group(4))
+    minute = int(matched.group(5))
+    return datetime(year, month, day, hour, minute)
+
+
+def _hour_bucket(hour: int | None) -> str | None:
+    if hour is None:
+        return None
+    if 18 <= hour <= 23:
+        return "晚间"
+    if 12 <= hour <= 17:
+        return "下午"
+    if 6 <= hour <= 11:
+        return "上午"
+    return "凌晨"
+
+
+def _month_day(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    return f"{dt.month:02d}-{dt.day:02d}"
 
 
 def _safe_int(value: Any, *, default: int = 0) -> int:
@@ -243,6 +297,26 @@ def replace_mentor_evaluations(db: Session, evaluations: list[dict[str, Any]]) -
         db.bulk_insert_mappings(MentorEvaluation, batch)
         db.commit()
     return {"evaluations": len(evaluations)}
+
+
+def replace_release_timing_profiles(db: Session, profiles: list[dict[str, Any]]) -> dict[str, int]:
+    db.query(HistoricalReleaseTimingProfile).delete()
+    db.commit()
+    timestamp = utcnow()
+    batch = []
+    for row in profiles:
+        batch.append(
+            {
+                "id": new_id(),
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                **row,
+            }
+        )
+    if batch:
+        db.bulk_insert_mappings(HistoricalReleaseTimingProfile, batch)
+    db.commit()
+    return {"profiles": len(profiles)}
 
 
 def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
@@ -513,6 +587,18 @@ class MentorRadarInsightResult:
     risk_label: str | None
 
 
+@dataclass
+class ReleaseTimingInsightResult:
+    sample_count: int
+    sample_years: list[int]
+    peak_hour: int | None
+    peak_hour_bucket: str | None
+    window_start_md: str | None
+    window_end_md: str | None
+    signal_label: str | None
+    signal_detail: str | None
+
+
 def _match_profile(
     profile: HistoricalAdjustmentProfile,
     *,
@@ -663,3 +749,116 @@ def load_mentor_radar_for_search(db: Session, school_names: list[str]) -> dict[s
             risk_label=risk_label,
         )
     return result
+
+
+def build_release_timing_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
+    school_lookup = _school_lookup(db)
+    archives = (
+        db.query(RawDatasetArchive)
+        .filter(
+            RawDatasetArchive.dataset_key.in_(
+                [
+                    "adjustment_snapshot_2024_0414_raw",
+                    "adjustment_snapshot_2025_0409_raw",
+                    "adjustment_announcement_2025_raw",
+                ]
+            )
+        )
+        .all()
+    )
+    grouped_events: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for archive in archives:
+        df = load_archive_dataframe(archive)
+        capture_dt = _parse_capture_datetime_from_filename(archive.source_filename)
+        for row in df.to_dict(orient="records"):
+            school_name = _strip_text(row.get("学校") or row.get("大学"))
+            if not school_name:
+                continue
+            school_name_normalized = normalize_school_name(school_name)
+            if not school_name_normalized:
+                continue
+            published_dt = _parse_datetime(row.get("最新时间") or row.get("发布时间"))
+            if published_dt is None and capture_dt is not None:
+                elapsed_minutes = score_to_int(row.get("距离开网已过时间（分）"))
+                if elapsed_minutes is not None and elapsed_minutes >= 0:
+                    published_dt = capture_dt - timedelta(minutes=elapsed_minutes)
+            if published_dt is None:
+                continue
+            grouped_events[school_name_normalized].append(
+                {
+                    "school_name": school_name_normalized,
+                    "display_name": school_name,
+                    "published_dt": published_dt,
+                    "year": published_dt.year,
+                    "source_dataset_key": archive.dataset_key,
+                }
+            )
+
+    profiles: list[dict[str, Any]] = []
+    for school_name_normalized, events in grouped_events.items():
+        events.sort(key=lambda item: item["published_dt"])
+        hours = Counter(event["published_dt"].hour for event in events)
+        peak_hour, peak_count = hours.most_common(1)[0]
+        month_days = [_month_day(event["published_dt"]) for event in events if _month_day(event["published_dt"])]
+        years = sorted({int(event["year"]) for event in events})
+        source_dataset_keys = sorted({str(event["source_dataset_key"]) for event in events})
+        profile_key = hashlib.sha256(f"timing|{school_name_normalized}".encode("utf-8")).hexdigest()
+        profiles.append(
+            {
+                "profile_key": profile_key,
+                "school_id": school_lookup.get(school_name_normalized),
+                "school_name": events[0]["display_name"],
+                "school_name_normalized": school_name_normalized,
+                "sample_count": len(events),
+                "peak_hour": peak_hour,
+                "peak_hour_bucket": _hour_bucket(peak_hour),
+                "window_start_md": min(month_days) if month_days else None,
+                "window_end_md": max(month_days) if month_days else None,
+                "consistency_ratio": round(peak_count / len(events), 4) if events else None,
+                "meta_json": {
+                    "sample_years": years,
+                    "source_dataset_keys": source_dataset_keys,
+                    "top_hours": [[hour, count] for hour, count in hours.most_common(4)],
+                },
+            }
+        )
+    return profiles
+
+
+def load_release_timing_for_search(db: Session, school_names: list[str]) -> dict[str, HistoricalReleaseTimingProfile]:
+    normalized_names = sorted({normalize_school_name(name) for name in school_names if normalize_school_name(name)})
+    if not normalized_names:
+        return {}
+    rows = (
+        db.query(HistoricalReleaseTimingProfile)
+        .filter(HistoricalReleaseTimingProfile.school_name_normalized.in_(normalized_names))
+        .all()
+    )
+    return {row.school_name_normalized: row for row in rows}
+
+
+def build_release_timing_insight(profile: HistoricalReleaseTimingProfile | None) -> ReleaseTimingInsightResult | None:
+    if profile is None or profile.sample_count <= 0:
+        return None
+    years = [int(value) for value in (profile.meta_json or {}).get("sample_years", []) if str(value).strip()]
+    bucket = profile.peak_hour_bucket
+    label = None
+    if bucket and profile.sample_count >= 3:
+        label = f"{bucket}高发"
+    elif bucket:
+        label = f"{bucket}信号"
+    detail = None
+    if profile.window_start_md and profile.window_end_md and bucket and profile.peak_hour is not None:
+        detail = f"历史样本 {profile.sample_count} 条，多在 {profile.window_start_md} - {profile.window_end_md} 的{bucket}{profile.peak_hour:02d}点左右发布。"
+    elif profile.peak_hour is not None:
+        detail = f"历史样本 {profile.sample_count} 条，当前高频时段约为 {profile.peak_hour:02d}:00。"
+    return ReleaseTimingInsightResult(
+        sample_count=profile.sample_count,
+        sample_years=years,
+        peak_hour=profile.peak_hour,
+        peak_hour_bucket=bucket,
+        window_start_md=profile.window_start_md,
+        window_end_md=profile.window_end_md,
+        signal_label=label,
+        signal_detail=detail,
+    )

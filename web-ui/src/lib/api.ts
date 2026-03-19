@@ -294,6 +294,16 @@ export type SearchItem = {
     top_tags: string[];
     risk_label: string | null;
   } | null;
+  release_timing: {
+    sample_count: number;
+    sample_years: number[];
+    peak_hour: number | null;
+    peak_hour_bucket: string | null;
+    window_start_md: string | null;
+    window_end_md: string | null;
+    signal_label: string | null;
+    signal_detail: string | null;
+  } | null;
   updated_at: string;
 };
 
@@ -522,12 +532,22 @@ export type AdjustmentMentorRadarSchoolItem = {
   top_tags: string[];
 };
 
+export type AdjustmentTimingSchoolItem = {
+  school_name: string;
+  sample_count: number;
+  peak_hour: number | null;
+  peak_hour_bucket: string | null;
+  window_start_md: string | null;
+  window_end_md: string | null;
+};
+
 export type AdjustmentIntelligenceResponse = {
   raw_dataset_total: number;
   raw_dataset_total_bytes: number;
   source_cards: AdjustmentIntelligenceSourceItem[];
   school_leaderboard: AdjustmentIntelligenceSchoolItem[];
   mentor_school_leaderboard: AdjustmentMentorRadarSchoolItem[];
+  timing_school_leaderboard: AdjustmentTimingSchoolItem[];
   study_mode_breakdown: AdjustmentIntelligenceBreakdownItem[];
   province_breakdown: AdjustmentIntelligenceBreakdownItem[];
   verification_breakdown: AdjustmentIntelligenceBreakdownItem[];
@@ -535,6 +555,7 @@ export type AdjustmentIntelligenceResponse = {
   score_band_breakdown: AdjustmentIntelligenceBreakdownItem[];
   mentor_risk_breakdown: AdjustmentIntelligenceBreakdownItem[];
   mentor_tag_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  timing_hour_breakdown: AdjustmentIntelligenceBreakdownItem[];
 };
 
 export type HealthResponse = {
