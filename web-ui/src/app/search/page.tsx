@@ -1192,6 +1192,8 @@ function buildEmptyResultMessage(
     candidateScoreFilter: string;
   },
 ) {
+  const keyword = filters.keywords.trim();
+  const schoolLikeKeyword = isSchoolLikeQuery(keyword);
   if (queryType === "adjustments") {
     if (filters.schoolName.trim() && filters.majorFilter.trim()) {
       return "当前学校和专业组合下没有查到调剂结果，先去掉其中一个条件再试。";
@@ -1199,15 +1201,21 @@ function buildEmptyResultMessage(
     if (filters.regionFilter.trim() && filters.majorFilter.trim()) {
       return "当前地区和专业条件过窄，没有命中调剂结果，建议先放宽地区或专业。";
     }
-    if (filters.keywords.trim()) {
+    if (schoolLikeKeyword) {
+      return "当前院校名没有命中调剂结果，建议把学校名填到“院校名”里，或再补一个专业条件重试。";
+    }
+    if (keyword) {
       return "当前关键词没有命中调剂结果，建议改成学校名、专业名或专业代码重试。";
     }
     return "暂时没有命中调剂结果，建议先输入学校、专业或地区，再逐步收窄条件。";
   }
+  if (schoolLikeKeyword) {
+    return "当前院校名没有命中公告，建议把学校名填到“院校名”里，或再补一个学院/招生关键词重试。";
+  }
   if (filters.schoolName.trim() && filters.keywords.trim()) {
     return "当前学校和关键词组合没有命中公告，建议先保留学校名或只搜核心词。";
   }
-  if (filters.keywords.trim()) {
+  if (keyword) {
     return "当前关键词没有命中公告，建议改成学校简称、学院名或更短的核心词。";
   }
   return "暂时没有命中公告结果，建议先输入学校名、学院名或招生关键词。";
@@ -1239,6 +1247,11 @@ function buildEmptyStateDetail(
   return hasLocalFilters
     ? "后端结果已经返回，但被前端高级筛选拦掉了。先放宽学校层次或学习方式。"
     : "后端没有返回符合条件的公告结果。建议缩短关键词，或只保留学校名再试。";
+}
+
+function isSchoolLikeQuery(value: string) {
+  if (!value) return false;
+  return /(大学|学院|研究院|研究所|师范|医科|理工|科技大学|工业大学|农业大学|中医药大学)$/.test(value);
 }
 
 function matchesSchoolTier(tier: SchoolTier, text: string) {
