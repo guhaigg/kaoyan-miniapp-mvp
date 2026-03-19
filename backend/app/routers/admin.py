@@ -2,7 +2,7 @@ from collections import Counter
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, selectinload
 
 from ..config import get_settings
 from ..db import get_db
@@ -349,7 +349,34 @@ def admin_content_fingerprint_stats(request: Request, db: Session = Depends(get_
 @router.get("/raw-datasets", response_model=RawDatasetArchiveListResponse)
 def list_raw_datasets(request: Request, db: Session = Depends(get_db)) -> RawDatasetArchiveListResponse:
     require_admin_request(request)
-    rows = db.query(RawDatasetArchive).order_by(RawDatasetArchive.created_at.desc()).all()
+    rows = (
+        db.query(RawDatasetArchive)
+        .options(
+            load_only(
+                RawDatasetArchive.id,
+                RawDatasetArchive.dataset_key,
+                RawDatasetArchive.title,
+                RawDatasetArchive.dataset_type,
+                RawDatasetArchive.source_filename,
+                RawDatasetArchive.source_path,
+                RawDatasetArchive.workbook_format,
+                RawDatasetArchive.file_sha256,
+                RawDatasetArchive.file_size_bytes,
+                RawDatasetArchive.storage_encoding,
+                RawDatasetArchive.sheet_names,
+                RawDatasetArchive.primary_sheet_name,
+                RawDatasetArchive.total_rows,
+                RawDatasetArchive.total_columns,
+                RawDatasetArchive.header_row,
+                RawDatasetArchive.preview_rows,
+                RawDatasetArchive.notes,
+                RawDatasetArchive.created_at,
+                RawDatasetArchive.updated_at,
+            )
+        )
+        .order_by(RawDatasetArchive.created_at.desc())
+        .all()
+    )
     return RawDatasetArchiveListResponse(total=len(rows), items=[_to_raw_dataset_archive_item(row) for row in rows])
 
 

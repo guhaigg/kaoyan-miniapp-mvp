@@ -35,8 +35,11 @@ def _bootstrap_admin_headers(client, username: str = "portal_admin", password: s
 
 def test_archive_dataset_file_persists_workbook_metadata(tmp_path: Path):
     workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.title = "Sheet1"
+    report_sheet = workbook.active
+    report_sheet.title = "报告"
+    report_sheet.append([None, None])
+    report_sheet.append([None, "这是一张汇总报告"])
+    worksheet = workbook.create_sheet("总表")
     worksheet.append(["学校", "专业", "人数"])
     worksheet.append(["测试大学", "电子信息", 12])
     worksheet.append(["测试大学", "材料与化工", 8])
@@ -57,6 +60,7 @@ def test_archive_dataset_file_persists_workbook_metadata(tmp_path: Path):
         assert row.dataset_key == "test_adjustment_sheet"
         assert row.source_filename == "sample.xlsx"
         assert row.workbook_format == "xlsx"
+        assert row.primary_sheet_name == "总表"
         assert row.total_rows == 3
         assert row.total_columns == 3
         assert row.header_row == ["学校", "专业", "人数"]

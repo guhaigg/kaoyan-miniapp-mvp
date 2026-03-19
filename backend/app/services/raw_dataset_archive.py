@@ -21,11 +21,21 @@ def _coerce_cell(value: Any) -> str:
 def _extract_xlsx_metadata(path: Path) -> dict[str, Any]:
     workbook = load_workbook(path, read_only=True, data_only=True)
     sheet_names = list(workbook.sheetnames)
-    primary_sheet_name = sheet_names[0] if sheet_names else None
+    primary_sheet_name = None
     total_rows = None
     total_columns = None
     header_row: list[str] = []
     preview_rows: list[list[str]] = []
+
+    best_sheet_score = -1
+    for candidate_name in sheet_names:
+        candidate = workbook[candidate_name]
+        first_row = next(candidate.iter_rows(values_only=True), None)
+        non_empty_header = sum(1 for value in (first_row or []) if _coerce_cell(value))
+        score = candidate.max_row * max(1, non_empty_header)
+        if score > best_sheet_score:
+            best_sheet_score = score
+            primary_sheet_name = candidate_name
 
     if primary_sheet_name:
         worksheet = workbook[primary_sheet_name]
@@ -60,11 +70,21 @@ def _extract_xls_metadata(path: Path) -> dict[str, Any]:
 
     workbook = xlrd.open_workbook(path)
     sheet_names = workbook.sheet_names()
-    primary_sheet_name = sheet_names[0] if sheet_names else None
+    primary_sheet_name = None
     total_rows = None
     total_columns = None
     header_row: list[str] = []
     preview_rows: list[list[str]] = []
+
+    best_sheet_score = -1
+    for candidate_name in sheet_names:
+        candidate = workbook.sheet_by_name(candidate_name)
+        first_row = candidate.row_values(0) if candidate.nrows else []
+        non_empty_header = sum(1 for value in first_row if _coerce_cell(value))
+        score = candidate.nrows * max(1, non_empty_header)
+        if score > best_sheet_score:
+            best_sheet_score = score
+            primary_sheet_name = candidate_name
 
     if primary_sheet_name:
         sheet = workbook.sheet_by_name(primary_sheet_name)
