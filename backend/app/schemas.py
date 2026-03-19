@@ -840,6 +840,14 @@ class MentorRadarInsight(BaseModel):
     risk_label: str | None = None
 
 
+class MentorReviewExcerpt(BaseModel):
+    mentor_name: str
+    department_name: str | None = None
+    risk_level: str | None = None
+    review_tags: list[str] = Field(default_factory=list)
+    review_text: str
+
+
 class ReleaseTimingInsight(BaseModel):
     sample_count: int = 0
     sample_years: list[int] = Field(default_factory=list)
@@ -938,6 +946,7 @@ class AdjustmentSearchDetailResponse(BaseModel):
     links: list[AdjustmentSearchLinkItem] = Field(default_factory=list)
     historical_adjustment: HistoricalAdjustmentInsight | None = None
     mentor_radar: MentorRadarInsight | None = None
+    mentor_reviews: list[MentorReviewExcerpt] = Field(default_factory=list)
     release_timing: ReleaseTimingInsight | None = None
     school_intelligence: SchoolIntelligenceInsight | None = None
     meta_json: dict[str, Any] = Field(default_factory=dict)

@@ -935,6 +935,22 @@ def test_content_ingest_requires_admin_token(client):
 def test_adjustment_detail_returns_structured_opportunity_payload(client):
     with SessionLocal() as db:
         db.add(
+            MentorEvaluation(
+                review_key="mentor-detail-1",
+                source_dataset_key="mentor_reviews_raw",
+                school_name="山东大学",
+                school_name_normalized="山东大学",
+                department_name="外国语学院",
+                department_name_normalized="外国语学院",
+                mentor_name="李老师",
+                mentor_name_normalized="李老师",
+                review_text="公开评价显示该导师存在强制加班和延毕风险，请谨慎选择。",
+                review_tags=["延毕风险", "强制加班"],
+                risk_level="warning",
+                meta_json={},
+            )
+        )
+        db.add(
             AdjustmentOpportunity(
                 opportunity_key="opp-detail-1",
                 source_dataset_key="adjustment_snapshot_2025_0409_raw",
@@ -979,6 +995,8 @@ def test_adjustment_detail_returns_structured_opportunity_payload(client):
     assert payload["item_kind"] == "opportunity"
     assert payload["school_name"] == "山东大学"
     assert payload["links"][0]["url"] == "https://example.com/sdu-adjustment"
+    assert payload["mentor_reviews"][0]["mentor_name"] == "李老师"
+    assert "延毕风险" in payload["mentor_reviews"][0]["review_text"]
 
 
 def test_adjustment_detail_returns_content_body(client):

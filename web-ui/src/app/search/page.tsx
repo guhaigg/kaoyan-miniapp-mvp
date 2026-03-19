@@ -1377,6 +1377,48 @@ function AdjustmentDetailDrawer({
                   </DetailBlock>
                 </div>
 
+                <DetailBlock title="评价内容">
+                  <div className="space-y-3">
+                    {detail.mentor_reviews.length > 0 ? (
+                      detail.mentor_reviews.map((review, index) => (
+                        <div key={`${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-white">{review.mentor_name}</span>
+                            {review.department_name ? (
+                              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
+                                {review.department_name}
+                              </span>
+                            ) : null}
+                            {review.risk_level ? (
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[11px] ${
+                                  review.risk_level === "warning"
+                                    ? "border border-red-400/20 bg-red-500/10 text-red-200"
+                                    : "border border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
+                                }`}
+                              >
+                                {review.risk_level === "warning" ? "预警" : "正向"}
+                              </span>
+                            ) : null}
+                          </div>
+                          {review.review_tags.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {review.review_tags.map((tag) => (
+                                <span key={tag} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                          <p className="mt-3 text-sm leading-7 text-slate-300">{review.review_text}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-slate-500">当前没有可展示的导师评价原文片段。</div>
+                    )}
+                  </div>
+                </DetailBlock>
+
                 <DetailBlock title="真实来源">
                   <div className="space-y-2">
                     {detail.links.length > 0 ? (

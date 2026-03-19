@@ -993,6 +993,15 @@ class MentorRadarInsightResult:
 
 
 @dataclass
+class MentorReviewExcerptResult:
+    mentor_name: str
+    department_name: str | None
+    risk_level: str | None
+    review_tags: list[str]
+    review_text: str
+
+
+@dataclass
 class ReleaseTimingInsightResult:
     sample_count: int
     sample_years: list[int]
@@ -1233,6 +1242,52 @@ def load_mentor_radar_for_search(db: Session, school_names: list[str]) -> dict[s
             risk_label=risk_label,
         )
     return result
+
+
+def load_mentor_review_excerpts(
+    db: Session,
+    *,
+    school_name: str | None,
+    department_name: str | None = None,
+    limit: int = 5,
+) -> list[MentorReviewExcerptResult]:
+    normalized_school_name = normalize_school_name(school_name)
+    if not normalized_school_name:
+        return []
+    normalized_department_name = normalize_department_name(department_name)
+    rows = (
+        db.query(MentorEvaluation)
+        .filter(MentorEvaluation.school_name_normalized == normalized_school_name)
+        .all()
+    )
+    if not rows:
+        return []
+
+    def sort_key(row: MentorEvaluation) -> tuple[int, int, int]:
+        department_exact = int(
+            bool(
+                normalized_department_name
+                and row.department_name_normalized
+                and row.department_name_normalized == normalized_department_name
+            )
+        )
+        risk_rank = 2 if row.risk_level == "warning" else 1 if row.risk_level == "positive" else 0
+        tag_rank = len(row.review_tags or [])
+        return (department_exact, risk_rank, tag_rank)
+
+    excerpts: list[MentorReviewExcerptResult] = []
+    for row in sorted(rows, key=sort_key, reverse=True)[:limit]:
+        review_text = " ".join(str(row.review_text or "").split())
+        excerpts.append(
+            MentorReviewExcerptResult(
+                mentor_name=row.mentor_name,
+                department_name=row.department_name,
+                risk_level=row.risk_level,
+                review_tags=[str(tag) for tag in (row.review_tags or []) if str(tag or "").strip()][:6],
+                review_text=review_text[:240].rstrip(),
+            )
+        )
+    return excerpts
 
 
 def build_release_timing_profiles_from_archives(db: Session) -> list[dict[str, Any]]:

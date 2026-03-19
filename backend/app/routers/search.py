@@ -20,6 +20,7 @@ from ..schemas import (
 from ..services.historical_intelligence import (
     build_search_insight,
     build_release_timing_insight,
+    load_mentor_review_excerpts,
     load_school_intelligence_for_search,
     load_mentor_radar_for_search,
     load_profiles_for_search,
@@ -200,6 +201,12 @@ def _build_adjustment_detail_from_content(
         )
 
     mentor_signal = mentor_radar.get(normalized_school_name) if school_name else None
+    mentor_reviews = load_mentor_review_excerpts(
+        db,
+        school_name=school_name,
+        department_name=str(extra.get("department_name") or "").strip() or None,
+        limit=5,
+    )
     release_signal = build_release_timing_insight(release_timings.get(normalized_school_name)) if school_name else None
     school_signal = school_intelligence.get(normalized_school_name) if school_name else None
 
@@ -256,6 +263,7 @@ def _build_adjustment_detail_from_content(
         links=links,
         historical_adjustment=insight.__dict__ if insight is not None else None,
         mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
+        mentor_reviews=[review.__dict__ for review in mentor_reviews],
         release_timing=release_signal.__dict__ if release_signal is not None else None,
         school_intelligence=school_signal.__dict__ if school_signal is not None else None,
         meta_json={
@@ -283,6 +291,12 @@ def _build_adjustment_detail_from_opportunity(
         candidate_score=None,
     )
     mentor_signal = mentor_radar.get(normalized_school_name)
+    mentor_reviews = load_mentor_review_excerpts(
+        db,
+        school_name=row.school_name,
+        department_name=row.department_name,
+        limit=5,
+    )
     release_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
     school_signal = school_intelligence.get(normalized_school_name)
     meta = dict(row.meta_json or {})
@@ -335,6 +349,7 @@ def _build_adjustment_detail_from_opportunity(
         links=links,
         historical_adjustment=insight.__dict__ if insight is not None else None,
         mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
+        mentor_reviews=[review.__dict__ for review in mentor_reviews],
         release_timing=release_signal.__dict__ if release_signal is not None else None,
         school_intelligence=school_signal.__dict__ if school_signal is not None else None,
         meta_json=meta,

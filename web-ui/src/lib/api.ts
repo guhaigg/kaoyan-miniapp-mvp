@@ -373,6 +373,13 @@ export type AdjustmentSearchDetailResponse = {
   links: AdjustmentSearchDetailLinkItem[];
   historical_adjustment: SearchItem["historical_adjustment"];
   mentor_radar: SearchItem["mentor_radar"];
+  mentor_reviews: {
+    mentor_name: string;
+    department_name: string | null;
+    risk_level: string | null;
+    review_tags: string[];
+    review_text: string;
+  }[];
   release_timing: SearchItem["release_timing"];
   school_intelligence: SearchItem["school_intelligence"];
   meta_json: Record<string, unknown>;
