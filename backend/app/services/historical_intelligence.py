@@ -7,6 +7,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from html import unescape
 from io import BytesIO
 from typing import Any
 
@@ -29,6 +30,20 @@ from ..models import (
 
 def _strip_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _clean_review_text(value: Any) -> str:
+    raw = str(value or "")
+    if not raw.strip():
+        return ""
+    text = re.sub(r"(?i)<br\\s*/?>", "\n", raw)
+    text = re.sub(r"(?is)</p\\s*>", "\n", text)
+    text = re.sub(r"(?is)<[^>]+>", " ", text)
+    text = unescape(text)
+    text = text.replace("\u3000", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def normalize_school_name(value: Any) -> str:
@@ -929,7 +944,7 @@ def build_mentor_evaluations_from_archives(db: Session) -> list[dict[str, Any]]:
     for row in df.to_dict(orient="records"):
         school_name = _strip_text(row.get("学校"))
         mentor_name = _strip_text(row.get("姓名"))
-        review_text = _strip_text(row.get("评价"))
+        review_text = _clean_review_text(row.get("评价"))
         if not school_name or school_name == "-" or not mentor_name or mentor_name == "-" or not review_text:
             continue
         school_name_normalized = normalize_school_name(school_name)
@@ -1277,7 +1292,7 @@ def load_mentor_review_excerpts(
 
     excerpts: list[MentorReviewExcerptResult] = []
     for row in sorted(rows, key=sort_key, reverse=True)[:limit]:
-        review_text = " ".join(str(row.review_text or "").split())
+        review_text = _clean_review_text(row.review_text)
         excerpts.append(
             MentorReviewExcerptResult(
                 mentor_name=row.mentor_name,

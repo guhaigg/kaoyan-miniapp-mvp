@@ -944,7 +944,7 @@ def test_adjustment_detail_returns_structured_opportunity_payload(client):
                 department_name_normalized="外国语学院",
                 mentor_name="李老师",
                 mentor_name_normalized="李老师",
-                review_text="公开评价显示该导师存在强制加班和延毕风险，请谨慎选择。",
+                review_text="公开评价显示该导师存在强制加班<br><br>和延毕风险，请谨慎选择。",
                 review_tags=["延毕风险", "强制加班"],
                 risk_level="warning",
                 meta_json={},
@@ -997,6 +997,7 @@ def test_adjustment_detail_returns_structured_opportunity_payload(client):
     assert payload["links"][0]["url"] == "https://example.com/sdu-adjustment"
     assert payload["mentor_reviews"][0]["mentor_name"] == "李老师"
     assert "延毕风险" in payload["mentor_reviews"][0]["review_text"]
+    assert "<br>" not in payload["mentor_reviews"][0]["review_text"]
 
 
 def test_adjustment_detail_returns_content_body(client):
