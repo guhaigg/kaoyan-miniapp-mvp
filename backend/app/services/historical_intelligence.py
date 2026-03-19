@@ -11,6 +11,8 @@ from io import BytesIO
 from typing import Any
 
 import pandas as pd
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ..models import (
@@ -257,66 +259,87 @@ def _risk_tags_and_level(review_text: str) -> tuple[list[str], str | None]:
     return tags[:8], risk_level
 
 
-def replace_historical_adjustment_profiles(db: Session, profiles: list[dict[str, Any]]) -> dict[str, int]:
-    db.query(HistoricalAdjustmentProfile).delete()
-    db.commit()
-    batch_size = 5000
-    for start in range(0, len(profiles), batch_size):
-        timestamp = utcnow()
-        batch = []
-        for row in profiles[start : start + batch_size]:
-            batch.append(
-                {
-                    "id": new_id(),
-                    "created_at": timestamp,
-                    "updated_at": timestamp,
-                    **row,
-                }
-            )
-        db.bulk_insert_mappings(HistoricalAdjustmentProfile, batch)
+def _replace_rows_by_unique_key(
+    db: Session,
+    model,
+    rows: list[dict[str, Any]],
+    *,
+    key_field: str,
+    batch_size: int = 5000,
+) -> int:
+    key_column = getattr(model, key_field)
+    existing_keys = {value for (value,) in db.query(key_column).all()}
+    desired_keys = {str(row[key_field]) for row in rows if row.get(key_field)}
+    stale_keys = [key for key in existing_keys if key not in desired_keys]
+
+    for start in range(0, len(stale_keys), batch_size):
+        db.query(model).filter(key_column.in_(stale_keys[start : start + batch_size])).delete(synchronize_session=False)
         db.commit()
-    return {"profiles": len(profiles)}
 
-
-def replace_mentor_evaluations(db: Session, evaluations: list[dict[str, Any]]) -> dict[str, int]:
-    db.query(MentorEvaluation).delete()
-    db.commit()
-    batch_size = 5000
-    for start in range(0, len(evaluations), batch_size):
+    dialect = (db.bind.dialect.name if db.bind is not None else "sqlite").lower()
+    for start in range(0, len(rows), batch_size):
         timestamp = utcnow()
-        batch = []
-        for row in evaluations[start : start + batch_size]:
-            batch.append(
-                {
-                    "id": new_id(),
-                    "created_at": timestamp,
-                    "updated_at": timestamp,
-                    **row,
-                }
-            )
-        db.bulk_insert_mappings(MentorEvaluation, batch)
-        db.commit()
-    return {"evaluations": len(evaluations)}
-
-
-def replace_release_timing_profiles(db: Session, profiles: list[dict[str, Any]]) -> dict[str, int]:
-    db.query(HistoricalReleaseTimingProfile).delete()
-    db.commit()
-    timestamp = utcnow()
-    batch = []
-    for row in profiles:
-        batch.append(
+        batch = [
             {
                 "id": new_id(),
                 "created_at": timestamp,
                 "updated_at": timestamp,
                 **row,
             }
-        )
-    if batch:
-        db.bulk_insert_mappings(HistoricalReleaseTimingProfile, batch)
-    db.commit()
-    return {"profiles": len(profiles)}
+            for row in rows[start : start + batch_size]
+        ]
+        if not batch:
+            continue
+        if dialect == "mysql":
+            stmt = mysql_insert(model).values(batch)
+            update_map = {
+                key: getattr(stmt.inserted, key)
+                for key in batch[0].keys()
+                if key not in {"id", "created_at"}
+            }
+            db.execute(stmt.on_duplicate_key_update(**update_map))
+        elif dialect == "sqlite":
+            stmt = sqlite_insert(model).values(batch)
+            update_map = {
+                key: getattr(stmt.excluded, key)
+                for key in batch[0].keys()
+                if key not in {"id", "created_at"}
+            }
+            db.execute(stmt.on_conflict_do_update(index_elements=[key_field], set_=update_map))
+        else:
+            db.bulk_insert_mappings(model, batch)
+        db.commit()
+    return len(rows)
+
+
+def replace_historical_adjustment_profiles(db: Session, profiles: list[dict[str, Any]]) -> dict[str, int]:
+    count = _replace_rows_by_unique_key(
+        db,
+        HistoricalAdjustmentProfile,
+        profiles,
+        key_field="profile_key",
+    )
+    return {"profiles": count}
+
+
+def replace_mentor_evaluations(db: Session, evaluations: list[dict[str, Any]]) -> dict[str, int]:
+    count = _replace_rows_by_unique_key(
+        db,
+        MentorEvaluation,
+        evaluations,
+        key_field="review_key",
+    )
+    return {"evaluations": count}
+
+
+def replace_release_timing_profiles(db: Session, profiles: list[dict[str, Any]]) -> dict[str, int]:
+    count = _replace_rows_by_unique_key(
+        db,
+        HistoricalReleaseTimingProfile,
+        profiles,
+        key_field="profile_key",
+    )
+    return {"profiles": count}
 
 
 def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
