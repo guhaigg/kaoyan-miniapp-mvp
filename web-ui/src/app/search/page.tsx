@@ -438,6 +438,85 @@ export default function SearchPage() {
         </div>
       ) : null}
 
+      {queryType === "adjustments" ? (
+        <section className="mb-6 overflow-hidden rounded-[28px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(8,145,178,0.14),transparent_30%),linear-gradient(180deg,rgba(10,15,24,0.98),rgba(8,12,20,0.95))] shadow-2xl">
+          <div className="border-b border-white/8 px-5 py-5 md:px-6">
+            <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-cyan-300/80">
+                  <Target size={14} className="text-cyan-400" />
+                  GEWUJL 情报分析终端
+                </div>
+                <h3 className="text-2xl font-black tracking-tight text-white">调剂实时决策流</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                  把历史调剂分数、导师评价、发布时间信号和实时公告揉成一条决策流。当前不是简单全文检索，而是按“能不能报、值不值得报、何时容易出结果”来排视角。
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <IntelStatCard label="命中情报" value={`${adjustmentSummary?.hits || 0}`} accent="cyan" />
+                <IntelStatCard label="历史样本" value={`${adjustmentSummary?.withHistory || 0}`} accent="emerald" />
+                <IntelStatCard label="导师预警" value={`${adjustmentSummary?.withWarnings || 0}`} accent="amber" />
+                <IntelStatCard label="连续活跃" value={`${adjustmentSummary?.withLongTrack || 0}`} accent="emerald" />
+                <IntelStatCard label="晚间发布" value={`${adjustmentSummary?.nightReleases || 0}`} accent="violet" />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 px-5 py-5 md:px-6 xl:grid-cols-3">
+            <IntelSignalCard
+              icon={<TrendingUp size={16} className="text-emerald-300" />}
+              title="分数胜率"
+              description={
+                candidateScoreFilter.trim()
+                  ? `已按你的分数 ${candidateScoreFilter.trim()} 分做历史对比，优先展示有分数样本的院校。`
+                  : "输入你的初试分数后，卡片会直接给出历史最低分和胜率分层。"
+              }
+              accent="emerald"
+            />
+            <IntelSignalCard
+              icon={<ShieldAlert size={16} className="text-amber-300" />}
+              title="导师雷达"
+              description="如果该校命中过去公开评价里的高风险导师信号，卡片会直接点亮导师预警。"
+              accent="amber"
+            />
+            <IntelSignalCard
+              icon={<History size={16} className="text-indigo-300" />}
+              title="发布时间"
+              description="当前先基于真实发布时间和历史样本覆盖做发榜信号，后续再叠加更细的生物钟统计。"
+              accent="violet"
+            />
+          </div>
+
+          <div className="border-t border-white/8 px-5 py-4 md:px-6">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+              情报快筛
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <IntelFilterChip
+                active={onlyHistoryBacked}
+                onClick={() => setOnlyHistoryBacked((value) => !value)}
+                label="只看有历史样本"
+              />
+              <IntelFilterChip
+                active={onlyLongTrack}
+                onClick={() => setOnlyLongTrack((value) => !value)}
+                label="只看连续活跃"
+              />
+              <IntelFilterChip
+                active={onlyWithReferenceLinks}
+                onClick={() => setOnlyWithReferenceLinks((value) => !value)}
+                label="只看带历史链接"
+              />
+              <IntelFilterChip
+                active={hideMentorWarnings}
+                onClick={() => setHideMentorWarnings((value) => !value)}
+                label="排除导师预警"
+              />
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <div className="mb-12 min-h-[400px] space-y-4">
         {isSearching ? (
           <div className="grid gap-6 md:grid-cols-2">
@@ -446,85 +525,6 @@ export default function SearchPage() {
           </div>
         ) : searchResult ? (
           <>
-            {queryType === "adjustments" ? (
-              <section className="overflow-hidden rounded-[28px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(8,145,178,0.14),transparent_30%),linear-gradient(180deg,rgba(10,15,24,0.98),rgba(8,12,20,0.95))] shadow-2xl">
-                <div className="border-b border-white/8 px-5 py-5 md:px-6">
-                  <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-                    <div>
-                      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-cyan-300/80">
-                        <Target size={14} className="text-cyan-400" />
-                        GEWUJL 情报分析终端
-                      </div>
-                      <h3 className="text-2xl font-black tracking-tight text-white">调剂实时决策流</h3>
-                      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                        把历史调剂分数、导师评价、发布时间信号和实时公告揉成一条决策流。当前不是简单全文检索，而是按“能不能报、值不值得报、何时容易出结果”来排视角。
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                      <IntelStatCard label="命中情报" value={`${adjustmentSummary?.hits || 0}`} accent="cyan" />
-                      <IntelStatCard label="历史样本" value={`${adjustmentSummary?.withHistory || 0}`} accent="emerald" />
-                      <IntelStatCard label="导师预警" value={`${adjustmentSummary?.withWarnings || 0}`} accent="amber" />
-                      <IntelStatCard label="连续活跃" value={`${adjustmentSummary?.withLongTrack || 0}`} accent="emerald" />
-                      <IntelStatCard label="晚间发布" value={`${adjustmentSummary?.nightReleases || 0}`} accent="violet" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 px-5 py-5 md:px-6 xl:grid-cols-3">
-                  <IntelSignalCard
-                    icon={<TrendingUp size={16} className="text-emerald-300" />}
-                    title="分数胜率"
-                    description={
-                      candidateScoreFilter.trim()
-                        ? `已按你的分数 ${candidateScoreFilter.trim()} 分做历史对比，优先展示有分数样本的院校。`
-                        : "输入你的初试分数后，卡片会直接给出历史最低分和胜率分层。"
-                    }
-                    accent="emerald"
-                  />
-                  <IntelSignalCard
-                    icon={<ShieldAlert size={16} className="text-amber-300" />}
-                    title="导师雷达"
-                    description="如果该校命中过去公开评价里的高风险导师信号，卡片会直接点亮导师预警。"
-                    accent="amber"
-                  />
-                  <IntelSignalCard
-                    icon={<History size={16} className="text-indigo-300" />}
-                    title="发布时间"
-                    description="当前先基于真实发布时间和历史样本覆盖做发榜信号，后续再叠加更细的生物钟统计。"
-                    accent="violet"
-                  />
-                </div>
-
-                <div className="border-t border-white/8 px-5 py-4 md:px-6">
-                  <div className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    情报快筛
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <IntelFilterChip
-                      active={onlyHistoryBacked}
-                      onClick={() => setOnlyHistoryBacked((value) => !value)}
-                      label="只看有历史样本"
-                    />
-                    <IntelFilterChip
-                      active={onlyLongTrack}
-                      onClick={() => setOnlyLongTrack((value) => !value)}
-                      label="只看连续活跃"
-                    />
-                    <IntelFilterChip
-                      active={onlyWithReferenceLinks}
-                      onClick={() => setOnlyWithReferenceLinks((value) => !value)}
-                      label="只看带历史链接"
-                    />
-                    <IntelFilterChip
-                      active={hideMentorWarnings}
-                      onClick={() => setHideMentorWarnings((value) => !value)}
-                      label="排除导师预警"
-                    />
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-300">
               <span>
                 当前页筛后 <span className="text-cyan-300">{filteredItems.length}</span> 条
@@ -716,6 +716,23 @@ export default function SearchPage() {
               </div>
             </div>
           </>
+        ) : queryType === "adjustments" ? (
+          <div className="rounded-3xl border border-cyan-400/15 bg-[linear-gradient(180deg,rgba(10,15,24,0.92),rgba(8,12,20,0.92))] p-8 text-sm text-slate-300">
+            <div className="max-w-3xl">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300/80">
+                Ready
+              </div>
+              <h4 className="text-xl font-bold text-white">输入院校、专业、地区或分数后开始检索。</h4>
+              <p className="mt-3 leading-7 text-slate-400">
+                这个页面现在会把实时调剂公告和历史分数、导师评价、发布时间规律一起给出。没点检索之前，不应该是空白页，只是还没有把结果流拉出来。
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">支持初试分数</span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">支持历史来源链接</span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">支持导师预警筛除</span>
+              </div>
+            </div>
+          </div>
         ) : null}
       </div>
 
