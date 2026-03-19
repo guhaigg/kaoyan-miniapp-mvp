@@ -2118,3 +2118,35 @@ def test_adjustment_detail_returns_content_body(client):
     assert payload["item_kind"] == "content"
     assert payload["body"] == "这是站内保留的完整调剂正文。"
     assert payload["source_url"] == "https://example.com/hubu-adjustment-detail"
+
+
+def test_adjustment_detail_hides_historical_sample_count_in_body():
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="opp-detail-historical-body",
+                source_dataset_key="adjustment_stats_2023_2025_raw",
+                year=2025,
+                source_type="stats",
+                school_name="湖北大学",
+                school_name_normalized="湖北大学",
+                department_name="化学化工学院",
+                department_name_normalized="化学化工学院",
+                major_code="085600",
+                major_name="材料与化工",
+                major_name_normalized="材料与化工",
+                school_tier="普本",
+                verification_status="历史统计",
+                title="湖北大学 材料与化工 历史统计",
+                summary="2025 年历史调剂统计 · 化学化工学院 · 样本 41 · 初试 261-353",
+            )
+        )
+        db.commit()
+        opportunity = (
+            db.query(AdjustmentOpportunity)
+            .filter(AdjustmentOpportunity.opportunity_key == "opp-detail-historical-body")
+            .one()
+        )
+        payload = _build_adjustment_detail_from_opportunity(db, opportunity).model_dump()
+    assert payload["vacancy_count"] is None
+    assert payload["body"] == "2025 年历史调剂统计 · 化学化工学院 · 初试 261-353"

@@ -501,7 +501,7 @@ def _build_adjustment_detail_from_opportunity(
         captured_at=row.captured_at,
         updated_at=row.updated_at,
         summary=_build_adjustment_opportunity_summary(row, insight),
-        body=row.summary,
+        body=_sanitize_adjustment_summary_text(row),
         tags=[
             str(tag)
             for tag in [
