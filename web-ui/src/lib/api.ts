@@ -265,6 +265,7 @@ export type SearchItem = {
   id: string;
   item_kind: "content" | "opportunity";
   category: string;
+  adjustment_year: number | null;
   school_name: string | null;
   department_name: string | null;
   title: string;

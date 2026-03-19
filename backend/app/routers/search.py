@@ -28,6 +28,8 @@ from ..services.historical_intelligence import (
     load_profiles_for_search,
     load_release_timing_for_search,
     normalize_department_name,
+    normalize_major_code,
+    normalize_major_name,
     normalize_school_name,
 )
 from ..services.search_cache import search_response_cache
@@ -549,6 +551,7 @@ def _to_response(
                 id=row.id,
                 item_kind="content",
                 category=row.category,
+                adjustment_year=row.published_at.year if row.published_at is not None else None,
                 school_name=school_name,
                 department_name=department_name,
                 title=row.title,
@@ -614,12 +617,22 @@ def _historical_source_label(source_type: str) -> str:
     }
     return labels.get(source_type, source_type)
 
+
+HISTORICAL_SOURCE_LABELS = {
+    _historical_source_label("adjustment_stats"),
+    _historical_source_label("landing"),
+    _historical_source_label("future_program"),
+    _historical_source_label("notice_reference"),
+    _historical_source_label("snapshot"),
+    _historical_source_label("balance"),
+    _historical_source_label("adjustment_notice"),
+    _historical_source_label("stats"),
+}
+
 def _build_adjustment_opportunity_summary(row: AdjustmentOpportunity, insight) -> str:
     parts = []
     if row.year:
-        parts.append(f"{row.year} 年 {_historical_source_label(row.source_type)}")
-    else:
-        parts.append(_historical_source_label(row.source_type))
+        parts.append(f"{row.year} 年调剂信息")
     if row.region_name:
         parts.append(row.region_name)
     if row.city_name:
@@ -851,6 +864,161 @@ def _merge_adjustment_opportunity_rows(rows: list[AdjustmentOpportunity]) -> lis
     return merged_rows
 
 
+def _normalize_search_item_major_token(item: SearchItem) -> str:
+    normalized_name = normalize_major_name(item.major)
+    if normalized_name:
+        return normalized_name
+    if item.adjustment_major_codes:
+        normalized_code = normalize_major_code(item.adjustment_major_codes[0])
+        if normalized_code:
+            return normalized_code
+    return ""
+
+
+def _normalize_search_item_department_token(item: SearchItem) -> str:
+    return normalize_department_name(item.department_name) or ""
+
+
+def _build_search_item_base_merge_key(item: SearchItem) -> str:
+    return "|".join(
+        [
+            normalize_school_name(item.school_name) if item.school_name else "",
+            str(item.adjustment_year or ""),
+            _normalize_search_item_major_token(item),
+        ]
+    )
+
+
+def _normalize_search_item_study_mode_token(item: SearchItem) -> str:
+    return sorted(item.adjustment_study_modes)[0] if item.adjustment_study_modes else ""
+
+
+def _split_search_items_by_study_mode(items: list[SearchItem]) -> list[list[SearchItem]]:
+    if not items:
+        return []
+    explicit_groups: dict[str, list[SearchItem]] = defaultdict(list)
+    missing_items: list[SearchItem] = []
+    for item in items:
+        study_mode_token = _normalize_search_item_study_mode_token(item)
+        if study_mode_token:
+            explicit_groups[study_mode_token].append(item)
+        else:
+            missing_items.append(item)
+    if not explicit_groups:
+        return [items]
+    if len(explicit_groups) == 1:
+        return [next(iter(explicit_groups.values())) + missing_items]
+    groups = list(explicit_groups.values())
+    if missing_items:
+        groups.append(missing_items)
+    return groups
+
+
+def _split_search_items_by_department(items: list[SearchItem]) -> list[list[SearchItem]]:
+    if not items:
+        return []
+    explicit_groups: dict[str, list[SearchItem]] = defaultdict(list)
+    missing_items: list[SearchItem] = []
+    for item in items:
+        department_token = _normalize_search_item_department_token(item)
+        if department_token:
+            explicit_groups[department_token].append(item)
+        else:
+            missing_items.append(item)
+    if not explicit_groups:
+        return [items]
+    if len(explicit_groups) == 1:
+        return [next(iter(explicit_groups.values())) + missing_items]
+    groups = list(explicit_groups.values())
+    if missing_items:
+        groups.append(missing_items)
+    return groups
+
+
+def _search_item_priority(item: SearchItem) -> tuple[int, int, int, float]:
+    has_explicit_department = int(bool(_normalize_search_item_department_token(item)))
+    has_reference_link = int(bool(item.source_url) or bool(item.school_intelligence and item.school_intelligence.reference_urls))
+    has_structured_scores = int(
+        bool(
+            item.historical_adjustment
+            and (
+                item.historical_adjustment.initial_score_min is not None
+                or item.historical_adjustment.adjustment_score_min is not None
+                or item.historical_adjustment.min_score is not None
+            )
+        )
+    )
+    published_at = item.published_at or item.updated_at
+    published_ts = published_at.timestamp() if published_at is not None else 0.0
+    return (has_explicit_department, has_reference_link, has_structured_scores, published_ts)
+
+
+def _pick_primary_search_item(items: list[SearchItem]) -> SearchItem:
+    return sorted(items, key=_search_item_priority, reverse=True)[0]
+
+
+def _dedupe_strings(values: list[str | None]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _merge_search_items_by_business_key(items: list[SearchItem]) -> list[SearchItem]:
+    grouped: dict[str, list[SearchItem]] = defaultdict(list)
+    for item in items:
+        grouped[_build_search_item_base_merge_key(item)].append(item)
+
+    merged_items: list[SearchItem] = []
+    for grouped_items in grouped.values():
+        for study_mode_scoped_items in _split_search_items_by_study_mode(grouped_items):
+            for scoped_items in _split_search_items_by_department(study_mode_scoped_items):
+                primary = _pick_primary_search_item(scoped_items)
+                merged_count = sum(max(1, int(item.merged_count or 1)) for item in scoped_items)
+                department_names = _dedupe_strings([item.department_name for item in scoped_items])
+                tags = _dedupe_strings(
+                    [
+                        tag
+                        for item in scoped_items
+                        for tag in item.tags
+                        if tag not in HISTORICAL_SOURCE_LABELS
+                    ]
+                )
+                source_urls = _dedupe_strings(
+                    [
+                        item.source_url
+                        for item in scoped_items
+                    ]
+                )
+                merged_title = primary.title
+                major_label = primary.major or next((item.major for item in scoped_items if item.major), None)
+                school_label = primary.school_name or next((item.school_name for item in scoped_items if item.school_name), None)
+                if school_label and major_label:
+                    merged_title = f"{school_label} {major_label} 调剂信息"
+                merged_summary = primary.summary
+                published_candidates = [item.published_at for item in scoped_items if item.published_at is not None]
+                updated_candidates = [item.updated_at for item in scoped_items if item.updated_at is not None]
+                merged_item = primary.model_copy(
+                    update={
+                        "department_name": department_names[0] if len(department_names) == 1 else primary.department_name,
+                        "title": merged_title,
+                        "summary": merged_summary,
+                        "tags": tags,
+                        "source_url": source_urls[0] if source_urls else primary.source_url,
+                        "published_at": max(published_candidates, default=primary.published_at),
+                        "updated_at": max(updated_candidates, default=primary.updated_at),
+                        "merged_count": merged_count,
+                    }
+                )
+                merged_items.append(merged_item)
+    return merged_items
+
+
 def _to_adjustment_opportunity_response(
     db: Session,
     payload: AdjustmentSearchRequest,
@@ -904,7 +1072,6 @@ def _to_adjustment_opportunity_response(
         tags = [
             str(tag)
             for tag in [
-                _historical_source_label(row.source_type),
                 row.region_name,
                 row.city_name,
                 row.major_name,
@@ -918,6 +1085,7 @@ def _to_adjustment_opportunity_response(
                 id=row.id,
                 item_kind="opportunity",
                 category="adjustment",
+                adjustment_year=row.year,
                 school_name=school_name,
                 department_name=" / ".join(display_departments[:2]) if display_departments else row.department_name,
                 title=row.title,
@@ -1006,7 +1174,8 @@ def _merge_adjustment_search_responses(
     deduped: dict[str, SearchItem] = {}
     for item in all_items:
         deduped[item.id] = item
-    merged_items = sorted(deduped.values(), key=_adjustment_sort_key, reverse=True)
+    merged_items = _merge_search_items_by_business_key(list(deduped.values()))
+    merged_items = sorted(merged_items, key=_adjustment_sort_key, reverse=True)
     if _has_intelligence_filters():
         merged_items = [item for item in merged_items if _matches_intelligence_filters(item)]
         source_breakdown = {}

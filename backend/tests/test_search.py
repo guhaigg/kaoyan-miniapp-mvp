@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
 from app.models import AdjustmentOpportunity, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive
@@ -1254,7 +1256,85 @@ def test_adjustment_search_year_filter_applies_to_adjustment_content(client):
     assert search.status_code == 200
     payload = search.json()
     assert payload["total"] == 1
-    assert payload["items"][0]["title"] == "湖北大学 2024 年调剂公告"
+    assert payload["items"][0]["adjustment_year"] == 2024
+    assert payload["items"][0]["school_name"] == "湖北大学"
+
+
+def test_adjustment_search_merges_cross_source_records_into_single_entity(client):
+    content_response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "湖北大学 材料与化工 公告",
+            "body": "同一学校、同一专业、同一年公告来源。",
+            "school_name": "湖北大学",
+            "major": "材料与化工",
+            "region": "湖北",
+            "source_type": "crawler",
+            "source_url": "https://example.com/hubu-material-notice",
+            "published_at": "2025-04-07T09:34:00Z",
+            "extra": {
+                "adjustment_meta": {
+                    "major_codes": ["085600"],
+                    "study_modes": ["fulltime"],
+                }
+            },
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert content_response.status_code == 200
+
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="hubu-material-stats",
+                source_dataset_key="adjustment_stats_2025_full_raw",
+                source_type="stats",
+                year=2025,
+                school_name="湖北大学",
+                school_name_normalized="湖北大学",
+                school_code="10512",
+                region_name="湖北省",
+                school_tier="普本",
+                department_name=None,
+                department_name_normalized=None,
+                major_code="085600",
+                major_name="材料与化工",
+                major_name_normalized="材料与化工",
+                study_mode="fulltime",
+                vacancy_count=219,
+                min_score=260,
+                avg_score=288.2,
+                max_score=353,
+                initial_score_min=260,
+                initial_score_max=353,
+                adjustment_score_min=260,
+                adjustment_score_max=260,
+                verification_status="历史统计",
+                title="湖北大学 材料与化工 历史统计",
+                summary="2025 年历史调剂统计 · 湖北 · 历史统计 · 计划 219 · 调剂 260",
+                source_url="https://example.com/hubu-material-stats",
+                published_at=datetime.fromisoformat("2025-04-07T09:34:00+00:00"),
+                meta_json={},
+            )
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_source_merge_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "湖北大学", "year": 2025, "page_size": 20},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["school_name"] == "湖北大学"
+    assert item["major"] == "材料与化工"
+    assert item["adjustment_year"] == 2025
+    assert item["merged_count"] >= 2
+    assert item["title"] == "湖北大学 材料与化工 调剂信息"
 
 
 def test_adjustment_search_sorts_by_intelligence_signal_before_recency(client):

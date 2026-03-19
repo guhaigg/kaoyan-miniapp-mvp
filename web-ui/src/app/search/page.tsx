@@ -1245,11 +1245,6 @@ function AdjustmentIntelCard({
               {tag}
             </span>
           ))}
-          {item.merged_count > 1 ? (
-            <span className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-200">
-              已合并 {item.merged_count} 条同类来源
-            </span>
-          ) : null}
           {item.school_intelligence ? (
             <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
               {item.school_intelligence.confidence_label}
@@ -1557,8 +1552,6 @@ function AdjustmentDetailDrawer({
                     <DetailRow label="发布时间" value={detail.published_at ? formatIntelTime(detail.published_at) : null} />
                     <DetailRow label="采集时间" value={detail.captured_at ? formatIntelTime(detail.captured_at) : null} />
                     <DetailRow label="更新时间" value={formatIntelTime(detail.updated_at)} />
-                    <DetailRow label="结果来源" value={detail.source_type} />
-                    <DetailRow label="数据集" value={detail.source_dataset_key} />
                   </DetailBlock>
                   <DetailBlock title="导师雷达">
                     <DetailRow label="风险等级" value={detail.mentor_radar?.risk_label || "暂无明显预警"} />
