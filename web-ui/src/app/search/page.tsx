@@ -164,7 +164,13 @@ export default function SearchPage() {
             });
       setSearchResult(payload);
       if (payload.total === 0) {
-        setMessage("未匹配到确切坐标，请尝试提取核心关键词。");
+        setMessage(buildEmptyResultMessage(queryType, {
+          keywords,
+          schoolName,
+          majorFilter,
+          regionFilter,
+          candidateScoreFilter,
+        }));
       } else {
         setMessage("");
       }
@@ -670,7 +676,27 @@ export default function SearchPage() {
               )
             ) : (
               <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-8 text-sm text-slate-300">
-                当前筛选条件下暂无匹配记录。你可以放宽院校层次或学习方式，重新聚合本页结果。
+                <div className="text-lg font-semibold text-white">
+                  {buildEmptyStateTitle(queryType, Boolean(searchResult.total))}
+                </div>
+                <p className="mt-3 leading-7 text-slate-300">
+                  {buildEmptyStateDetail(queryType, Boolean(searchResult.total), hasLocalFilters)}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+                  {queryType === "adjustments" ? (
+                    <>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">先去掉一个筛选条件</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">优先尝试学校名或专业代码</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">必要时取消情报快筛</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">缩短关键词</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">先只搜学校名</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">再叠加学院或招生词</span>
+                    </>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1154,6 +1180,65 @@ function formatIntelTime(value: string) {
   const hour = String(date.getHours()).padStart(2, "0");
   const minute = String(date.getMinutes()).padStart(2, "0");
   return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function buildEmptyResultMessage(
+  queryType: "announcements" | "adjustments",
+  filters: {
+    keywords: string;
+    schoolName: string;
+    majorFilter: string;
+    regionFilter: string;
+    candidateScoreFilter: string;
+  },
+) {
+  if (queryType === "adjustments") {
+    if (filters.schoolName.trim() && filters.majorFilter.trim()) {
+      return "当前学校和专业组合下没有查到调剂结果，先去掉其中一个条件再试。";
+    }
+    if (filters.regionFilter.trim() && filters.majorFilter.trim()) {
+      return "当前地区和专业条件过窄，没有命中调剂结果，建议先放宽地区或专业。";
+    }
+    if (filters.keywords.trim()) {
+      return "当前关键词没有命中调剂结果，建议改成学校名、专业名或专业代码重试。";
+    }
+    return "暂时没有命中调剂结果，建议先输入学校、专业或地区，再逐步收窄条件。";
+  }
+  if (filters.schoolName.trim() && filters.keywords.trim()) {
+    return "当前学校和关键词组合没有命中公告，建议先保留学校名或只搜核心词。";
+  }
+  if (filters.keywords.trim()) {
+    return "当前关键词没有命中公告，建议改成学校简称、学院名或更短的核心词。";
+  }
+  return "暂时没有命中公告结果，建议先输入学校名、学院名或招生关键词。";
+}
+
+function buildEmptyStateTitle(queryType: "announcements" | "adjustments", hasFilters: boolean) {
+  if (queryType === "adjustments") {
+    return hasFilters ? "当前筛选条件下没有调剂结果" : "还没有开始拉取调剂结果";
+  }
+  return hasFilters ? "当前筛选条件下没有公告结果" : "还没有开始拉取公告结果";
+}
+
+function buildEmptyStateDetail(
+  queryType: "announcements" | "adjustments",
+  hasFilters: boolean,
+  hasLocalFilters: boolean,
+) {
+  if (queryType === "adjustments") {
+    if (!hasFilters) {
+      return "输入学校、专业、地区或分数后开始检索。调剂页现在会把历史分数、导师评价和发布时间规律一起带出来。";
+    }
+    return hasLocalFilters
+      ? "后端结果已经返回，但被前端情报筛选或学校层次筛选拦掉了。先取消一部分筛选再看。"
+      : "后端没有返回符合条件的调剂结果。建议先去掉学校、地区、专业中的一个条件，再重试。";
+  }
+  if (!hasFilters) {
+    return "先输入学校名、学院名或关键词，再开始检索公告。";
+  }
+  return hasLocalFilters
+    ? "后端结果已经返回，但被前端高级筛选拦掉了。先放宽学校层次或学习方式。"
+    : "后端没有返回符合条件的公告结果。建议缩短关键词，或只保留学校名再试。";
 }
 
 function matchesSchoolTier(tier: SchoolTier, text: string) {
