@@ -434,6 +434,45 @@ def _to_adjustment_opportunity_response(
     )
 
 
+def _merge_adjustment_search_responses(
+    request_id: str,
+    payload: AdjustmentSearchRequest,
+    refresh_job_id: str | None,
+    responses: list[SearchResponse],
+) -> SearchResponse:
+    all_items: list[SearchItem] = []
+    source_breakdown: dict[str, int] = {}
+    total = 0
+    last_updated_candidates = []
+    for response in responses:
+        total += response.total
+        all_items.extend(response.items)
+        if response.last_updated_at is not None:
+            last_updated_candidates.append(response.last_updated_at)
+        for key, value in response.source_breakdown.items():
+            source_breakdown[key] = source_breakdown.get(key, 0) + int(value)
+    deduped: dict[str, SearchItem] = {}
+    for item in all_items:
+        deduped[item.id] = item
+    merged_items = sorted(deduped.values(), key=_adjustment_sort_key, reverse=True)
+    start = (payload.page - 1) * payload.page_size
+    end = start + payload.page_size
+    return SearchResponse(
+        request_id=request_id,
+        mode="hybrid_refresh" if payload.refresh else "cache",
+        authenticated=True,
+        access_limited=False,
+        preview_limit=None,
+        items=merged_items[start:end],
+        total=total,
+        page=payload.page,
+        page_size=payload.page_size,
+        source_breakdown=source_breakdown,
+        last_updated_at=max(last_updated_candidates, default=None),
+        refresh_job_id=refresh_job_id,
+    )
+
+
 def _normalize_public_search_payload(payload: AnnouncementSearchRequest | AdjustmentSearchRequest):
     return payload.model_copy(update={"page": 1, "page_size": ANONYMOUS_PREVIEW_LIMIT, "refresh": False})
 
@@ -562,11 +601,11 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
             portal_user_id=user.id if user else None,
         )
         return cached
-    base_query = db.query(Content).filter(Content.category == "adjustment")
-    base_query = _apply_common_filters(base_query, payload)
+    content_query = db.query(Content).filter(Content.category == "adjustment")
+    content_query = _apply_common_filters(content_query, payload)
     if payload.major:
         major_terms = _build_major_terms(payload.major.strip())
-        base_query = base_query.filter(
+        content_query = content_query.filter(
             or_(
                 *[
                     or_(
@@ -579,64 +618,69 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
             )
         )
     if payload.region:
-        base_query = base_query.filter(Content.region.ilike(f"%{payload.region.strip()}%"))
+        content_query = content_query.filter(Content.region.ilike(f"%{payload.region.strip()}%"))
 
-    total = base_query.count()
     refresh_job_id = None
     if payload.refresh:
         refresh_job_id = _create_refresh_job(db, "adjustment", payload.model_dump(mode="json"), user.id if user else None)
-    if total > 0:
-        rows = (
-            base_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
-            .offset((payload.page - 1) * payload.page_size)
-            .limit(payload.page_size)
-            .all()
+    page_window = payload.page * payload.page_size
+
+    content_total = content_query.count()
+    content_rows = (
+        content_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
+        .limit(page_window)
+        .all()
+    )
+    content_stats_rows = content_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
+    content_source_breakdown = {k: int(v) for k, v in content_stats_rows}
+    content_response = _to_response(
+        db,
+        payload,
+        request_id,
+        content_rows,
+        content_total,
+        content_source_breakdown,
+        refresh_job_id,
+        authenticated=True,
+    )
+
+    opportunity_query = db.query(AdjustmentOpportunity)
+    opportunity_query = _apply_adjustment_opportunity_filters(opportunity_query, payload)
+    opportunity_total = opportunity_query.count()
+    opportunity_rows = (
+        opportunity_query.order_by(
+            AdjustmentOpportunity.published_at.is_(None),
+            AdjustmentOpportunity.published_at.desc(),
+            AdjustmentOpportunity.year.desc(),
+            AdjustmentOpportunity.vacancy_count.is_(None),
+            AdjustmentOpportunity.vacancy_count.desc(),
+            AdjustmentOpportunity.updated_at.desc(),
         )
-        stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
-        source_breakdown = {k: int(v) for k, v in stats_rows}
-        response = _to_response(
-            db,
-            payload,
-            request_id,
-            rows,
-            total,
-            source_breakdown,
-            refresh_job_id,
-            authenticated=True,
-        )
-    else:
-        opportunity_query = db.query(AdjustmentOpportunity)
-        opportunity_query = _apply_adjustment_opportunity_filters(opportunity_query, payload)
-        opportunity_total = opportunity_query.count()
-        opportunity_rows = (
-            opportunity_query.order_by(
-                AdjustmentOpportunity.published_at.is_(None),
-                AdjustmentOpportunity.published_at.desc(),
-                AdjustmentOpportunity.year.desc(),
-                AdjustmentOpportunity.vacancy_count.is_(None),
-                AdjustmentOpportunity.vacancy_count.desc(),
-                AdjustmentOpportunity.updated_at.desc(),
-            )
-            .offset((payload.page - 1) * payload.page_size)
-            .limit(payload.page_size)
-            .all()
-        )
-        stats_rows = (
-            opportunity_query.with_entities(AdjustmentOpportunity.source_type, func.count(AdjustmentOpportunity.id))
-            .group_by(AdjustmentOpportunity.source_type)
-            .all()
-        )
-        source_breakdown = {f"historical_{k}": int(v) for k, v in stats_rows}
-        response = _to_adjustment_opportunity_response(
-            db,
-            payload,
-            request_id,
-            opportunity_rows,
-            opportunity_total,
-            source_breakdown,
-            refresh_job_id,
-            authenticated=True,
-        )
+        .limit(page_window)
+        .all()
+    )
+    opportunity_stats_rows = (
+        opportunity_query.with_entities(AdjustmentOpportunity.source_type, func.count(AdjustmentOpportunity.id))
+        .group_by(AdjustmentOpportunity.source_type)
+        .all()
+    )
+    opportunity_source_breakdown = {f"historical_{k}": int(v) for k, v in opportunity_stats_rows}
+    opportunity_response = _to_adjustment_opportunity_response(
+        db,
+        payload,
+        request_id,
+        opportunity_rows,
+        opportunity_total,
+        opportunity_source_breakdown,
+        refresh_job_id,
+        authenticated=True,
+    )
+    response = _merge_adjustment_search_responses(
+        request_id,
+        payload,
+        refresh_job_id,
+        [content_response, opportunity_response],
+    )
     search_response_cache.set("adjustment", payload, response)
     _audit_search_event(
         db,
