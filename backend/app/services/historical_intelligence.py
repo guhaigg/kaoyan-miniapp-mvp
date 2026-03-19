@@ -738,6 +738,25 @@ def _apply_department_scope(
     ]
 
 
+def _apply_mentor_department_scope(
+    rows: list[MentorEvaluation],
+    *,
+    department_name: str | None,
+) -> list[MentorEvaluation]:
+    normalized_department_name = normalize_department_name(department_name)
+    if normalized_department_name:
+        return [
+            row
+            for row in rows
+            if normalize_department_name(row.department_name_normalized or row.department_name) == normalized_department_name
+        ]
+    return [
+        row
+        for row in rows
+        if not normalize_department_name(row.department_name_normalized or row.department_name)
+    ]
+
+
 def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
     archives = _load_archives_by_keys(
         db,
@@ -2484,10 +2503,9 @@ def build_mentor_radar_insight(
     *,
     department_name: str | None = None,
 ) -> MentorRadarInsightResult | None:
-    scoped_evaluations = _apply_department_scope(
+    scoped_evaluations = _apply_mentor_department_scope(
         evaluations,
         department_name=department_name,
-        department_getter=lambda row: row.department_name_normalized,
     )
     if not scoped_evaluations:
         return None
@@ -2547,10 +2565,9 @@ def load_mentor_review_excerpts(
         .filter(MentorEvaluation.school_name_normalized == normalized_school_name)
         .all()
     )
-    scoped_rows = _apply_department_scope(
+    scoped_rows = _apply_mentor_department_scope(
         rows,
         department_name=department_name,
-        department_getter=lambda row: row.department_name_normalized,
     )
     if not scoped_rows:
         return []

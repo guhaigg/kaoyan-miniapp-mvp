@@ -1102,6 +1102,71 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
     ]
 
 
+def test_adjustment_search_mentor_matching_does_not_mix_other_departments_when_department_missing(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "XX大学电子信息调剂通知",
+            "body": "学校级调剂通知，正文没有学院。",
+            "school_name": "XX大学",
+            "major": "电子信息",
+            "region": "上海",
+            "source_type": "crawler",
+            "source_url": "https://example.com/xx-adjustment-mentor-scope",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                MentorEvaluation(
+                    review_key="mentor-scope-school-1",
+                    source_dataset_key="mentor_reviews_raw",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    department_name=None,
+                    department_name_normalized=None,
+                    mentor_name="校级老师",
+                    mentor_name_normalized="校级老师",
+                    review_text="学校层面口碑不错。",
+                    review_tags=["口碑尚可"],
+                    risk_level="positive",
+                    meta_json={},
+                ),
+                MentorEvaluation(
+                    review_key="mentor-scope-dept-1",
+                    source_dataset_key="mentor_reviews_raw",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    department_name="人工智能学院",
+                    department_name_normalized="人工智能学院",
+                    mentor_name="学院老师",
+                    mentor_name_normalized="学院老师",
+                    review_text="人工智能学院存在延毕风险。",
+                    review_tags=["延毕风险"],
+                    risk_level="warning",
+                    meta_json={},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_mentor_scope_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "XX大学"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    item = search.json()["items"][0]
+    assert item["mentor_radar"]["review_count"] == 1
+    assert item["mentor_radar"]["warning_count"] == 0
+    assert item["mentor_radar"]["positive_count"] == 1
+
+
 def test_adjustment_search_intelligence_filters_run_server_side(client):
     for school_name in ("甲大学", "乙大学", "丙大学"):
         response = client.post(
@@ -2008,9 +2073,9 @@ def test_adjustment_detail_returns_structured_opportunity_payload():
     assert payload["links"][0]["url"] == "https://example.com/sdu-adjustment"
     assert payload["historical_adjustment"]["initial_score_min"] == 360
     assert payload["historical_adjustment"]["initial_score_max"] == 389
-    assert payload["mentor_radar"]["review_count"] == 2
+    assert payload["mentor_radar"]["review_count"] == 1
     assert payload["mentor_radar"]["warning_count"] == 1
-    assert {review["mentor_name"] for review in payload["mentor_reviews"]} == {"李老师", "周老师"}
+    assert {review["mentor_name"] for review in payload["mentor_reviews"]} == {"李老师"}
     assert payload["mentor_reviews"][0]["mentor_name"] == "李老师"
     assert "延毕风险" in payload["mentor_reviews"][0]["review_text"]
     assert "<br>" not in payload["mentor_reviews"][0]["review_text"]
