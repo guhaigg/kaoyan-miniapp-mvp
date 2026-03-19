@@ -1241,6 +1241,8 @@ function AdjustmentIntelCard({
                 )}
               </div>
               <div>样本数：{item.historical_adjustment?.sample_count ?? 0}</div>
+              <div>覆盖年份：{formatHistoricalYears(item.historical_adjustment?.sample_years)}</div>
+              <div>样本来源：{formatHistoricalSourceTypes(item.historical_adjustment?.source_types)}</div>
             </div>
           </div>
 
@@ -1469,12 +1471,24 @@ function AdjustmentDetailDrawer({
                     <div className="grid gap-3 md:grid-cols-2">
                       <DetailRow label="历史样本" value={`${detail.historical_adjustment?.sample_count ?? 0}`} />
                       <DetailRow
+                        label="覆盖年份"
+                        value={formatHistoricalYears(detail.historical_adjustment?.sample_years)}
+                      />
+                      <DetailRow
+                        label="样本来源"
+                        value={formatHistoricalSourceTypes(detail.historical_adjustment?.source_types)}
+                      />
+                      <DetailRow
                         label="国家线"
                         value={formatNationalLineDetail(detail.historical_adjustment)}
                       />
                       <DetailRow label="活跃度" value={detail.school_intelligence?.confidence_label || null} />
                       <DetailRow label="导师预警" value={detail.mentor_radar?.risk_label || "暂无明显预警"} />
                       <DetailRow label="发布时间规律" value={detail.release_timing?.signal_label || null} />
+                      <DetailRow
+                        label="发榜样本年份"
+                        value={formatHistoricalYears(detail.release_timing?.sample_years)}
+                      />
                     </div>
                   </div>
                 </DetailBlock>
@@ -1691,6 +1705,34 @@ function formatNationalLineDetail(historicalAdjustment: SearchItem["historical_a
     `A/B ${historicalAdjustment.national_line_zone_a}/${historicalAdjustment.national_line_zone_b}`,
   ].filter(Boolean);
   return parts.join(" ");
+}
+
+function formatHistoricalYears(sampleYears: number[] | null | undefined) {
+  if (!sampleYears || sampleYears.length === 0) {
+    return "暂无";
+  }
+  return sampleYears.join(" / ");
+}
+
+function formatHistoricalSourceTypes(sourceTypes: string[] | null | undefined) {
+  if (!sourceTypes || sourceTypes.length === 0) {
+    return "暂无";
+  }
+  const labels = sourceTypes.map((sourceType) => {
+    switch (sourceType) {
+      case "adjustment_stats":
+        return "调剂统计";
+      case "landing":
+        return "上岸名单";
+      case "future_program":
+        return "招生专业";
+      case "notice_reference":
+        return "公告索引";
+      default:
+        return sourceType;
+    }
+  });
+  return Array.from(new Set(labels)).join(" / ");
 }
 
 function getTimingSignal(item: SearchItem) {
