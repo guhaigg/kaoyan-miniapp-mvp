@@ -10,6 +10,8 @@ from ..db import get_db
 from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional
 from ..models import AdjustmentOpportunity, Content, CrawlJob, HistoricalAdjustmentProfile, School
 from ..schemas import (
+    AdjustmentSearchDetailResponse,
+    AdjustmentSearchLinkItem,
     AdjustmentSearchRequest,
     AnnouncementSearchRequest,
     SearchItem,
@@ -156,6 +158,187 @@ def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchReques
     if payload.region:
         query = query.filter(AdjustmentOpportunity.region_name.ilike(f"%{payload.region.strip()}%"))
     return query
+
+
+def _append_unique_link(links: list[AdjustmentSearchLinkItem], *, label: str, url: str | None, link_type: str | None = None, source: str | None = None):
+    normalized = str(url or "").strip()
+    if not normalized:
+        return
+    if any(item.url == normalized for item in links):
+        return
+    links.append(
+        AdjustmentSearchLinkItem(
+            label=label,
+            url=normalized,
+            link_type=link_type,
+            source=source,
+        )
+    )
+
+
+def _build_adjustment_detail_from_content(
+    db: Session,
+    row: Content,
+) -> AdjustmentSearchDetailResponse:
+    school_name = row.school.name if row.school else None
+    normalized_school_name = normalize_school_name(school_name) if school_name else ""
+    extra = dict(row.extra or {})
+    adjustment_meta = dict(extra.get("adjustment_meta") or {})
+    historical_profiles = load_profiles_for_search(db, [school_name] if school_name else [])
+    mentor_radar = load_mentor_radar_for_search(db, [school_name] if school_name else [])
+    release_timings = load_release_timing_for_search(db, [school_name] if school_name else [])
+    school_intelligence = load_school_intelligence_for_search(db, [school_name] if school_name else [])
+
+    insight = None
+    if school_name:
+        insight = build_search_insight(
+            historical_profiles.get(normalized_school_name, []),
+            major_codes=[str(code) for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()],
+            major_name=row.major,
+            study_modes=[str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()],
+            candidate_score=None,
+        )
+
+    mentor_signal = mentor_radar.get(normalized_school_name) if school_name else None
+    release_signal = build_release_timing_insight(release_timings.get(normalized_school_name)) if school_name else None
+    school_signal = school_intelligence.get(normalized_school_name) if school_name else None
+
+    links: list[AdjustmentSearchLinkItem] = []
+    _append_unique_link(links, label="原始链接", url=row.source_url, link_type="source", source=row.source_type)
+    for item in extra.get("outbound_links") or []:
+        if not isinstance(item, dict):
+            continue
+        _append_unique_link(
+            links,
+            label=str(item.get("text") or item.get("title") or "正文外链"),
+            url=str(item.get("url") or "").strip(),
+            link_type=str(item.get("link_type") or "external"),
+            source="content_outbound",
+        )
+    if school_signal is not None:
+        for index, url in enumerate(school_signal.reference_urls, start=1):
+            _append_unique_link(
+                links,
+                label=f"历史参考 {index}",
+                url=url,
+                link_type="reference",
+                source="school_intelligence",
+            )
+
+    return AdjustmentSearchDetailResponse(
+        id=row.id,
+        item_kind="content",
+        category=row.category,
+        notice_kind=str((extra.get("notice_kind") or "")).strip() or None,
+        source_type=row.source_type,
+        title=row.title,
+        school_name=school_name,
+        department_name=str(extra.get("department_name") or "").strip() or None,
+        region=row.region,
+        major=row.major,
+        major_code=next((str(code) for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()), None),
+        school_code=None,
+        school_tier=None,
+        study_mode=next((str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()), None),
+        verification_status=None,
+        vacancy_count=None,
+        min_score=insight.min_score if insight is not None else None,
+        avg_score=insight.avg_score if insight is not None else None,
+        max_score=insight.max_score if insight is not None else None,
+        published_at=row.published_at,
+        captured_at=None,
+        updated_at=row.updated_at,
+        summary=row.summary,
+        body=row.body,
+        tags=[str(tag) for tag in (extra.get("tags") or []) if str(tag or "").strip()],
+        source_url=row.source_url,
+        source_dataset_key=None,
+        links=links,
+        historical_adjustment=insight.__dict__ if insight is not None else None,
+        mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
+        release_timing=release_signal.__dict__ if release_signal is not None else None,
+        school_intelligence=school_signal.__dict__ if school_signal is not None else None,
+        meta_json={
+            "adjustment_meta": adjustment_meta,
+            "detail_extraction_method": extra.get("detail_extraction_method"),
+            "pdf_parse_status": extra.get("pdf_parse_status"),
+        },
+    )
+
+
+def _build_adjustment_detail_from_opportunity(
+    db: Session,
+    row: AdjustmentOpportunity,
+) -> AdjustmentSearchDetailResponse:
+    normalized_school_name = normalize_school_name(row.school_name)
+    historical_profiles = load_profiles_for_search(db, [row.school_name])
+    mentor_radar = load_mentor_radar_for_search(db, [row.school_name])
+    release_timings = load_release_timing_for_search(db, [row.school_name])
+    school_intelligence = load_school_intelligence_for_search(db, [row.school_name])
+    insight = build_search_insight(
+        historical_profiles.get(normalized_school_name, []),
+        major_codes=[row.major_code] if row.major_code else [],
+        major_name=row.major_name,
+        study_modes=[row.study_mode] if row.study_mode else [],
+        candidate_score=None,
+    )
+    mentor_signal = mentor_radar.get(normalized_school_name)
+    release_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
+    school_signal = school_intelligence.get(normalized_school_name)
+    meta = dict(row.meta_json or {})
+    links: list[AdjustmentSearchLinkItem] = []
+    _append_unique_link(links, label="原始链接", url=row.source_url, link_type="source", source=row.source_type)
+    for index, url in enumerate([str(url) for url in (meta.get("reference_urls") or []) if str(url or "").strip()], start=1):
+        _append_unique_link(links, label=f"表格参考 {index}", url=url, link_type="reference", source="table_reference")
+    if school_signal is not None:
+        for index, url in enumerate(school_signal.reference_urls, start=1):
+            _append_unique_link(links, label=f"历史参考 {index}", url=url, link_type="reference", source="school_intelligence")
+
+    return AdjustmentSearchDetailResponse(
+        id=row.id,
+        item_kind="opportunity",
+        category="adjustment",
+        notice_kind="historical_opportunity",
+        source_type=f"historical_{row.source_type}",
+        title=row.title,
+        school_name=row.school_name,
+        department_name=row.department_name,
+        region=row.region_name,
+        major=row.major_name,
+        major_code=row.major_code,
+        school_code=row.school_code,
+        school_tier=row.school_tier,
+        study_mode=row.study_mode,
+        verification_status=row.verification_status,
+        vacancy_count=row.vacancy_count,
+        min_score=row.min_score,
+        avg_score=row.avg_score,
+        max_score=row.max_score,
+        published_at=row.published_at,
+        captured_at=row.captured_at,
+        updated_at=row.updated_at,
+        summary=_build_adjustment_opportunity_summary(row, insight),
+        body=row.summary,
+        tags=[
+            str(tag)
+            for tag in [
+                _historical_source_label(row.source_type),
+                row.region_name,
+                row.major_name,
+                row.major_code,
+                row.school_tier,
+            ]
+            if str(tag or "").strip()
+        ],
+        source_url=row.source_url,
+        source_dataset_key=row.source_dataset_key,
+        links=links,
+        historical_adjustment=insight.__dict__ if insight is not None else None,
+        mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
+        release_timing=release_signal.__dict__ if release_signal is not None else None,
+        school_intelligence=school_signal.__dict__ if school_signal is not None else None,
+        meta_json=meta,
+    )
 
 
 def _adjustment_outlook_rank(value: str | None) -> int:
@@ -698,3 +881,29 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
         portal_user_id=user.id if user else None,
     )
     return response
+
+
+@router.get("/adjustments/items/{item_id}", response_model=AdjustmentSearchDetailResponse)
+def get_adjustment_item_detail(
+    item_id: str,
+    item_kind: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdjustmentSearchDetailResponse:
+    user = get_portal_user_optional(request, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="login required for adjustment detail",
+        )
+    if item_kind == "content":
+        row = db.query(Content).filter(Content.id == item_id, Content.category == "adjustment").first()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="adjustment content not found")
+        return _build_adjustment_detail_from_content(db, row)
+    if item_kind == "opportunity":
+        row = db.query(AdjustmentOpportunity).filter(AdjustmentOpportunity.id == item_id).first()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="adjustment opportunity not found")
+        return _build_adjustment_detail_from_opportunity(db, row)
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unsupported adjustment item kind")

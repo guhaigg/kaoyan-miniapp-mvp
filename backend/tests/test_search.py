@@ -930,3 +930,82 @@ def test_content_ingest_requires_admin_token(client):
 
     allowed = client.post("/api/v1/content", json=payload, headers={"X-Admin-Token": "test-admin-token"})
     assert allowed.status_code == 200
+
+
+def test_adjustment_detail_returns_structured_opportunity_payload(client):
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="opp-detail-1",
+                source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                source_type="snapshot",
+                year=2025,
+                school_name="山东大学",
+                school_name_normalized="山东大学",
+                school_code="10422",
+                region_name="山东",
+                school_tier="985",
+                department_name="外国语学院",
+                department_name_normalized="外国语学院",
+                major_code="055101",
+                major_name="英语笔译",
+                major_name_normalized="英语笔译",
+                study_mode="fulltime",
+                vacancy_count=4,
+                min_score=360,
+                avg_score=374.5,
+                max_score=389,
+                verification_status="官网",
+                title="山东大学 英语笔译 调剂信息",
+                summary="2025 年调剂快照 · 官网 · 计划 4",
+                source_url="https://example.com/sdu-adjustment",
+                meta_json={"reference_urls": ["https://example.com/sdu-reference"]},
+            )
+        )
+        db.commit()
+        opportunity_id = (
+            db.query(AdjustmentOpportunity.id)
+            .filter(AdjustmentOpportunity.opportunity_key == "opp-detail-1")
+            .scalar()
+        )
+
+    token = _register_and_login(client, "adjustment_detail_opportunity_user")
+    response = client.get(
+        f"/api/v1/search/adjustments/items/{opportunity_id}?item_kind=opportunity",
+        headers={"X-User-Token": token},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["item_kind"] == "opportunity"
+    assert payload["school_name"] == "山东大学"
+    assert payload["links"][0]["url"] == "https://example.com/sdu-adjustment"
+
+
+def test_adjustment_detail_returns_content_body(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "湖北大学应用统计调剂通知",
+            "body": "这是站内保留的完整调剂正文。",
+            "school_name": "湖北大学",
+            "major": "应用统计",
+            "region": "湖北",
+            "source_type": "crawler",
+            "source_url": "https://example.com/hubu-adjustment-detail",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+    content_id = response.json()["id"]
+
+    token = _register_and_login(client, "adjustment_detail_content_user")
+    detail = client.get(
+        f"/api/v1/search/adjustments/items/{content_id}?item_kind=content",
+        headers={"X-User-Token": token},
+    )
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["item_kind"] == "content"
+    assert payload["body"] == "这是站内保留的完整调剂正文。"
+    assert payload["source_url"] == "https://example.com/hubu-adjustment-detail"

@@ -335,6 +335,49 @@ export type SearchResponse = {
   refresh_job_id: string | null;
 };
 
+export type AdjustmentSearchDetailLinkItem = {
+  label: string;
+  url: string;
+  link_type: string | null;
+  source: string | null;
+};
+
+export type AdjustmentSearchDetailResponse = {
+  id: string;
+  item_kind: "content" | "opportunity";
+  category: string;
+  notice_kind: string | null;
+  source_type: string;
+  title: string;
+  school_name: string | null;
+  department_name: string | null;
+  region: string | null;
+  major: string | null;
+  major_code: string | null;
+  school_code: string | null;
+  school_tier: string | null;
+  study_mode: string | null;
+  verification_status: string | null;
+  vacancy_count: number | null;
+  min_score: number | null;
+  avg_score: number | null;
+  max_score: number | null;
+  published_at: string | null;
+  captured_at: string | null;
+  updated_at: string;
+  summary: string | null;
+  body: string | null;
+  tags: string[];
+  source_url: string | null;
+  source_dataset_key: string | null;
+  links: AdjustmentSearchDetailLinkItem[];
+  historical_adjustment: SearchItem["historical_adjustment"];
+  mentor_radar: SearchItem["mentor_radar"];
+  release_timing: SearchItem["release_timing"];
+  school_intelligence: SearchItem["school_intelligence"];
+  meta_json: Record<string, unknown>;
+};
+
 export type SearchBaseRequest = {
   school_name?: string;
   keywords?: string;

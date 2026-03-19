@@ -900,6 +900,49 @@ class SearchResponse(BaseModel):
     refresh_job_id: str | None = None
 
 
+class AdjustmentSearchLinkItem(BaseModel):
+    label: str
+    url: str
+    link_type: str | None = None
+    source: str | None = None
+
+
+class AdjustmentSearchDetailResponse(BaseModel):
+    id: str
+    item_kind: Literal["content", "opportunity"]
+    category: str
+    notice_kind: str | None = None
+    source_type: str
+    title: str
+    school_name: str | None = None
+    department_name: str | None = None
+    region: str | None = None
+    major: str | None = None
+    major_code: str | None = None
+    school_code: str | None = None
+    school_tier: str | None = None
+    study_mode: str | None = None
+    verification_status: str | None = None
+    vacancy_count: int | None = None
+    min_score: int | None = None
+    avg_score: float | None = None
+    max_score: int | None = None
+    published_at: datetime | None = None
+    captured_at: datetime | None = None
+    updated_at: datetime
+    summary: str | None = None
+    body: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    source_url: str | None = None
+    source_dataset_key: str | None = None
+    links: list[AdjustmentSearchLinkItem] = Field(default_factory=list)
+    historical_adjustment: HistoricalAdjustmentInsight | None = None
+    mentor_radar: MentorRadarInsight | None = None
+    release_timing: ReleaseTimingInsight | None = None
+    school_intelligence: SchoolIntelligenceInsight | None = None
+    meta_json: dict[str, Any] = Field(default_factory=dict)
+
+
 class SchoolSuggestItem(BaseModel):
     id: str
     name: str

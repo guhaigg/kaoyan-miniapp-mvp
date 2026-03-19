@@ -6,6 +6,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
+  ExternalLink,
   Clock3,
   History,
   Search,
@@ -14,10 +15,12 @@ import {
   Target,
   TrendingUp,
   ChevronDown,
+  X,
 } from "lucide-react";
 import FilterDrawer, { type SchoolTier, type StudyMode } from "@/components/search/FilterDrawer";
 import FeedCard, { FeedCardSkeleton } from "@/components/shared/FeedCard";
-import { ApiError, SearchItem, SearchResponse } from "@/lib/api";
+import { AdjustmentSearchDetailResponse, ApiError, SearchItem, SearchResponse } from "@/lib/api";
+import { fetchAdjustmentDetail } from "@/api/search";
 import { useAdjustmentSearchMutation, useAnnouncementSearchMutation } from "@/hooks/useSearch";
 import { useAddSubscriptionMutation, useDeleteSubscriptionMutation, useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
@@ -42,6 +45,10 @@ export default function SearchPage() {
   const [hideMentorWarnings, setHideMentorWarnings] = useState(false);
   const [message, setMessage] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
+  const [selectedAdjustmentItem, setSelectedAdjustmentItem] = useState<SearchItem | null>(null);
+  const [adjustmentDetail, setAdjustmentDetail] = useState<AdjustmentSearchDetailResponse | null>(null);
+  const [adjustmentDetailLoading, setAdjustmentDetailLoading] = useState(false);
+  const [adjustmentDetailError, setAdjustmentDetailError] = useState("");
 
   const [score, setScore] = useState("");
   const [major, setMajor] = useState("");
@@ -243,6 +250,35 @@ export default function SearchPage() {
         setMessage("收藏失败，请稍后重试。");
       }
     }
+  }
+
+  async function openAdjustmentDetail(item: SearchItem) {
+    setSelectedAdjustmentItem(item);
+    setAdjustmentDetail(null);
+    setAdjustmentDetailError("");
+    setAdjustmentDetailLoading(true);
+    try {
+      const detail = await fetchAdjustmentDetail(
+        item.id,
+        item.notice_kind === "historical_opportunity" ? "opportunity" : "content",
+      );
+      setAdjustmentDetail(detail);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setAdjustmentDetailError(error.message);
+      } else {
+        setAdjustmentDetailError("详情加载失败，请稍后重试。");
+      }
+    } finally {
+      setAdjustmentDetailLoading(false);
+    }
+  }
+
+  function closeAdjustmentDetail() {
+    setSelectedAdjustmentItem(null);
+    setAdjustmentDetail(null);
+    setAdjustmentDetailError("");
+    setAdjustmentDetailLoading(false);
   }
 
   const isSearching = announcementMutation.isPending || adjustmentMutation.isPending;
@@ -681,6 +717,7 @@ export default function SearchPage() {
                       key={item.id}
                       item={item}
                       candidateScore={candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined}
+                      onOpenDetail={() => openAdjustmentDetail(item)}
                       bookmark={
                         item.school_name
                           ? {
@@ -878,6 +915,14 @@ export default function SearchPage() {
         ) : null}
       </div>
 
+      <AdjustmentDetailDrawer
+        item={selectedAdjustmentItem}
+        detail={adjustmentDetail}
+        loading={adjustmentDetailLoading}
+        error={adjustmentDetailError}
+        onClose={closeAdjustmentDetail}
+      />
+
       <div className={`relative overflow-hidden rounded-3xl border p-8 shadow-2xl backdrop-blur-xl ${isAnonymous ? "border-white/10 bg-white/[0.04]" : "border-cyan-500/20 bg-cyan-950/10"}`}>
         <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 -translate-y-1/2 translate-x-1/2 rounded-full bg-cyan-500/10 blur-3xl" />
         <div className="relative z-10 flex flex-col items-center gap-8 md:flex-row">
@@ -1029,10 +1074,12 @@ function IntelFilterChip({
 function AdjustmentIntelCard({
   item,
   candidateScore,
+  onOpenDetail,
   bookmark,
 }: {
   item: SearchItem;
   candidateScore?: number;
+  onOpenDetail: () => void;
   bookmark?: {
     active: boolean;
     available: boolean;
@@ -1190,6 +1237,13 @@ function AdjustmentIntelCard({
                 查看原文
               </a>
             ) : null}
+            <button
+              type="button"
+              onClick={onOpenDetail}
+              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/10"
+            >
+              查看详情
+            </button>
             {historicalReferenceUrl ? (
               <a
                 href={historicalReferenceUrl}
@@ -1204,6 +1258,181 @@ function AdjustmentIntelCard({
         </div>
       </div>
     </motion.div>
+  );
+}
+
+function AdjustmentDetailDrawer({
+  item,
+  detail,
+  loading,
+  error,
+  onClose,
+}: {
+  item: SearchItem | null;
+  detail: AdjustmentSearchDetailResponse | null;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {item ? (
+        <>
+          <motion.button
+            type="button"
+            aria-label="关闭调剂详情"
+            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+          <motion.aside
+            initial={{ opacity: 0, x: 32 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 32 }}
+            transition={{ type: "spring", stiffness: 260, damping: 28 }}
+            className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[linear-gradient(180deg,rgba(7,10,18,0.98),rgba(10,14,22,0.98))] p-5 shadow-[0_0_120px_rgba(0,0,0,0.5)]"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">调剂结果详情</div>
+                <h3 className="mt-2 text-2xl font-black tracking-tight text-white">
+                  {detail?.school_name || item.school_name || "院校待补充"}
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-slate-300">{detail?.title || item.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {loading ? <div className="text-sm text-slate-400">详情加载中...</div> : null}
+            {error ? <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
+
+            {detail ? (
+              <div className="space-y-5">
+                <div className="flex flex-wrap gap-2">
+                  {(detail.tags.length > 0 ? detail.tags : item.tags).slice(0, 8).map((tag) => (
+                    <span key={tag} className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <DetailBlock title="院校与学院">
+                    <DetailRow label="院校" value={detail.school_name} />
+                    <DetailRow label="学院" value={detail.department_name} />
+                    <DetailRow label="地区" value={detail.region} />
+                    <DetailRow label="院校层级" value={detail.school_tier} />
+                    <DetailRow label="学校代码" value={detail.school_code} />
+                  </DetailBlock>
+                  <DetailBlock title="专业与条件">
+                    <DetailRow label="专业" value={detail.major} />
+                    <DetailRow label="专业代码" value={detail.major_code} />
+                    <DetailRow label="学习形式" value={detail.study_mode} />
+                    <DetailRow label="验证状态" value={detail.verification_status} />
+                    <DetailRow label="计划人数" value={detail.vacancy_count?.toString() || null} />
+                  </DetailBlock>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <DetailStat label="最低分" value={detail.min_score} />
+                  <DetailStat label="平均分" value={detail.avg_score ? Math.round(detail.avg_score) : null} />
+                  <DetailStat label="最高分" value={detail.max_score} />
+                </div>
+
+                <DetailBlock title="时间与来源">
+                  <DetailRow label="发布时间" value={detail.published_at ? formatIntelTime(detail.published_at) : null} />
+                  <DetailRow label="采集时间" value={detail.captured_at ? formatIntelTime(detail.captured_at) : null} />
+                  <DetailRow label="更新时间" value={formatIntelTime(detail.updated_at)} />
+                  <DetailRow label="结果来源" value={detail.source_type} />
+                  <DetailRow label="数据集" value={detail.source_dataset_key} />
+                </DetailBlock>
+
+                <DetailBlock title="站内内容">
+                  <div className="space-y-3 text-sm leading-7 text-slate-300">
+                    <p>{detail.summary || "暂无摘要。"}</p>
+                    <p>{detail.body || "这条结果来自结构化调剂表，站内详情会展示结构化字段和原始链接；如需原文，请打开下方来源链接。"}</p>
+                  </div>
+                </DetailBlock>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <DetailBlock title="导师雷达">
+                    <DetailRow label="风险等级" value={detail.mentor_radar?.risk_label || "暂无明显预警"} />
+                    <DetailRow label="评价数" value={`${detail.mentor_radar?.review_count ?? 0}`} />
+                    <DetailRow label="预警数" value={`${detail.mentor_radar?.warning_count ?? 0}`} />
+                    <DetailRow label="高频标签" value={detail.mentor_radar?.top_tags?.slice(0, 4).join(" / ") || "暂无"} />
+                  </DetailBlock>
+                  <DetailBlock title="历史与节奏">
+                    <DetailRow label="历史样本" value={`${detail.historical_adjustment?.sample_count ?? 0}`} />
+                    <DetailRow label="活跃年份" value={detail.school_intelligence?.active_years?.slice(0, 6).join(" / ") || null} />
+                    <DetailRow label="高频时段" value={detail.release_timing?.signal_label || null} />
+                    <DetailRow label="活跃度" value={detail.school_intelligence?.confidence_label || null} />
+                  </DetailBlock>
+                </div>
+
+                <DetailBlock title="真实来源">
+                  <div className="space-y-2">
+                    {detail.links.length > 0 ? (
+                      detail.links.map((link) => (
+                        <a
+                          key={`${link.source || "source"}-${link.url}`}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-200 transition-colors hover:bg-white/[0.08]"
+                        >
+                          <div>
+                            <div className="font-semibold text-white">{link.label}</div>
+                            <div className="mt-1 text-xs text-slate-400">{link.source || link.link_type || "source"}</div>
+                          </div>
+                          <ExternalLink size={16} className="text-slate-400" />
+                        </a>
+                      ))
+                    ) : (
+                      <div className="text-sm text-slate-500">当前没有可点击的原始链接。</div>
+                    )}
+                  </div>
+                </DetailBlock>
+              </div>
+            ) : null}
+          </motion.aside>
+        </>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+function DetailBlock({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">{title}</div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="flex items-start justify-between gap-4 text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-right text-slate-200">{value || "--"}</span>
+    </div>
+  );
+}
+
+function DetailStat({ label, value }: { label: string; value: number | null | undefined }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="mt-2 text-2xl font-black text-white">{value ?? "--"}</div>
+    </div>
   );
 }
 
