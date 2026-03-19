@@ -1191,14 +1191,27 @@ function AdjustmentIntelCard({
     item.historical_adjustment?.min_score ?? null,
     item.historical_adjustment?.max_score ?? null,
   );
-  const timingSignal = getTimingSignal(item);
-  const schoolSignal = getSchoolSignal(item);
-  const departmentLine = [item.department_name, item.major, item.adjustment_major_codes[0], item.city, item.region].filter(Boolean).join(" · ") || "调剂情报流";
-  const tags = item.tags.length > 0 ? item.tags : [item.school_name || "院校待补充", item.major || "专业待补充"];
   const releaseTime = formatIntelTime(item.published_at || item.updated_at);
   const mentorSignals = getMentorScopeSignals(item);
   const mentorWarning = getMentorWarningCount(item) > 0;
-  const historicalReferenceUrl = item.school_intelligence?.reference_urls?.find((url) => url && url !== item.source_url) || null;
+  const initialScore = formatScoreRange(
+    item.historical_adjustment?.initial_score_min ?? item.historical_adjustment?.min_score,
+    item.historical_adjustment?.initial_score_max ?? item.historical_adjustment?.max_score,
+  );
+  const adjustmentScore = formatScoreRange(
+    item.historical_adjustment?.adjustment_score_min,
+    item.historical_adjustment?.adjustment_score_max,
+  );
+  const primaryFacts = [
+    { label: "学院", value: item.department_name || "待补充" },
+    { label: "专业", value: item.major || "待补充" },
+    { label: "代码", value: item.adjustment_major_codes[0] || "待补充" },
+    { label: "初试分数", value: initialScore },
+    { label: "调剂分数", value: adjustmentScore },
+    { label: "调剂人数", value: item.adjustment_vacancy_count ? `${item.adjustment_vacancy_count}` : "待补充" },
+    { label: "院校层级", value: item.school_tier || "待补充" },
+    { label: "学习方式", value: formatStudyModeLabel(null, item.adjustment_study_modes) },
+  ];
 
   async function handleBookmarkClick() {
     if (!bookmark) return;
@@ -1219,120 +1232,63 @@ function AdjustmentIntelCard({
       <div className="relative space-y-5 p-5 md:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">{departmentLine}</div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
+              {item.adjustment_year || "年份待补充"} · {item.region || "地区待补充"}
+            </div>
             <h3 className="text-2xl font-black tracking-tight text-white">{item.school_name || "未知院校"}</h3>
-            <p className="mt-2 text-sm font-medium leading-6 text-slate-300">{item.title}</p>
+            <p className="mt-2 text-sm font-medium leading-6 text-slate-300">
+              {[item.department_name, item.major, item.adjustment_major_codes[0]].filter(Boolean).join(" · ") || "学院与专业待补充"}
+            </p>
           </div>
           <div className="shrink-0 text-right">
             <div className="flex items-center justify-end gap-1 text-xs font-mono text-slate-500">
               <Clock3 size={13} />
               {releaseTime}
             </div>
-            {isUrgent ? (
-              <div className="mt-2 inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200">
-                Latest
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {tags.slice(0, 6).map((tag) => (
-            <span key={tag} className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
-              {tag}
-            </span>
-          ))}
-          {item.school_intelligence ? (
-            <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
-              {item.school_intelligence.confidence_label}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="grid gap-3 border-t border-white/8 pt-4 xl:grid-cols-4">
-          <div className={`rounded-2xl border p-4 ${probability.bg} ${probability.border}`}>
-            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
-              <TrendingUp size={15} className={probability.iconClass} />
-              录取胜率预估
-            </div>
-            <div className={`text-2xl font-black ${probability.textClass}`}>{probability.label}</div>
-            <div className="mt-3 text-xs leading-5 text-slate-300">
-              <div>
-                等效到
-                {item.historical_adjustment?.national_line_year ?? "当前年"}
-                ：
-                {formatScoreRange(item.historical_adjustment?.min_score, item.historical_adjustment?.max_score)}
-              </div>
-              <div>
-                国家线：
-                {formatNationalLineSummary(item.historical_adjustment)}
-              </div>
-              <div>
-                原始初试：
-                {formatScoreRange(
-                  item.historical_adjustment?.initial_score_min,
-                  item.historical_adjustment?.initial_score_max,
-                )}
-              </div>
-              <div>
-                原始调剂：
-                {formatScoreRange(
-                  item.historical_adjustment?.adjustment_score_min,
-                  item.historical_adjustment?.adjustment_score_max,
-                )}
-              </div>
-              <div>样本数：{item.historical_adjustment?.sample_count ?? 0}</div>
-              <div>覆盖年份：{formatHistoricalYears(item.historical_adjustment?.sample_years)}</div>
-              <div>样本来源：{formatHistoricalSourceTypes(item.historical_adjustment?.source_types)}</div>
-            </div>
-          </div>
-
-          <div className={`rounded-2xl border p-4 ${mentorWarning ? "border-red-400/20 bg-red-500/10" : "border-white/10 bg-white/[0.04]"}`}>
-            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
+            <div className="mt-2 flex flex-wrap justify-end gap-2">
+              {isUrgent ? (
+                <span className="inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200">
+                  最新
+                </span>
+              ) : null}
               {mentorWarning ? (
-                <ShieldAlert size={15} className="text-red-300" />
-              ) : (
-                <CheckCircle2 size={15} className="text-emerald-300" />
-              )}
-              导师评价雷达
-            </div>
-            <div className={`text-lg font-bold ${mentorWarning ? "text-red-300" : "text-slate-100"}`}>
-              {mentorSignals.school?.risk_label || mentorSignals.department?.risk_label || "暂无明显预警"}
-            </div>
-            <div className="mt-3 text-xs leading-5 text-slate-300">
-              {item.department_name ? <div>本学院评价：{mentorSignals.department?.review_count ?? 0}</div> : null}
-              <div>本学校评价：{mentorSignals.school?.review_count ?? 0}</div>
-              <div>本学校预警：{mentorSignals.school?.warning_count ?? 0}</div>
-              <div>标签：{mentorSignals.school?.top_tags?.slice(0, 3).join(" / ") || mentorSignals.department?.top_tags?.slice(0, 3).join(" / ") || "暂无"}</div>
+                <span className="inline-flex rounded-full border border-red-400/25 bg-red-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-red-200">
+                  导师预警
+                </span>
+              ) : null}
             </div>
           </div>
+        </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
-              <History size={15} className="text-violet-300" />
-              发榜生物钟
+        <div className="grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-2 xl:grid-cols-5">
+          {primaryFacts.map((fact) => (
+            <div key={fact.label} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{fact.label}</div>
+              <div className="mt-2 text-base font-semibold text-white">{fact.value}</div>
             </div>
-            <div className="text-lg font-bold text-slate-100">{timingSignal.title}</div>
-            <div className="mt-3 text-xs leading-5 text-slate-300">
-              <div>{timingSignal.detail}</div>
+          ))}
+          <div className={`rounded-2xl border px-4 py-3 ${probability.bg} ${probability.border}`}>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">胜率判断</div>
+            <div className={`mt-2 flex items-center gap-2 text-lg font-black ${probability.textClass}`}>
+              <TrendingUp size={16} className={probability.iconClass} />
+              {probability.label}
             </div>
           </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
-              <Target size={15} className="text-cyan-300" />
-              院校活跃度
+          <div className={`rounded-2xl border px-4 py-3 ${mentorWarning ? "border-red-400/20 bg-red-500/10" : "border-white/10 bg-white/[0.04]"}`}>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">导师情况</div>
+            <div className="mt-2 flex items-center gap-2 text-base font-semibold text-white">
+              {mentorWarning ? <ShieldAlert size={16} className="text-red-300" /> : <CheckCircle2 size={16} className="text-emerald-300" />}
+              {mentorWarning ? "有预警" : "可进一步看"}
             </div>
-            <div className="text-lg font-bold text-slate-100">{schoolSignal.title}</div>
-            <div className="mt-3 text-xs leading-5 text-slate-300">
-              <div>{schoolSignal.detail}</div>
+            <div className="mt-2 text-xs text-slate-300">
+              {item.department_name ? `本学院 ${mentorSignals.department?.review_count ?? 0}` : "本学院 --"} / 本学校 {mentorSignals.school?.review_count ?? 0}
             </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4">
           <div className="text-xs text-slate-400">
-            {item.summary || "暂无摘要，建议打开源站查看完整原文。"}
+            导师评价、发布时间、历史样本和来源链接都放在完整信息页里。
           </div>
           <div className="flex flex-wrap gap-2">
             {bookmark ? (
@@ -1366,18 +1322,8 @@ function AdjustmentIntelCard({
               onClick={onOpenDetail}
               className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/10"
             >
-              查看详情
+              查看完整信息
             </button>
-            {historicalReferenceUrl ? (
-              <a
-                href={historicalReferenceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/10"
-              >
-                历史来源
-              </a>
-            ) : null}
           </div>
         </div>
       </div>
@@ -1413,147 +1359,170 @@ function AdjustmentDetailDrawer({
   const visibleSchoolMentorReviews = showAllMentorReviews
     ? schoolMentorReviews
     : schoolMentorReviews.slice(0, 3);
+  const summaryFacts = detail
+    ? [
+        { label: "学校", value: detail.school_name || "--" },
+        { label: "学院", value: detail.department_name || "--" },
+        { label: "专业", value: detail.major || "--" },
+        { label: "专业代码", value: detail.major_code || "--" },
+        { label: "初试分数", value: formatScoreRange(detail.initial_score_min ?? detail.min_score, detail.initial_score_max ?? detail.max_score) },
+        { label: "调剂分数", value: formatScoreRange(detail.adjustment_score_min, detail.adjustment_score_max) },
+        { label: "调剂人数", value: detail.vacancy_count?.toString() || "--" },
+        { label: "院校层级", value: detail.school_tier || "--" },
+        { label: "学习方式", value: formatStudyModeLabel(detail.study_mode, []) },
+      ]
+    : [];
 
   return (
     <AnimatePresence>
       {item ? (
-        <>
-          <motion.button
-            type="button"
-            aria-label="关闭调剂详情"
-            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
-          <motion.aside
-            initial={{ opacity: 0, x: 32 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 32 }}
-            transition={{ type: "spring", stiffness: 260, damping: 28 }}
-            className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[linear-gradient(180deg,rgba(7,10,18,0.98),rgba(10,14,22,0.98))] p-5 shadow-[0_0_120px_rgba(0,0,0,0.5)]"
-          >
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">调剂结果详情</div>
-                <h3 className="mt-2 text-2xl font-black tracking-tight text-white">
-                  {detail?.school_name || item.school_name || "院校待补充"}
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-300">{detail?.title || item.title}</p>
+        <motion.section
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 24 }}
+          transition={{ type: "spring", stiffness: 220, damping: 28 }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-[radial-gradient(circle_at_top,rgba(8,145,178,0.14),transparent_26%),linear-gradient(180deg,rgba(5,8,16,0.98),rgba(8,11,19,0.99))]"
+        >
+          <div className="mx-auto max-w-7xl px-4 pb-10 pt-6 md:px-8">
+            <div className="sticky top-4 z-10 mb-6 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(14,18,30,0.92),rgba(7,10,18,0.92))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.4)] backdrop-blur-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">调剂完整信息页</div>
+                  <h3 className="mt-2 text-3xl font-black tracking-tight text-white">
+                    {detail?.school_name || item.school_name || "院校待补充"}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    {[detail?.department_name || item.department_name, detail?.major || item.major, detail?.major_code || item.adjustment_major_codes?.[0]].filter(Boolean).join(" · ")}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    搜索页只保留首屏关键字段，导师评价、发布时间、历史样本和原始链接都在这里展开。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-3 text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                <X size={18} />
-              </button>
+              {detail ? (
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  {summaryFacts.map((fact) => (
+                    <div key={fact.label} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{fact.label}</div>
+                      <div className="mt-2 text-base font-semibold text-white">{fact.value}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             {loading ? <div className="text-sm text-slate-400">详情加载中...</div> : null}
             {error ? <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
 
             {detail ? (
-              <div className="space-y-5">
-                <div className="flex flex-wrap gap-2">
-                  {(detail.tags.length > 0 ? detail.tags : item.tags).slice(0, 8).map((tag) => (
-                    <span key={tag} className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <DetailBlock title="院校与学院">
-                    <DetailRow label="院校" value={detail.school_name} />
-                    <DetailRow label="学院" value={detail.department_name} />
-                    <DetailRow label="地区" value={detail.region} />
-                    <DetailRow label="城市" value={detail.city} />
-                    <DetailRow label="院校层级" value={detail.school_tier} />
-                    <DetailRow label="学校代码" value={detail.school_code} />
-                  </DetailBlock>
-                  <DetailBlock title="专业与条件">
-                    <DetailRow label="专业" value={detail.major} />
-                    <DetailRow label="专业代码" value={detail.major_code} />
-                    <DetailRow label="学习形式" value={detail.study_mode} />
-                    <DetailRow label="验证状态" value={detail.verification_status} />
-                    <DetailRow label="调剂人数" value={detail.vacancy_count?.toString() || null} />
-                  </DetailBlock>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-3">
-                  <DetailStat label="初试最低" value={detail.initial_score_min ?? detail.min_score} />
-                  <DetailStat label="初试最高" value={detail.initial_score_max ?? detail.max_score} />
-                  <DetailStat label="调剂最低" value={detail.adjustment_score_min} />
-                  <DetailStat label="调剂最高" value={detail.adjustment_score_max} />
-                  <DetailStat
-                    label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}最低`}
-                    value={detail.historical_adjustment?.min_score ?? detail.min_score}
-                  />
-                  <DetailStat
-                    label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}均值`}
-                    value={detail.historical_adjustment?.avg_score ? Math.round(detail.historical_adjustment.avg_score) : null}
-                  />
-                  <DetailStat
-                    label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}最高`}
-                    value={detail.historical_adjustment?.max_score ?? detail.max_score}
-                  />
-                </div>
-
-                <DetailBlock title="调剂判断">
-                  <div className="space-y-3">
-                    <div className="rounded-2xl border border-cyan-400/15 bg-cyan-500/10 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">系统判断</div>
-                      <div className="mt-2 text-sm leading-7 text-slate-100">
-                        {detail.historical_adjustment?.outlook_label
-                          ? `历史样本判断：${detail.historical_adjustment.outlook_label}。`
-                          : "当前没有足够历史分数样本，暂不输出胜率判断。"}
-                        {" "}
-                        {detail.release_timing?.signal_detail || "发布时间规律样本不足。"}
-                      </div>
-                    </div>
+              <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="space-y-6">
+                  <DetailBlock title="基础信息">
                     <div className="grid gap-3 md:grid-cols-2">
-                      <DetailRow label="历史样本" value={`${detail.historical_adjustment?.sample_count ?? 0}`} />
-                      <DetailRow
-                        label="覆盖年份"
-                        value={formatHistoricalYears(detail.historical_adjustment?.sample_years)}
+                      <DetailRow label="院校" value={detail.school_name} />
+                      <DetailRow label="学院" value={detail.department_name} />
+                      <DetailRow label="专业" value={detail.major} />
+                      <DetailRow label="专业代码" value={detail.major_code} />
+                      <DetailRow label="地区" value={detail.region} />
+                      <DetailRow label="城市" value={detail.city} />
+                      <DetailRow label="院校层级" value={detail.school_tier} />
+                      <DetailRow label="学校代码" value={detail.school_code} />
+                      <DetailRow label="学习形式" value={detail.study_mode} />
+                      <DetailRow label="验证状态" value={detail.verification_status} />
+                    </div>
+                  </DetailBlock>
+
+                  <DetailBlock title="分数与判断">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <DetailStat label="初试最低" value={detail.initial_score_min ?? detail.min_score} />
+                      <DetailStat label="初试最高" value={detail.initial_score_max ?? detail.max_score} />
+                      <DetailStat label="调剂人数" value={detail.vacancy_count} />
+                      <DetailStat label="调剂最低" value={detail.adjustment_score_min} />
+                      <DetailStat label="调剂最高" value={detail.adjustment_score_max} />
+                      <DetailStat
+                        label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}最低`}
+                        value={detail.historical_adjustment?.min_score ?? detail.min_score}
                       />
-                      <DetailRow
-                        label="样本来源"
-                        value={formatHistoricalSourceTypes(detail.historical_adjustment?.source_types)}
+                      <DetailStat
+                        label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}均值`}
+                        value={detail.historical_adjustment?.avg_score ? Math.round(detail.historical_adjustment.avg_score) : null}
                       />
-                      <DetailRow
-                        label="国家线"
-                        value={formatNationalLineDetail(detail.historical_adjustment)}
-                      />
-                      <DetailRow label="活跃度" value={detail.school_intelligence?.confidence_label || null} />
-                      <DetailRow label="本学校导师预警" value={mentorSignals.school?.risk_label || "暂无明显预警"} />
-                      <DetailRow label="发布时间规律" value={detail.release_timing?.signal_label || null} />
-                      <DetailRow
-                        label="发榜样本年份"
-                        value={formatHistoricalYears(detail.release_timing?.sample_years)}
+                      <DetailStat
+                        label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}最高`}
+                        value={detail.historical_adjustment?.max_score ?? detail.max_score}
                       />
                     </div>
-                  </div>
-                </DetailBlock>
+                    <div className="mt-4 rounded-2xl border border-cyan-400/15 bg-cyan-500/10 p-4 text-sm leading-7 text-slate-100">
+                      {detail.historical_adjustment?.outlook_label
+                        ? `历史样本判断：${detail.historical_adjustment.outlook_label}。`
+                        : "当前没有足够历史分数样本，暂不输出胜率判断。"}{" "}
+                      {detail.release_timing?.signal_detail || "发布时间规律样本不足。"}
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <DetailRow label="历史样本" value={`${detail.historical_adjustment?.sample_count ?? 0}`} />
+                      <DetailRow label="覆盖年份" value={formatHistoricalYears(detail.historical_adjustment?.sample_years)} />
+                      <DetailRow label="样本来源" value={formatHistoricalSourceTypes(detail.historical_adjustment?.source_types)} />
+                      <DetailRow label="国家线" value={formatNationalLineDetail(detail.historical_adjustment)} />
+                    </div>
+                  </DetailBlock>
 
-                <DetailBlock title="真实内容">
-                  <div className="space-y-3 text-sm leading-7 text-slate-300">
-                    <p>{detail.summary || "暂无摘要。"}</p>
-                    <p>
-                      {detail.body ||
-                        "这条结果来自结构化调剂表。当前可直接查看结构化字段、导师评价原文和真实来源；如果需要完整原始通知，请再打开底部原文来源。"}
-                    </p>
-                  </div>
-                </DetailBlock>
+                  <DetailBlock title="真实内容">
+                    <div className="space-y-3 text-sm leading-7 text-slate-300">
+                      <p>{detail.summary || "暂无摘要。"}</p>
+                      <p>
+                        {detail.body ||
+                          "这条结果来自结构化调剂表。当前可直接查看结构化字段、导师评价原文和真实来源；如果需要完整原始通知，请再打开底部原文来源。"}
+                      </p>
+                    </div>
+                  </DetailBlock>
 
-                <div className="grid gap-3 md:grid-cols-2">
-                  <DetailBlock title="时间与来源">
+                  <DetailBlock title="来源与原文">
+                    <div className="space-y-2">
+                      {detail.links.length > 0 ? (
+                        <>
+                          <div className="text-sm leading-7 text-slate-400">
+                            这里保留原始链接用于二次核验。正常使用时，优先看上面的结构化内容和导师评价。
+                          </div>
+                          {detail.links.map((link) => (
+                            <a
+                              key={`${link.source || "source"}-${link.url}`}
+                              href={link.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-200 transition-colors hover:bg-white/[0.08]"
+                            >
+                              <div>
+                                <div className="font-semibold text-white">{link.label}</div>
+                                <div className="mt-1 text-xs text-slate-400">{link.source || link.link_type || "source"}</div>
+                              </div>
+                              <ExternalLink size={16} className="text-slate-400" />
+                            </a>
+                          ))}
+                        </>
+                      ) : (
+                        <div className="text-sm text-slate-500">当前没有可点击的原始链接。</div>
+                      )}
+                    </div>
+                  </DetailBlock>
+                </div>
+
+                <div className="space-y-6">
+                  <DetailBlock title="时间与状态">
                     <DetailRow label="发布时间" value={detail.published_at ? formatIntelTime(detail.published_at) : null} />
                     <DetailRow label="采集时间" value={detail.captured_at ? formatIntelTime(detail.captured_at) : null} />
                     <DetailRow label="更新时间" value={formatIntelTime(detail.updated_at)} />
+                    <DetailRow label="活跃度" value={detail.school_intelligence?.confidence_label || null} />
+                    <DetailRow label="发布时间规律" value={detail.release_timing?.signal_label || null} />
+                    <DetailRow label="发榜样本年份" value={formatHistoricalYears(detail.release_timing?.sample_years)} />
                   </DetailBlock>
+
                   <DetailBlock title="导师雷达">
                     {detail.department_name ? (
                       <>
@@ -1570,20 +1539,58 @@ function AdjustmentDetailDrawer({
                       value={mentorSignals.school?.top_tags?.slice(0, 4).join(" / ") || mentorSignals.department?.top_tags?.slice(0, 4).join(" / ") || "暂无"}
                     />
                   </DetailBlock>
-                </div>
 
-                <DetailBlock title="导师真实评价">
-                  <div className="space-y-4">
-                    {(departmentMentorReviews.length > 0 || schoolMentorReviews.length > 0) ? (
-                      <>
-                        <div className="rounded-2xl border border-amber-400/15 bg-amber-500/10 p-4 text-sm leading-7 text-amber-50">
-                          这里先分开给你看本学院评价和本学校评价。本学校评价包含本学院评价，用来判断学院内外整体导师风格。
-                        </div>
-                        {detail.department_name ? (
+                  <DetailBlock title="导师真实评价">
+                    <div className="space-y-4">
+                      {(departmentMentorReviews.length > 0 || schoolMentorReviews.length > 0) ? (
+                        <>
+                          <div className="rounded-2xl border border-amber-400/15 bg-amber-500/10 p-4 text-sm leading-7 text-amber-50">
+                            这里先分开给你看本学院评价和本学校评价。本学校评价包含本学院评价，用来判断学院内外整体导师风格。
+                          </div>
+                          {detail.department_name ? (
+                            <div className="space-y-3">
+                              <div className="text-sm font-semibold text-slate-100">本学院评价</div>
+                              {departmentMentorReviews.length > 0 ? visibleDepartmentMentorReviews.map((review, index) => (
+                                <div key={`dept-${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-sm font-semibold text-white">{review.mentor_name}</span>
+                                    {review.department_name ? (
+                                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
+                                        {review.department_name}
+                                      </span>
+                                    ) : null}
+                                    {review.risk_level ? (
+                                      <span
+                                        className={`rounded-full px-2 py-0.5 text-[11px] ${
+                                          review.risk_level === "warning"
+                                            ? "border border-red-400/20 bg-red-500/10 text-red-200"
+                                            : "border border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
+                                        }`}
+                                      >
+                                        {review.risk_level === "warning" ? "预警" : "正向"}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {review.review_tags.length > 0 ? (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {review.review_tags.map((tag) => (
+                                        <span key={tag} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  <p className="mt-3 text-sm leading-7 text-slate-300">{review.review_text}</p>
+                                </div>
+                              )) : (
+                                <div className="text-sm text-slate-500">当前没有可展示的本学院评价。</div>
+                              )}
+                            </div>
+                          ) : null}
                           <div className="space-y-3">
-                            <div className="text-sm font-semibold text-slate-100">本学院评价</div>
-                            {departmentMentorReviews.length > 0 ? visibleDepartmentMentorReviews.map((review, index) => (
-                              <div key={`dept-${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                            <div className="text-sm font-semibold text-slate-100">本学校评价</div>
+                            {schoolMentorReviews.length > 0 ? visibleSchoolMentorReviews.map((review, index) => (
+                              <div key={`school-${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="text-sm font-semibold text-white">{review.mentor_name}</span>
                                   {review.department_name ? (
@@ -1615,98 +1622,29 @@ function AdjustmentDetailDrawer({
                                 <p className="mt-3 text-sm leading-7 text-slate-300">{review.review_text}</p>
                               </div>
                             )) : (
-                              <div className="text-sm text-slate-500">当前没有可展示的本学院评价。</div>
+                              <div className="text-sm text-slate-500">当前没有可展示的本学校评价。</div>
                             )}
                           </div>
-                        ) : null}
-                        <div className="space-y-3">
-                          <div className="text-sm font-semibold text-slate-100">本学校评价</div>
-                          {schoolMentorReviews.length > 0 ? visibleSchoolMentorReviews.map((review, index) => (
-                        <div key={`school-${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold text-white">{review.mentor_name}</span>
-                            {review.department_name ? (
-                              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
-                                {review.department_name}
-                              </span>
-                            ) : null}
-                            {review.risk_level ? (
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[11px] ${
-                                  review.risk_level === "warning"
-                                    ? "border border-red-400/20 bg-red-500/10 text-red-200"
-                                    : "border border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
-                                }`}
-                              >
-                                {review.risk_level === "warning" ? "预警" : "正向"}
-                              </span>
-                            ) : null}
-                          </div>
-                          {review.review_tags.length > 0 ? (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {review.review_tags.map((tag) => (
-                                <span key={tag} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
+                          {(departmentMentorReviews.length > 3 || schoolMentorReviews.length > 3) ? (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllMentorReviews((value) => !value)}
+                              className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/[0.08]"
+                            >
+                              {showAllMentorReviews ? "收起更多评价" : "展开更多导师评价"}
+                            </button>
                           ) : null}
-                          <p className="mt-3 text-sm leading-7 text-slate-300">{review.review_text}</p>
-                        </div>
-                          )) : (
-                            <div className="text-sm text-slate-500">当前没有可展示的本学校评价。</div>
-                          )}
-                        </div>
-                        {(departmentMentorReviews.length > 3 || schoolMentorReviews.length > 3) ? (
-                          <button
-                            type="button"
-                            onClick={() => setShowAllMentorReviews((value) => !value)}
-                            className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/[0.08]"
-                          >
-                            {showAllMentorReviews
-                              ? "收起更多评价"
-                              : "展开更多导师评价"}
-                          </button>
-                        ) : null}
-                      </>
-                    ) : (
-                      <div className="text-sm text-slate-500">当前没有可展示的导师评价原文片段。</div>
-                    )}
-                  </div>
-                </DetailBlock>
-
-                <DetailBlock title="来源与原文">
-                  <div className="space-y-2">
-                    {detail.links.length > 0 ? (
-                      <>
-                        <div className="text-sm leading-7 text-slate-400">
-                          这里保留原始链接用于二次核验。正常使用时，优先看上面的结构化内容和导师评价。
-                        </div>
-                        {detail.links.map((link) => (
-                        <a
-                          key={`${link.source || "source"}-${link.url}`}
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-200 transition-colors hover:bg-white/[0.08]"
-                        >
-                          <div>
-                            <div className="font-semibold text-white">{link.label}</div>
-                            <div className="mt-1 text-xs text-slate-400">{link.source || link.link_type || "source"}</div>
-                          </div>
-                          <ExternalLink size={16} className="text-slate-400" />
-                        </a>
-                        ))}
-                      </>
-                    ) : (
-                      <div className="text-sm text-slate-500">当前没有可点击的原始链接。</div>
-                    )}
-                  </div>
-                </DetailBlock>
+                        </>
+                      ) : (
+                        <div className="text-sm text-slate-500">当前没有可展示的导师评价原文片段。</div>
+                      )}
+                    </div>
+                  </DetailBlock>
+                </div>
               </div>
             ) : null}
-          </motion.aside>
-        </>
+          </div>
+        </motion.section>
       ) : null}
     </AnimatePresence>
   );
@@ -1784,13 +1722,6 @@ function formatScoreRange(min?: number | null, max?: number | null) {
     return `${min}`;
   }
   return `${min}-${max}`;
-}
-
-function formatNationalLineSummary(historicalAdjustment: SearchItem["historical_adjustment"]) {
-  if (!historicalAdjustment || historicalAdjustment.national_line_zone_a === null || historicalAdjustment.national_line_zone_a === undefined) {
-    return "--";
-  }
-  return `${historicalAdjustment.national_line_zone_a}/${historicalAdjustment.national_line_zone_b}`;
 }
 
 function formatNationalLineDetail(historicalAdjustment: SearchItem["historical_adjustment"]) {
@@ -1882,47 +1813,26 @@ function getPrimaryMentorLabel(source: {
   return labels[0] || null;
 }
 
-function getTimingSignal(item: SearchItem) {
-  if (item.release_timing?.signal_detail) {
-    return {
-      title: item.release_timing.signal_label || "历史发榜规律",
-      detail: item.release_timing.signal_detail,
-    };
+function formatStudyModeLabel(studyMode: string | null | undefined, structuredModes: string[] = []) {
+  if (structuredModes.includes("fulltime") && structuredModes.includes("parttime")) {
+    return "全日制 / 非全日制";
   }
-  const value = item.published_at || item.updated_at;
-  const date = new Date(value);
-  const hour = date.getHours();
-  const hasHistory = (item.historical_adjustment?.sample_years || []).length > 0;
-  if (Number.isFinite(hour) && hour >= 18) {
-    return {
-      title: "晚间发榜信号",
-      detail: hasHistory
-        ? `当前发布时间 ${formatIntelTime(value)}，且已命中 ${item.historical_adjustment?.sample_years.join(" / ")} 历史样本。`
-        : `当前发布时间 ${formatIntelTime(value)}，属于晚间高关注时段。`,
-    };
+  if (structuredModes.includes("fulltime")) {
+    return "全日制";
   }
-  return {
-    title: "常规时段发布",
-    detail: hasHistory
-      ? `当前发布时间 ${formatIntelTime(value)}，已覆盖 ${item.historical_adjustment?.sample_years.join(" / ")} 历史样本。`
-      : `当前发布时间 ${formatIntelTime(value)}，后续会继续补发布时间规律统计。`,
-  };
-}
-
-function getSchoolSignal(item: SearchItem) {
-  if (item.school_intelligence?.signal_detail) {
-    const years = item.school_intelligence.active_years.slice(0, 4).join(" / ");
-    return {
-      title: item.school_intelligence.confidence_label,
-      detail: years
-        ? `${item.school_intelligence.signal_detail}。活跃年份：${years}`
-        : item.school_intelligence.signal_detail,
-    };
+  if (structuredModes.includes("parttime")) {
+    return "非全日制";
   }
-  return {
-    title: "待补历史画像",
-    detail: "当前学校还没有足够的历史样本，后续会继续补 24/25/26 数据。",
-  };
+  if (!studyMode) {
+    return "待补充";
+  }
+  if (/full[-\s]?time|全日制/i.test(studyMode)) {
+    return "全日制";
+  }
+  if (/part[-\s]?time|非全日制/i.test(studyMode)) {
+    return "非全日制";
+  }
+  return studyMode;
 }
 
 function formatIntelTime(value: string) {
