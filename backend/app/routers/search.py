@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import re
 from uuid import uuid4
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import and_, func, or_
@@ -278,6 +279,9 @@ def _build_adjustment_detail_from_opportunity(
     db: Session,
     row: AdjustmentOpportunity,
 ) -> AdjustmentSearchDetailResponse:
+    merged_rows = _load_merged_adjustment_opportunity_rows(db, row)
+    merged = _merge_adjustment_opportunity_rows(merged_rows or [row])[0]
+    row = merged["primary"]
     normalized_school_name = normalize_school_name(row.school_name)
     historical_profiles = load_profiles_for_search(db, [row.school_name])
     mentor_radar = load_mentor_radar_for_search(db, [row.school_name])
@@ -299,10 +303,10 @@ def _build_adjustment_detail_from_opportunity(
     )
     release_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
     school_signal = school_intelligence.get(normalized_school_name)
-    meta = dict(row.meta_json or {})
+    meta = dict(merged["meta_json"] or {})
     links: list[AdjustmentSearchLinkItem] = []
     _append_unique_link(links, label="原始链接", url=row.source_url, link_type="source", source=row.source_type)
-    for index, url in enumerate([str(url) for url in (meta.get("reference_urls") or []) if str(url or "").strip()], start=1):
+    for index, url in enumerate([str(url) for url in (merged["reference_urls"] or []) if str(url or "").strip()], start=1):
         _append_unique_link(links, label=f"表格参考 {index}", url=url, link_type="reference", source="table_reference")
     if school_signal is not None:
         for index, url in enumerate(school_signal.reference_urls, start=1):
@@ -316,18 +320,18 @@ def _build_adjustment_detail_from_opportunity(
         source_type=f"historical_{row.source_type}",
         title=row.title,
         school_name=row.school_name,
-        department_name=row.department_name,
+        department_name=" / ".join(merged["department_names"]) if merged["department_names"] else row.department_name,
         region=row.region_name,
         major=row.major_name,
         major_code=row.major_code,
         school_code=row.school_code,
         school_tier=row.school_tier,
         study_mode=row.study_mode,
-        verification_status=row.verification_status,
+        verification_status=" / ".join(merged["verification_statuses"]) if merged["verification_statuses"] else row.verification_status,
         vacancy_count=row.vacancy_count,
-        min_score=row.min_score,
-        avg_score=row.avg_score,
-        max_score=row.max_score,
+        min_score=merged["min_score"],
+        avg_score=merged["avg_score"],
+        max_score=merged["max_score"],
         published_at=row.published_at,
         captured_at=row.captured_at,
         updated_at=row.updated_at,
@@ -459,8 +463,10 @@ def _to_response(
         serialized.append(
             SearchItem(
                 id=row.id,
+                item_kind="content",
                 category=row.category,
                 school_name=school_name,
+                department_name=str(extra.get("department_name") or "").strip() or None,
                 title=row.title,
                 summary=row.summary,
                 tags=[str(tag) for tag in (extra.get("tags") or []) if str(tag or "").strip()],
@@ -486,6 +492,7 @@ def _to_response(
                 mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
                 release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
                 school_intelligence=school_signal.__dict__ if school_signal is not None else None,
+                merged_count=1,
                 updated_at=row.updated_at,
             )
         )
@@ -543,6 +550,136 @@ def _build_adjustment_opportunity_summary(row: AdjustmentOpportunity, insight) -
     return " · ".join(parts)
 
 
+def _normalize_merge_major_token(row: AdjustmentOpportunity) -> str:
+    return (row.major_code or row.major_name_normalized or "").strip()
+
+
+def _build_adjustment_opportunity_merge_key(row: AdjustmentOpportunity) -> str:
+    return "|".join(
+        [
+            row.school_name_normalized or "",
+            str(row.year or ""),
+            _normalize_merge_major_token(row),
+            str(row.vacancy_count if row.vacancy_count is not None else ""),
+        ]
+    )
+
+
+def _load_merged_adjustment_opportunity_rows(db: Session, row: AdjustmentOpportunity) -> list[AdjustmentOpportunity]:
+    query = db.query(AdjustmentOpportunity).filter(
+        AdjustmentOpportunity.school_name_normalized == row.school_name_normalized,
+    )
+    if row.year is None:
+        query = query.filter(AdjustmentOpportunity.year.is_(None))
+    else:
+        query = query.filter(AdjustmentOpportunity.year == row.year)
+
+    if row.major_code:
+        query = query.filter(AdjustmentOpportunity.major_code == row.major_code)
+    elif row.major_name_normalized:
+        query = query.filter(AdjustmentOpportunity.major_name_normalized == row.major_name_normalized)
+    else:
+        query = query.filter(
+            or_(
+                AdjustmentOpportunity.major_code.is_(None),
+                AdjustmentOpportunity.major_code == "",
+            )
+        ).filter(
+            or_(
+                AdjustmentOpportunity.major_name_normalized.is_(None),
+                AdjustmentOpportunity.major_name_normalized == "",
+            )
+        )
+
+    if row.vacancy_count is None:
+        query = query.filter(AdjustmentOpportunity.vacancy_count.is_(None))
+    else:
+        query = query.filter(AdjustmentOpportunity.vacancy_count == row.vacancy_count)
+
+    rows = query.all()
+    return [candidate for candidate in rows if _build_adjustment_opportunity_merge_key(candidate) == _build_adjustment_opportunity_merge_key(row)]
+
+
+def _merge_adjustment_opportunity_rows(rows: list[AdjustmentOpportunity]) -> list[dict]:
+    grouped: dict[str, list[AdjustmentOpportunity]] = defaultdict(list)
+    for row in rows:
+        grouped[_build_adjustment_opportunity_merge_key(row)].append(row)
+
+    merged_rows: list[dict] = []
+    for grouped_rows in grouped.values():
+        ordered = sorted(
+            grouped_rows,
+            key=lambda row: (
+                int(bool((row.source_url or "").strip())),
+                row.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                row.updated_at,
+            ),
+            reverse=True,
+        )
+        primary = ordered[0]
+        department_names = [row.department_name for row in ordered if str(row.department_name or "").strip()]
+        unique_departments: list[str] = []
+        seen_departments: set[str] = set()
+        for value in department_names:
+            text = str(value).strip()
+            if text and text not in seen_departments:
+                seen_departments.add(text)
+                unique_departments.append(text)
+
+        verification_values = [row.verification_status for row in ordered if str(row.verification_status or "").strip()]
+        unique_verification: list[str] = []
+        seen_verification: set[str] = set()
+        for value in verification_values:
+            text = str(value).strip()
+            if text and text not in seen_verification:
+                seen_verification.add(text)
+                unique_verification.append(text)
+
+        reference_urls: list[str] = []
+        seen_urls: set[str] = set()
+        for row in ordered:
+            meta = dict(row.meta_json or {})
+            urls = [row.source_url, meta.get("source_url"), meta.get("top_source_url"), *(meta.get("reference_urls") or [])]
+            for candidate in urls:
+                url = str(candidate or "").strip()
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    reference_urls.append(url)
+
+        dataset_keys = sorted({str(row.source_dataset_key) for row in ordered if str(row.source_dataset_key or "").strip()})
+        source_types = sorted({str(row.source_type) for row in ordered if str(row.source_type or "").strip()})
+
+        min_scores = [row.min_score for row in ordered if row.min_score is not None]
+        avg_scores = [row.avg_score for row in ordered if row.avg_score is not None]
+        max_scores = [row.max_score for row in ordered if row.max_score is not None]
+
+        merged_meta = dict(primary.meta_json or {})
+        merged_meta["reference_urls"] = reference_urls
+        merged_meta["source_dataset_keys"] = dataset_keys
+        merged_meta["source_types"] = source_types
+        merged_meta["merged_row_ids"] = [row.id for row in ordered]
+        merged_meta["merged_departments"] = unique_departments
+        merged_meta["merged_verification_statuses"] = unique_verification
+
+        merged_rows.append(
+            {
+                "primary": primary,
+                "rows": ordered,
+                "department_names": unique_departments,
+                "verification_statuses": unique_verification,
+                "reference_urls": reference_urls,
+                "dataset_keys": dataset_keys,
+                "source_types": source_types,
+                "min_score": min(min_scores) if min_scores else None,
+                "avg_score": (sum(avg_scores) / len(avg_scores)) if avg_scores else None,
+                "max_score": max(max_scores) if max_scores else None,
+                "merged_count": len(ordered),
+                "meta_json": merged_meta,
+            }
+        )
+    return merged_rows
+
+
 def _to_adjustment_opportunity_response(
     db: Session,
     payload: AdjustmentSearchRequest,
@@ -559,8 +696,10 @@ def _to_adjustment_opportunity_response(
     mentor_radar = load_mentor_radar_for_search(db, school_names)
     release_timings = load_release_timing_for_search(db, school_names)
     school_intelligence = load_school_intelligence_for_search(db, school_names)
+    merged_rows = _merge_adjustment_opportunity_rows(rows)
     serialized: list[SearchItem] = []
-    for row in rows:
+    for merged in merged_rows:
+        row = merged["primary"]
         school_name = row.school_name
         normalized_school_name = normalize_school_name(school_name)
         school_profiles = historical_profiles.get(normalized_school_name, [])
@@ -574,8 +713,8 @@ def _to_adjustment_opportunity_response(
         mentor_signal = mentor_radar.get(normalized_school_name)
         release_timing_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
         school_signal = school_intelligence.get(normalized_school_name)
-        meta = dict(row.meta_json or {})
-        reference_urls = [str(url) for url in (meta.get("reference_urls") or []) if str(url or "").strip()]
+        meta = dict(merged["meta_json"] or {})
+        reference_urls = [str(url) for url in (merged["reference_urls"] or []) if str(url or "").strip()]
         source_url = (
             (row.source_url or "").strip()
             or
@@ -598,8 +737,10 @@ def _to_adjustment_opportunity_response(
         serialized.append(
             SearchItem(
                 id=row.id,
+                item_kind="opportunity",
                 category="adjustment",
                 school_name=school_name,
+                department_name=" / ".join(merged["department_names"][:2]) if merged["department_names"] else row.department_name,
                 title=row.title,
                 summary=_build_adjustment_opportunity_summary(row, insight),
                 tags=tags,
@@ -617,11 +758,12 @@ def _to_adjustment_opportunity_response(
                 mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
                 release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
                 school_intelligence=school_signal.__dict__ if school_signal is not None else None,
+                merged_count=int(merged["merged_count"]),
                 updated_at=row.updated_at,
             )
         )
     serialized.sort(key=_adjustment_sort_key, reverse=True)
-    last_updated = max((row.updated_at for row in rows), default=None)
+    last_updated = max((row["primary"].updated_at for row in merged_rows), default=None)
     return SearchResponse(
         request_id=request_id,
         mode="hybrid_refresh" if payload.refresh else "cache",
@@ -629,7 +771,7 @@ def _to_adjustment_opportunity_response(
         access_limited=False,
         preview_limit=None,
         items=serialized,
-        total=total,
+        total=len(serialized),
         page=payload.page,
         page_size=payload.page_size,
         source_breakdown=source_breakdown,
@@ -668,7 +810,7 @@ def _merge_adjustment_search_responses(
         access_limited=False,
         preview_limit=None,
         items=merged_items[start:end],
-        total=total,
+        total=len(merged_items),
         page=payload.page,
         page_size=payload.page_size,
         source_breakdown=source_breakdown,

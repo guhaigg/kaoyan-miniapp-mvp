@@ -871,8 +871,10 @@ class SchoolIntelligenceInsight(BaseModel):
 
 class SearchItem(BaseModel):
     id: str
+    item_kind: Literal["content", "opportunity"] = "content"
     category: str
     school_name: str | None
+    department_name: str | None = None
     title: str
     summary: str | None
     tags: list[str] = Field(default_factory=list)
@@ -890,6 +892,7 @@ class SearchItem(BaseModel):
     mentor_radar: MentorRadarInsight | None = None
     release_timing: ReleaseTimingInsight | None = None
     school_intelligence: SchoolIntelligenceInsight | None = None
+    merged_count: int = 1
     updated_at: datetime
 
 

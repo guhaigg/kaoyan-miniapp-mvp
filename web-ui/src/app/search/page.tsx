@@ -260,7 +260,7 @@ export default function SearchPage() {
     try {
       const detail = await fetchAdjustmentDetail(
         item.id,
-        item.notice_kind === "historical_opportunity" ? "opportunity" : "content",
+        item.item_kind,
       );
       setAdjustmentDetail(detail);
     } catch (error) {
@@ -1095,7 +1095,7 @@ function AdjustmentIntelCard({
   );
   const timingSignal = getTimingSignal(item);
   const schoolSignal = getSchoolSignal(item);
-  const departmentLine = [item.major, item.adjustment_major_codes[0], item.region].filter(Boolean).join(" · ") || "调剂情报流";
+  const departmentLine = [item.department_name, item.major, item.adjustment_major_codes[0], item.region].filter(Boolean).join(" · ") || "调剂情报流";
   const tags = item.tags.length > 0 ? item.tags : [item.school_name || "院校待补充", item.major || "专业待补充"];
   const releaseTime = formatIntelTime(item.published_at || item.updated_at);
   const mentorWarning = (item.mentor_radar?.warning_count || 0) > 0;
@@ -1143,6 +1143,11 @@ function AdjustmentIntelCard({
               {tag}
             </span>
           ))}
+          {item.merged_count > 1 ? (
+            <span className="rounded-lg border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-200">
+              已合并 {item.merged_count} 条同类来源
+            </span>
+          ) : null}
           {item.school_intelligence ? (
             <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
               {item.school_intelligence.confidence_label}

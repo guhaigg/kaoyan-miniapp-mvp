@@ -224,6 +224,96 @@ def test_adjustment_search_falls_back_to_structured_opportunities(client):
     assert payload["items"][0]["source_url"] == "https://example.com/sdu-adjustment"
 
 
+def test_adjustment_search_merges_same_school_year_major_and_vacancy_rows(client):
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                AdjustmentOpportunity(
+                    opportunity_key="merge-opp-1",
+                    source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                    source_type="snapshot",
+                    year=2025,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北",
+                    school_tier=None,
+                    department_name="计算机与信息工程学院",
+                    department_name_normalized="计算机与信息工程学院",
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    vacancy_count=4,
+                    min_score=312,
+                    avg_score=328,
+                    max_score=340,
+                    verification_status="官网",
+                    title="湖北大学电子信息调剂快照",
+                    summary="快照来源",
+                    source_url="https://example.com/hubu-merge-1",
+                    meta_json={"reference_urls": ["https://example.com/hubu-ref-1"]},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="merge-opp-2",
+                    source_dataset_key="adjustment_announcement_2025_raw",
+                    source_type="adjustment_notice",
+                    year=2025,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北",
+                    school_tier=None,
+                    department_name="人工智能学院",
+                    department_name_normalized="人工智能学院",
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    vacancy_count=4,
+                    min_score=315,
+                    avg_score=331,
+                    max_score=345,
+                    verification_status="已核验",
+                    title="湖北大学电子信息调剂公告",
+                    summary="公告来源",
+                    source_url="https://example.com/hubu-merge-2",
+                    meta_json={"reference_urls": ["https://example.com/hubu-ref-2"]},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_merge_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"keywords": "湖北大学"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["item_kind"] == "opportunity"
+    assert item["school_name"] == "湖北大学"
+    assert item["major"] == "电子信息"
+    assert item["merged_count"] == 2
+    assert "计算机与信息工程学院" in item["department_name"]
+    assert "人工智能学院" in item["department_name"]
+
+    detail = client.get(
+        f"/api/v1/search/adjustments/items/{item['id']}?item_kind={item['item_kind']}",
+        headers={"X-User-Token": token},
+    )
+    assert detail.status_code == 200
+    detail_payload = detail.json()
+    assert "计算机与信息工程学院" in (detail_payload["department_name"] or "")
+    assert "人工智能学院" in (detail_payload["department_name"] or "")
+    urls = [entry["url"] for entry in detail_payload["links"]]
+    assert "https://example.com/hubu-merge-1" in urls
+    assert "https://example.com/hubu-merge-2" in urls
+
+
 def test_adjustment_search_keyword_matches_region_in_structured_opportunities(client):
     with SessionLocal() as db:
         db.add(

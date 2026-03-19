@@ -263,8 +263,10 @@ export type WechatBindCodeResponse = {
 
 export type SearchItem = {
   id: string;
+  item_kind: "content" | "opportunity";
   category: string;
   school_name: string | null;
+  department_name: string | null;
   title: string;
   summary: string | null;
   tags: string[];
@@ -317,6 +319,7 @@ export type SearchItem = {
     confidence_label: string;
     signal_detail: string;
   } | null;
+  merged_count: number;
   updated_at: string;
 };
 
