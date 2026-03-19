@@ -1,4 +1,6 @@
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
+from app.db import SessionLocal
+from app.models import HistoricalAdjustmentProfile
 from app.services.search_cache import search_response_cache
 
 
@@ -116,6 +118,115 @@ def test_adjustment_search_exposes_structured_adjustment_meta(client):
     assert item["adjustment_major_codes"] == ["085400"]
     assert item["adjustment_study_modes"] == ["parttime"]
     assert item["adjustment_has_vacancy"] is True
+
+
+def test_adjustment_search_exposes_historical_adjustment_insight(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "XX大学085400电子信息非全日制调剂通知",
+            "body": "现有调剂缺额，欢迎考生填报调剂系统。",
+            "school_name": "XX大学",
+            "major": "电子信息",
+            "region": "上海",
+            "source_type": "crawler",
+            "source_url": "https://example.com/adjustment-history-1",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                HistoricalAdjustmentProfile(
+                    profile_key="profile-1",
+                    year=2024,
+                    source_type="landing",
+                    source_dataset_key="adjustment_landing_2024_raw",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    school_code="10001",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="parttime",
+                    sample_count=6,
+                    vacancy_count=None,
+                    min_score=315,
+                    avg_score=328.0,
+                    max_score=341,
+                    meta_json={},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="profile-2",
+                    year=2025,
+                    source_type="adjustment_stats",
+                    source_dataset_key="adjustment_stats_2025_full_raw",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    school_code="10001",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="parttime",
+                    sample_count=4,
+                    vacancy_count=4,
+                    min_score=320,
+                    avg_score=333.0,
+                    max_score=320,
+                    meta_json={},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="profile-3",
+                    year=2026,
+                    source_type="future_program",
+                    source_dataset_key="admission_program_catalog_2026_raw",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    school_code="10001",
+                    region_name="上海",
+                    school_tier=None,
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode=None,
+                    sample_count=3,
+                    vacancy_count=3,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    meta_json={},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_search_history_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"major": "电子信息", "region": "上海", "candidate_score": 340},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    item = search.json()["items"][0]
+    assert item["historical_adjustment"]["sample_years"] == [2024, 2025]
+    assert item["historical_adjustment"]["sample_count"] == 10
+    assert item["historical_adjustment"]["min_score"] == 315
+    assert item["historical_adjustment"]["avg_score"] == 330.0
+    assert item["historical_adjustment"]["outlook"] == "high"
+    assert item["historical_adjustment"]["future_program_count"] == 3
 
 
 def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):

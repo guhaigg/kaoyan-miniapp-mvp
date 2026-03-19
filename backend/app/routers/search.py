@@ -14,6 +14,7 @@ from ..schemas import (
     SearchItem,
     SearchResponse,
 )
+from ..services.historical_intelligence import build_search_insight, load_profiles_for_search, normalize_school_name
 from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -34,6 +35,7 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
 
 
 def _to_response(
+    db: Session,
     payload: AnnouncementSearchRequest | AdjustmentSearchRequest,
     request_id: str,
     items: list[Content],
@@ -45,11 +47,31 @@ def _to_response(
     access_limited: bool = False,
     preview_limit: int | None = None,
 ) -> SearchResponse:
+    historical_profiles = (
+        load_profiles_for_search(
+            db,
+            [row.school.name if row.school else "" for row in items],
+        )
+        if isinstance(payload, AdjustmentSearchRequest)
+        else {}
+    )
     serialized = []
     for row in items:
         school_name = row.school.name if row.school else None
         extra = dict(row.extra or {})
         adjustment_meta = dict(extra.get("adjustment_meta") or {})
+        historical_adjustment = None
+        if isinstance(payload, AdjustmentSearchRequest) and school_name:
+            school_profiles = historical_profiles.get(normalize_school_name(school_name), [])
+            insight = build_search_insight(
+                school_profiles,
+                major_codes=[str(code) for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()],
+                major_name=row.major,
+                study_modes=[str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()],
+                candidate_score=payload.candidate_score,
+            )
+            if insight is not None:
+                historical_adjustment = insight.__dict__
         serialized.append(
             SearchItem(
                 id=row.id,
@@ -76,6 +98,7 @@ def _to_response(
                     if "has_vacancy" in adjustment_meta
                     else None
                 ),
+                historical_adjustment=historical_adjustment,
                 updated_at=row.updated_at,
             )
         )
@@ -176,6 +199,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
     if effective_payload.refresh:
         refresh_job_id = _create_refresh_job(db, "announcement", payload.model_dump(mode="json"), user.id if user else None)
     response = _to_response(
+        db,
         effective_payload,
         request_id,
         rows,
@@ -244,6 +268,7 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     if payload.refresh:
         refresh_job_id = _create_refresh_job(db, "adjustment", payload.model_dump(mode="json"), user.id if user else None)
     response = _to_response(
+        db,
         payload,
         request_id,
         rows,

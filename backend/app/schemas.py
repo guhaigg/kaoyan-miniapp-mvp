@@ -791,6 +791,20 @@ class AnnouncementSearchRequest(SearchBaseRequest):
 class AdjustmentSearchRequest(SearchBaseRequest):
     major: str | None = None
     region: str | None = None
+    candidate_score: int | None = Field(default=None, ge=0, le=500)
+
+
+class HistoricalAdjustmentInsight(BaseModel):
+    sample_years: list[int] = Field(default_factory=list)
+    source_types: list[str] = Field(default_factory=list)
+    sample_count: int = 0
+    min_score: int | None = None
+    avg_score: float | None = None
+    max_score: int | None = None
+    candidate_score: int | None = None
+    outlook: Literal["high", "reach", "cautious"] | None = None
+    outlook_label: str | None = None
+    future_program_count: int | None = None
 
 
 class SearchItem(BaseModel):
@@ -810,6 +824,7 @@ class SearchItem(BaseModel):
     adjustment_major_codes: list[str] = Field(default_factory=list)
     adjustment_study_modes: list[str] = Field(default_factory=list)
     adjustment_has_vacancy: bool | None = None
+    historical_adjustment: HistoricalAdjustmentInsight | None = None
     updated_at: datetime
 
 

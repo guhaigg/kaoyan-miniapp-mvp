@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -208,6 +208,73 @@ class RawDatasetArchive(Base):
     preview_rows: Mapped[list[list[str]]] = mapped_column(JSON, default=list, nullable=False)
     summary_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class HistoricalAdjustmentProfile(Base):
+    __tablename__ = "historical_adjustment_profiles"
+    __table_args__ = (
+        UniqueConstraint("profile_key", name="uq_historical_adjustment_profiles_profile_key"),
+        Index(
+            "ix_historical_adjustment_profiles_lookup",
+            "school_name_normalized",
+            "major_code",
+            "major_name_normalized",
+            "study_mode",
+        ),
+        Index("ix_historical_adjustment_profiles_year_source", "year", "source_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    profile_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    source_dataset_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    school_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    school_name_normalized: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    school_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    region_name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    school_tier: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    department_name_normalized: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    major_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    major_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    major_name_normalized: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    study_mode: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    vacancy_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    avg_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    meta_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    school: Mapped["School | None"] = relationship()
+
+
+class MentorEvaluation(Base):
+    __tablename__ = "mentor_evaluations"
+    __table_args__ = (
+        UniqueConstraint("review_key", name="uq_mentor_evaluations_review_key"),
+        Index("ix_mentor_evaluations_school_department", "school_name_normalized", "department_name_normalized"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    review_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_dataset_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    school_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    school_name_normalized: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    department_name_normalized: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    mentor_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    mentor_name_normalized: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    review_text: Mapped[str] = mapped_column(LONGTEXT_TYPE, nullable=False)
+    review_tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    risk_level: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    meta_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 

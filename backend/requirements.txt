@@ -15,4 +15,5 @@ jieba>=0.42.1
 pypdf>=5.3.1
 openpyxl>=3.1.5
 xlrd>=2.0.1
+pandas>=3.0.1
 pytest>=8.4.0

@@ -274,6 +274,18 @@ export type SearchItem = {
   adjustment_major_codes: string[];
   adjustment_study_modes: string[];
   adjustment_has_vacancy: boolean | null;
+  historical_adjustment: {
+    sample_years: number[];
+    source_types: string[];
+    sample_count: number;
+    min_score: number | null;
+    avg_score: number | null;
+    max_score: number | null;
+    candidate_score: number | null;
+    outlook: "high" | "reach" | "cautious" | null;
+    outlook_label: string | null;
+    future_program_count: number | null;
+  } | null;
   updated_at: string;
 };
 
@@ -305,6 +317,7 @@ export type SearchBaseRequest = {
 export type AdjustmentSearchRequest = SearchBaseRequest & {
   major?: string;
   region?: string;
+  candidate_score?: number;
 };
 
 export type SchoolBulkImportResponse = {

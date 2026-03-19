@@ -22,6 +22,7 @@ export default function SearchPage() {
   const [schoolName, setSchoolName] = useState("");
   const [majorFilter, setMajorFilter] = useState("");
   const [regionFilter, setRegionFilter] = useState("");
+  const [candidateScoreFilter, setCandidateScoreFilter] = useState("");
   const [schoolTiers, setSchoolTiers] = useState<SchoolTier[]>([]);
   const [studyMode, setStudyMode] = useState<StudyMode>("all");
   const [message, setMessage] = useState("");
@@ -102,6 +103,7 @@ export default function SearchPage() {
               school_name: schoolName.trim() || undefined,
               major: majorFilter.trim() || undefined,
               region: regionFilter.trim() || undefined,
+              candidate_score: candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined,
               page,
               page_size: 12,
             });
@@ -223,7 +225,7 @@ export default function SearchPage() {
               {isSearching ? "检索中..." : "检索"}
             </button>
           </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-4">
+          <div className="mt-3 grid gap-2 md:grid-cols-5">
             <input
               value={schoolName}
               onChange={(event) => setSchoolName(event.target.value)}
@@ -242,6 +244,12 @@ export default function SearchPage() {
               placeholder="地区（调剂模式可选）"
               className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
             />
+            <input
+              value={candidateScoreFilter}
+              onChange={(event) => setCandidateScoreFilter(event.target.value)}
+              placeholder="你的分数（调剂模式可选）"
+              className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+            />
             <button
               type="button"
               onClick={() => {
@@ -249,6 +257,7 @@ export default function SearchPage() {
                 setSchoolName("");
                 setMajorFilter("");
                 setRegionFilter("");
+                setCandidateScoreFilter("");
                 setSchoolTiers([]);
                 setStudyMode("all");
                 setSearchResult(null);
@@ -394,7 +403,23 @@ export default function SearchPage() {
                       id: item.id,
                       type: item.category === "adjustment" ? "adjustment" : "announcement",
                       title: item.title,
-                      content: item.summary || "暂无摘要，点击查看源站原文。",
+                      content:
+                        item.category === "adjustment" && item.historical_adjustment
+                          ? [
+                              item.summary || "系统已命中调剂历史样本。",
+                              item.historical_adjustment.min_score !== null
+                                ? `历史最低 ${item.historical_adjustment.min_score}`
+                                : null,
+                              item.historical_adjustment.avg_score !== null
+                                ? `历史均分 ${Math.round(item.historical_adjustment.avg_score)}`
+                                : null,
+                              item.historical_adjustment.sample_count > 0
+                                ? `样本 ${item.historical_adjustment.sample_count}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : item.summary || "暂无摘要，点击查看源站原文。",
                       badges: [
                         ...(item.notice_kind === "link_notice" ? [{ label: "链接型公告", tone: "sky" as const }] : []),
                         ...(item.pdf_parse_status === "needs_ocr"
@@ -411,6 +436,12 @@ export default function SearchPage() {
                           : []),
                         ...(item.category === "adjustment" && item.adjustment_major_codes.length > 0
                           ? [{ label: `专业代码 ${item.adjustment_major_codes[0]}`, tone: "sky" as const }]
+                          : []),
+                        ...(item.category === "adjustment" && item.historical_adjustment?.outlook_label
+                          ? [{ label: item.historical_adjustment.outlook_label, tone: "amber" as const }]
+                          : []),
+                        ...(item.category === "adjustment" && item.historical_adjustment?.min_score !== null
+                          ? [{ label: `历史最低 ${item.historical_adjustment?.min_score}`, tone: "sky" as const }]
                           : []),
                       ],
                       publishTime: item.published_at || item.updated_at,
