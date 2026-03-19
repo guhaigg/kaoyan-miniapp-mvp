@@ -485,6 +485,8 @@ class AdjustmentIntelligenceResponse(BaseModel):
     mentor_risk_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     mentor_tag_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
     timing_hour_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    school_confidence_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
+    reference_link_breakdown: list[AdjustmentIntelligenceBreakdownItem] = Field(default_factory=list)
 
 
 class ContentIn(BaseModel):

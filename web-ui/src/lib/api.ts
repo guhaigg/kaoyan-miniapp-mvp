@@ -565,6 +565,8 @@ export type AdjustmentIntelligenceResponse = {
   mentor_risk_breakdown: AdjustmentIntelligenceBreakdownItem[];
   mentor_tag_breakdown: AdjustmentIntelligenceBreakdownItem[];
   timing_hour_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  school_confidence_breakdown: AdjustmentIntelligenceBreakdownItem[];
+  reference_link_breakdown: AdjustmentIntelligenceBreakdownItem[];
 };
 
 export type HealthResponse = {

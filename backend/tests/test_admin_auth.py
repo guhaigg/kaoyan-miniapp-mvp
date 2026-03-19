@@ -347,6 +347,8 @@ def test_admin_can_view_adjustment_intelligence(client):
     assert len(payload["source_cards"]) >= 5
     assert len(payload["school_leaderboard"]) >= 5
     assert len(payload["study_mode_breakdown"]) >= 1
+    assert "school_confidence_breakdown" in payload
+    assert "reference_link_breakdown" in payload
 
 
 def test_admin_can_import_adjustment_supplemental_targets(client):

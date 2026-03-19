@@ -756,6 +756,19 @@ export default function AdminPage() {
             />
           </div>
 
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <InsightBarCard
+              title="学校活跃度分层"
+              items={adjustmentIntelligenceQuery.data?.school_confidence_breakdown || []}
+              accentClass="from-emerald-500 to-cyan-300"
+            />
+            <InsightBarCard
+              title="历史链接覆盖率"
+              items={adjustmentIntelligenceQuery.data?.reference_link_breakdown || []}
+              accentClass="from-sky-500 to-indigo-300"
+            />
+          </div>
+
           <div className="mt-6 grid gap-4 xl:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
               <div className="mb-3 text-sm font-semibold text-white">导师避坑雷达</div>

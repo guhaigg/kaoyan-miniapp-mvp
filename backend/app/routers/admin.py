@@ -16,6 +16,7 @@ from ..dependencies import (
 from ..models import (
     AccountPaymentOrder,
     Content,
+    HistoricalAdjustmentProfile,
     HistoricalReleaseTimingProfile,
     MentorEvaluation,
     PortalUser,
@@ -386,6 +387,8 @@ def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
     mentor_risk_counts: Counter[str] = Counter()
     mentor_tag_counts: Counter[str] = Counter()
     timing_hour_counts: Counter[str] = Counter()
+    school_confidence_counts: Counter[str] = Counter()
+    reference_link_counts: Counter[str] = Counter()
     source_cards: list[AdjustmentIntelligenceSourceItem] = []
 
     for source_key, title, summary, target_rows in summary_rows:
@@ -446,6 +449,31 @@ def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
     raw_dataset_total, raw_dataset_total_bytes = (
         db.query(func.count(RawDatasetArchive.id), func.coalesce(func.sum(RawDatasetArchive.file_size_bytes), 0)).one()
     )
+    profile_rows = db.query(HistoricalAdjustmentProfile).all()
+    profile_schools: defaultdict[str, dict] = defaultdict(lambda: {"years": set(), "count": 0, "has_reference": False})
+    for row in profile_rows:
+        school_name = str(row.school_name or "").strip()
+        if not school_name:
+            continue
+        bucket = profile_schools[school_name]
+        if row.year:
+            bucket["years"].add(int(row.year))
+        bucket["count"] += 1
+        meta = row.meta_json or {}
+        has_reference = bool(meta.get("source_url") or meta.get("top_source_url") or (meta.get("reference_urls") or []))
+        if has_reference:
+            bucket["has_reference"] = True
+    for payload in profile_schools.values():
+        years = len(payload["years"])
+        count = int(payload["count"])
+        if years >= 3 or count >= 40:
+            school_confidence_counts["连续活跃"] += 1
+        elif years >= 2 or count >= 15:
+            school_confidence_counts["持续关注"] += 1
+        else:
+            school_confidence_counts["样本有限"] += 1
+        reference_link_counts["有回溯链接" if payload["has_reference"] else "无回溯链接"] += 1
+
     mentor_rows = db.query(MentorEvaluation).all()
     mentor_school_scores: defaultdict[str, dict] = defaultdict(
         lambda: {"review_count": 0, "warning_count": 0, "mentor_names": set(), "tag_counts": Counter()}
@@ -516,6 +544,8 @@ def _adjustment_intelligence(db: Session) -> AdjustmentIntelligenceResponse:
         mentor_risk_breakdown=_to_breakdown_items(mentor_risk_counts),
         mentor_tag_breakdown=_to_breakdown_items(mentor_tag_counts),
         timing_hour_breakdown=_to_breakdown_items(timing_hour_counts),
+        school_confidence_breakdown=_to_breakdown_items(school_confidence_counts),
+        reference_link_breakdown=_to_breakdown_items(reference_link_counts),
     )
 
 
