@@ -34,6 +34,7 @@ from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
 ANONYMOUS_PREVIEW_LIMIT = 2
+UTC = timezone.utc
 SCHOOL_SUFFIXES = (
     "大学",
     "学院",
@@ -184,6 +185,27 @@ def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchReques
     if payload.school_tier:
         query = query.filter(AdjustmentOpportunity.school_tier.ilike(f"%{payload.school_tier.strip()}%"))
     return query
+
+
+def _should_full_scan_adjustment_query(payload: AdjustmentSearchRequest) -> bool:
+    return any(
+        (
+            bool(str(payload.school_name or "").strip()),
+            bool(str(payload.keywords or "").strip()),
+            bool(str(payload.major or "").strip()),
+            bool(str(payload.region or "").strip()),
+            bool(str(payload.city or "").strip()),
+            bool(str(payload.school_tier or "").strip()),
+            payload.candidate_score is not None,
+            payload.year is not None,
+            payload.start_date is not None,
+            payload.end_date is not None,
+            payload.history_backed_only,
+            payload.long_track_only,
+            payload.reference_links_only,
+            payload.exclude_mentor_warnings,
+        )
+    )
 
 
 def _append_unique_link(links: list[AdjustmentSearchLinkItem], *, label: str, url: str | None, link_type: str | None = None, source: str | None = None):
@@ -1154,18 +1176,19 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
         )
     if payload.region:
         content_query = content_query.filter(Content.region.ilike(f"%{payload.region.strip()}%"))
+    if payload.year is not None:
+        start_at = datetime(payload.year, 1, 1, tzinfo=UTC)
+        end_at = datetime(payload.year + 1, 1, 1, tzinfo=UTC)
+        content_query = content_query.filter(
+            Content.published_at.is_not(None),
+            Content.published_at >= start_at,
+            Content.published_at < end_at,
+        )
 
     refresh_job_id = None
     if payload.refresh:
         refresh_job_id = _create_refresh_job(db, "adjustment", payload.model_dump(mode="json"), user.id if user else None)
-    requires_full_scan = any(
-        (
-            payload.history_backed_only,
-            payload.long_track_only,
-            payload.reference_links_only,
-            payload.exclude_mentor_warnings,
-        )
-    )
+    requires_full_scan = _should_full_scan_adjustment_query(payload)
     page_window = payload.page * payload.page_size
 
     content_total = content_query.count()

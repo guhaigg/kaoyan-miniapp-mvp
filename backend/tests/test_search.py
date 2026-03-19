@@ -1181,6 +1181,82 @@ def test_adjustment_search_intelligence_filters_run_server_side(client):
     assert {item["school_name"] for item in warning_free_payload["items"]} == {"甲大学", "丙大学"}
 
 
+def test_adjustment_search_school_filter_counts_all_matching_rows_not_first_page_window(client):
+    with SessionLocal() as db:
+        for index in range(25):
+            db.add(
+                AdjustmentOpportunity(
+                    opportunity_key=f"hubei-opportunity-{index}",
+                    source_dataset_key="adjustment_landing_2024_raw",
+                    source_type="landing",
+                    year=2024,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北",
+                    school_tier="211",
+                    department_name=f"学院{index}",
+                    department_name_normalized=f"学院{index}",
+                    major_code=f"0854{index:02d}",
+                    major_name=f"专业{index}",
+                    major_name_normalized=f"专业{index}",
+                    study_mode="fulltime",
+                    vacancy_count=1,
+                    min_score=300 + index,
+                    avg_score=305 + index,
+                    max_score=310 + index,
+                    verification_status="官网",
+                    title=f"湖北大学 专业{index} 调剂信息",
+                    summary=f"2024 调剂样本 {index}",
+                    source_url=f"https://example.com/hubu-opportunity-{index}",
+                    meta_json={},
+                )
+            )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_count_regression_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "湖北大学", "page_size": 12},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 25
+    assert len(payload["items"]) == 12
+
+
+def test_adjustment_search_year_filter_applies_to_adjustment_content(client):
+    for year in (2024, 2025):
+        response = client.post(
+            "/api/v1/content",
+            json={
+                "category": "adjustment",
+                "title": f"湖北大学 {year} 年调剂公告",
+                "body": "用于验证年份筛选只返回对应年份内容。",
+                "school_name": "湖北大学",
+                "major": "电子信息",
+                "region": "湖北",
+                "source_type": "crawler",
+                "source_url": f"https://example.com/hubu-adjustment-{year}",
+                "published_at": f"{year}-04-07T09:34:00Z",
+            },
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert response.status_code == 200
+
+    token = _register_and_login(client, "adjustment_year_content_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "湖北大学", "year": 2024, "page_size": 20},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["title"] == "湖北大学 2024 年调剂公告"
+
+
 def test_adjustment_search_sorts_by_intelligence_signal_before_recency(client):
     older = client.post(
         "/api/v1/content",
