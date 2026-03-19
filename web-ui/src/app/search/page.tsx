@@ -120,6 +120,15 @@ export default function SearchPage() {
     return map;
   }, [subscriptionsQuery.data?.items]);
 
+  const resolvedSchoolName =
+    schoolName.trim() || (queryType === "adjustments" && isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : "");
+  const resolvedKeywords =
+    queryType === "adjustments" && !schoolName.trim() && isSchoolLikeQuery(keywords.trim()) ? "" : keywords.trim();
+  const primaryInputPlaceholder =
+    queryType === "adjustments"
+      ? "输入学校名、专业名或专业代码；学校名会自动识别..."
+      : "输入院校代码、名称、学院或招生关键字...";
+
   const calculateMatch = () => {
     if (isAnonymous) {
       setMessage("调剂测算属于登录后的深度功能，请先登录。");
@@ -149,13 +158,13 @@ export default function SearchPage() {
         queryType === "announcements"
           ? await announcementMutation.mutateAsync({
               keywords: keywords.trim() || undefined,
-              school_name: schoolName.trim() || undefined,
+              school_name: schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : undefined),
               page,
               page_size: 12,
             })
           : await adjustmentMutation.mutateAsync({
-              keywords: keywords.trim() || undefined,
-              school_name: schoolName.trim() || undefined,
+              keywords: resolvedKeywords || undefined,
+              school_name: resolvedSchoolName || undefined,
               major: majorFilter.trim() || undefined,
               region: regionFilter.trim() || undefined,
               candidate_score: candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined,
@@ -292,8 +301,9 @@ export default function SearchPage() {
             <input
               value={keywords}
               onChange={(event) => setKeywords(event.target.value)}
+              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
               type="text"
-              placeholder="输入院校代码、名称或专业关键字..."
+              placeholder={primaryInputPlaceholder}
               className="w-full border-none bg-transparent py-4 text-lg text-white placeholder-slate-500 focus:outline-none"
             />
             <button
@@ -305,28 +315,37 @@ export default function SearchPage() {
               {isSearching ? "检索中..." : "检索"}
             </button>
           </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-5">
+          <div className="mt-2 text-xs text-slate-500">
+            {queryType === "adjustments"
+              ? "调剂模式下，主搜索框直接输入学校名会自动按院校条件处理。"
+              : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-5">
             <input
               value={schoolName}
               onChange={(event) => setSchoolName(event.target.value)}
-              placeholder="院校名（可选）"
+              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+              placeholder={queryType === "adjustments" ? "院校名（可留空）" : "院校名（可选）"}
               className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
             />
             <input
               value={majorFilter}
               onChange={(event) => setMajorFilter(event.target.value)}
+              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
               placeholder="专业（调剂模式可选）"
               className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
             />
             <input
               value={regionFilter}
               onChange={(event) => setRegionFilter(event.target.value)}
+              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
               placeholder="地区（调剂模式可选）"
               className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
             />
             <input
               value={candidateScoreFilter}
               onChange={(event) => setCandidateScoreFilter(event.target.value)}
+              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
               placeholder="你的分数（调剂模式可选）"
               className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
             />
@@ -1228,6 +1247,16 @@ function buildEmptyResultMessage(
     return "当前关键词没有命中公告，建议改成学校简称、学院名或更短的核心词。";
   }
   return "暂时没有命中公告结果，建议先输入学校名、学院名或招生关键词。";
+}
+
+function handleSearchInputKeyDown(
+  event: React.KeyboardEvent<HTMLInputElement>,
+  onSearch: () => void,
+) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    onSearch();
+  }
 }
 
 function buildEmptyStateTitle(queryType: "announcements" | "adjustments", hasFilters: boolean) {
