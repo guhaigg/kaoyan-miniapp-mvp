@@ -69,6 +69,18 @@ jobs:
           tar -czf /tmp/gewujl-web-ui.tgz -C web-ui/out .
           scp -P "$PORT" /tmp/gewujl-web-ui.tgz "$TARGET:/tmp/gewujl-web-ui.tgz"
 
+      - name: Upload repo bundle to server
+        env:
+          HK_HOST: ${{ secrets.HK_HOST }}
+          HK_PORT: ${{ secrets.HK_SSH_PORT }}
+          HK_USER: ${{ secrets.HK_USER }}
+        run: |
+          set -euo pipefail
+          PORT="${HK_PORT:-22}"
+          TARGET="${HK_USER}@${HK_HOST}"
+          git bundle create /tmp/kaoyan-miniapp-mvp.bundle main
+          scp -P "$PORT" /tmp/kaoyan-miniapp-mvp.bundle "$TARGET:/tmp/kaoyan-miniapp-mvp.bundle"
+
       - name: Deploy to Hong Kong server
         env:
           HK_HOST: ${{ secrets.HK_HOST }}
@@ -84,9 +96,10 @@ jobs:
           DEPLOY_PATH="${DEPLOY_PATH:-/root/code/kaoyan-miniapp-mvp}"
           WEB_ROOT="${WEB_ROOT:-/var/www/html}"
           BACKEND_SERVICE="${BACKEND_SERVICE:-kaoyan-backend}"
+          REPO_BUNDLE="${DEPLOY_PATH}.bundle"
 
           ssh -p "$PORT" "$TARGET" \
-            "DEPLOY_PATH='$DEPLOY_PATH' WEB_ROOT='$WEB_ROOT' BACKEND_SERVICE='$BACKEND_SERVICE' bash -s" <<'REMOTE'
+            "DEPLOY_PATH='$DEPLOY_PATH' WEB_ROOT='$WEB_ROOT' BACKEND_SERVICE='$BACKEND_SERVICE' REPO_BUNDLE='$REPO_BUNDLE' bash -s" <<'REMOTE'
           set -euo pipefail
 
           pre_ts="$(date '+%Y%m%d-%H%M%S')"
@@ -106,7 +119,14 @@ jobs:
           fi
           find /root/backups/predeploy -mindepth 1 -maxdepth 1 -type d -mtime +10 -exec rm -rf {} +
 
+          install -d "$(dirname "$REPO_BUNDLE")"
+          install -m 600 /tmp/kaoyan-miniapp-mvp.bundle "$REPO_BUNDLE"
+
           cd "$DEPLOY_PATH"
+          git remote set-url origin "$REPO_BUNDLE"
+          if [ -n "$(git status --porcelain)" ]; then
+            git stash push -u -m "pre-deploy $(date '+%Y-%m-%dT%H:%M:%S')"
+          fi
           git fetch origin main
           git checkout main
           git pull --ff-only origin main
