@@ -268,6 +268,53 @@ def test_adjustment_search_keyword_matches_region_in_structured_opportunities(cl
     assert payload["items"][0]["region"] == "山东"
 
 
+def test_adjustment_search_uses_adjustment_notice_label_for_table_results(client):
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="opp-3",
+                source_dataset_key="adjustment_announcement_2025_raw",
+                source_type="adjustment_notice",
+                year=2025,
+                school_name="山东科技大学",
+                school_name_normalized="山东科技大学",
+                school_code="10424",
+                region_name="山东",
+                school_tier=None,
+                department_name="计算机学院",
+                department_name_normalized="计算机学院",
+                major_code="085400",
+                major_name="电子信息",
+                major_name_normalized="电子信息",
+                study_mode="fulltime",
+                vacancy_count=3,
+                min_score=None,
+                avg_score=None,
+                max_score=None,
+                verification_status="官网",
+                title="山东科技大学电子信息调剂公告",
+                summary="表格调剂公告 · 官网 · 计划 3",
+                source_url="https://example.com/sdust-adjustment",
+                meta_json={},
+            )
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_notice_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"keywords": "山东科技大学"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["school_name"] == "山东科技大学"
+    assert item["source_type"] == "historical_adjustment_notice"
+    assert "表格调剂公告" in item["summary"]
+
+
 def test_adjustment_search_exposes_historical_adjustment_insight(client):
     response = client.post(
         "/api/v1/content",

@@ -841,7 +841,7 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             title = _strip_text(row.get("标题")) or f"{school_name} {major_name or major_code or '调剂'} 公告"
             add_row(
                 source_dataset_key=announcement_2025.dataset_key,
-                source_type="announcement",
+                source_type="adjustment_notice",
                 year=score_to_int(row.get("年份")) or 2025,
                 school_name=school_name,
                 school_code=None,

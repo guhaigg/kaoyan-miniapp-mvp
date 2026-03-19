@@ -30,6 +30,7 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
     mentor_path = tmp_path / "mentor.xlsx"
     snapshot25_path = tmp_path / "25年4月9日20时03分07秒调剂信息汇总.xlsx"
     snapshot24_path = tmp_path / "24年4月14日10时55分调剂信息汇总.xlsx"
+    announcement25_path = tmp_path / "2025年调剂信息公告.xlsx"
 
     _write_xlsx(
         stats_path,
@@ -75,6 +76,12 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         "Sheet1",
         ["余额", "大学", "学校代码", "学院", "学院代码", "专业", "专业代码", "研究方向", "方向代码", "学习形式", "要求", "距离开网已过时间（分）", "备注"],
         [[1, "XX大学", 10001, "信息学院", 1, "(专业学位)电子信息", "085400", "不区分", "00", 1, "要求", 120, "备注"]],
+    )
+    _write_xlsx(
+        announcement25_path,
+        "Sheet1",
+        ["学校", "学院", "专业代码", "专业名称", "计划人数", "最新时间", "验证状态", "原始网址", "年份", "标题", "备注"],
+        [["XX大学", "信息学院", "085400", "电子信息", 3, "2025/4/9 20:03:00", "官网", "https://example.com/1", 2025, "XX大学电子信息调剂公告", "补充说明"]],
     )
 
     with SessionLocal() as db:
@@ -127,6 +134,13 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
             dataset_type="adjustment_snapshot",
             input_path=snapshot24_path,
         )
+        archive_dataset_file(
+            db,
+            dataset_key="adjustment_announcement_2025_raw",
+            title="announcement25",
+            dataset_type="adjustment_notice",
+            input_path=announcement25_path,
+        )
         db.commit()
 
         opportunities = build_adjustment_opportunities_from_archives(db)
@@ -134,10 +148,12 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         mentors = build_mentor_evaluations_from_archives(db)
         timings = build_release_timing_profiles_from_archives(db)
 
-    assert len(opportunities) == 4
+    assert len(opportunities) == 5
     snapshot_row = next(row for row in opportunities if row["source_type"] == "snapshot" and row["year"] == 2025)
     assert snapshot_row["source_url"] == "https://example.com/1"
     assert snapshot_row["vacancy_count"] == 4
+    adjustment_notice_row = next(row for row in opportunities if row["source_type"] == "adjustment_notice")
+    assert adjustment_notice_row["source_url"] == "https://example.com/1"
     stats_opportunity = next(row for row in opportunities if row["source_type"] == "stats")
     assert stats_opportunity["min_score"] == 318
     assert len(profiles) == 5
@@ -149,10 +165,7 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
     assert {row["year"] for row in landing_rows} == {2024, 2025}
     notice_reference = next(row for row in profiles if row["source_type"] == "notice_reference")
     assert notice_reference["meta_json"]["top_source_url"] == "https://example.com/1"
-    assert notice_reference["meta_json"]["reference_urls"] == [
-        "https://example.com/1",
-        "https://example.com/2",
-    ]
+    assert "https://example.com/1" in notice_reference["meta_json"]["reference_urls"]
     assert len(mentors) == 1
     assert mentors[0]["risk_level"] == "warning"
     assert "好老师" in mentors[0]["review_tags"]

@@ -311,7 +311,7 @@ def _historical_source_label(source_type: str) -> str:
         "future_program": "2026 招生专业",
         "notice_reference": "历史调剂来源",
         "snapshot": "历史调剂快照",
-        "announcement": "历史调剂公告",
+        "adjustment_notice": "表格调剂公告",
         "stats": "历史调剂统计",
     }
     return labels.get(source_type, source_type)
