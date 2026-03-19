@@ -49,14 +49,28 @@ export default function SearchPage() {
 
   const filteredItems = useMemo(() => {
     if (!searchResult) return [];
-    return searchResult.items.filter((item) => {
+    const filtered = searchResult.items.filter((item) => {
       const text = [item.school_name, item.title, item.summary, item.major].filter(Boolean).join(" ");
       const matchesTier =
         schoolTiers.length === 0 || schoolTiers.some((tier) => matchesSchoolTier(tier, text));
       const matchesMode = matchesStudyMode(studyMode, text, item.adjustment_study_modes);
       return matchesTier && matchesMode;
     });
-  }, [schoolTiers, searchResult, studyMode]);
+    if (queryType !== "adjustments") {
+      return filtered;
+    }
+    return [...filtered].sort((left, right) => {
+      const urgencyDelta = Number(isAdjustmentUrgent(right)) - Number(isAdjustmentUrgent(left));
+      if (urgencyDelta !== 0) return urgencyDelta;
+      const outlookDelta = adjustmentOutlookRank(right.historical_adjustment?.outlook) - adjustmentOutlookRank(left.historical_adjustment?.outlook);
+      if (outlookDelta !== 0) return outlookDelta;
+      const sampleDelta = (right.historical_adjustment?.sample_count || 0) - (left.historical_adjustment?.sample_count || 0);
+      if (sampleDelta !== 0) return sampleDelta;
+      const timingDelta = (right.release_timing?.sample_count || 0) - (left.release_timing?.sample_count || 0);
+      if (timingDelta !== 0) return timingDelta;
+      return new Date(right.published_at || right.updated_at).getTime() - new Date(left.published_at || left.updated_at).getTime();
+    });
+  }, [queryType, schoolTiers, searchResult, studyMode]);
 
   const currentPage = searchResult?.page || 1;
   const totalPages = searchResult ? Math.max(1, Math.ceil(searchResult.total / searchResult.page_size)) : 1;
@@ -1006,4 +1020,15 @@ function matchesStudyMode(mode: StudyMode, text: string, structuredModes: string
     return structuredModes.includes("fulltime") || /(全日制|full-time|fulltime)/i.test(text);
   }
   return structuredModes.includes("parttime") || /(非全日制|兼职|part-time|parttime)/i.test(text);
+}
+
+function isAdjustmentUrgent(item: SearchItem) {
+  return /紧急|截止|补录|缺额/i.test(`${item.title} ${item.summary || ""} ${item.major || ""}`);
+}
+
+function adjustmentOutlookRank(outlook: "high" | "reach" | "cautious" | null | undefined) {
+  if (outlook === "high") return 3;
+  if (outlook === "reach") return 2;
+  if (outlook === "cautious") return 1;
+  return 0;
 }
