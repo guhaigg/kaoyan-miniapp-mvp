@@ -70,12 +70,7 @@ export default function SearchPage() {
       const matchesTier =
         schoolTiers.length === 0 || schoolTiers.some((tier) => matchesSchoolTier(tier, item.school_tier, text));
       const matchesMode = matchesStudyMode(studyMode, text, item.adjustment_study_modes);
-      const matchesHistory = !onlyHistoryBacked || (item.historical_adjustment?.sample_count || 0) > 0;
-      const matchesLongTrack = !onlyLongTrack || item.school_intelligence?.confidence_label === "连续活跃";
-      const matchesReference =
-        !onlyWithReferenceLinks || Boolean(item.source_url || item.school_intelligence?.reference_urls?.length);
-      const matchesMentorRisk = !hideMentorWarnings || (item.mentor_radar?.warning_count || 0) === 0;
-      return matchesTier && matchesMode && matchesHistory && matchesLongTrack && matchesReference && matchesMentorRisk;
+      return matchesTier && matchesMode;
     });
     if (queryType !== "adjustments") {
       return filtered;
@@ -100,10 +95,6 @@ export default function SearchPage() {
       return new Date(right.published_at || right.updated_at).getTime() - new Date(left.published_at || left.updated_at).getTime();
     });
   }, [
-    hideMentorWarnings,
-    onlyHistoryBacked,
-    onlyLongTrack,
-    onlyWithReferenceLinks,
     queryType,
     schoolTiers,
     searchResult,
@@ -114,11 +105,7 @@ export default function SearchPage() {
   const totalPages = searchResult ? Math.max(1, Math.ceil(searchResult.total / searchResult.page_size)) : 1;
   const hasLocalFilters =
     schoolTiers.length > 0 ||
-    studyMode !== "all" ||
-    onlyHistoryBacked ||
-    onlyLongTrack ||
-    onlyWithReferenceLinks ||
-    hideMentorWarnings;
+    studyMode !== "all";
   const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
   const adjustmentLocked = isAnonymous;
   const previewLimit = searchResult?.preview_limit ?? 2;
@@ -182,7 +169,29 @@ export default function SearchPage() {
     });
   };
 
-  async function triggerSearch(page = 1) {
+  function buildAdjustmentQuickFilterPayload(overrides?: {
+    historyBackedOnly?: boolean;
+    longTrackOnly?: boolean;
+    referenceLinksOnly?: boolean;
+    hideMentorWarnings?: boolean;
+  }) {
+    return {
+      history_backed_only: overrides?.historyBackedOnly ?? onlyHistoryBacked,
+      long_track_only: overrides?.longTrackOnly ?? onlyLongTrack,
+      reference_links_only: overrides?.referenceLinksOnly ?? onlyWithReferenceLinks,
+      exclude_mentor_warnings: overrides?.hideMentorWarnings ?? hideMentorWarnings,
+    };
+  }
+
+  async function triggerSearch(
+    page = 1,
+    overrides?: {
+      historyBackedOnly?: boolean;
+      longTrackOnly?: boolean;
+      referenceLinksOnly?: boolean;
+      hideMentorWarnings?: boolean;
+    },
+  ) {
     setMessage("");
     if (queryType === "adjustments" && isAnonymous) {
       setMessage("调剂检索属于登录后的深度功能，请先登录后继续。");
@@ -206,6 +215,7 @@ export default function SearchPage() {
               school_tier: schoolTierFilter.trim() || undefined,
               year: yearFilter.trim() ? Number(yearFilter.trim()) : undefined,
               candidate_score: candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined,
+              ...buildAdjustmentQuickFilterPayload(overrides),
               page,
               page_size: 12,
             });
@@ -701,22 +711,46 @@ export default function SearchPage() {
             <div className="flex flex-wrap gap-2">
               <IntelFilterChip
                 active={onlyHistoryBacked}
-                onClick={() => setOnlyHistoryBacked((value) => !value)}
+                onClick={() => {
+                  const nextValue = !onlyHistoryBacked;
+                  setOnlyHistoryBacked(nextValue);
+                  if (searchResult) {
+                    void triggerSearch(1, { historyBackedOnly: nextValue });
+                  }
+                }}
                 label="只看有历史样本"
               />
               <IntelFilterChip
                 active={onlyLongTrack}
-                onClick={() => setOnlyLongTrack((value) => !value)}
+                onClick={() => {
+                  const nextValue = !onlyLongTrack;
+                  setOnlyLongTrack(nextValue);
+                  if (searchResult) {
+                    void triggerSearch(1, { longTrackOnly: nextValue });
+                  }
+                }}
                 label="只看连续活跃"
               />
               <IntelFilterChip
                 active={onlyWithReferenceLinks}
-                onClick={() => setOnlyWithReferenceLinks((value) => !value)}
+                onClick={() => {
+                  const nextValue = !onlyWithReferenceLinks;
+                  setOnlyWithReferenceLinks(nextValue);
+                  if (searchResult) {
+                    void triggerSearch(1, { referenceLinksOnly: nextValue });
+                  }
+                }}
                 label="只看带历史链接"
               />
               <IntelFilterChip
                 active={hideMentorWarnings}
-                onClick={() => setHideMentorWarnings((value) => !value)}
+                onClick={() => {
+                  const nextValue = !hideMentorWarnings;
+                  setHideMentorWarnings(nextValue);
+                  if (searchResult) {
+                    void triggerSearch(1, { hideMentorWarnings: nextValue });
+                  }
+                }}
                 label="排除导师预警"
               />
             </div>
@@ -734,11 +768,11 @@ export default function SearchPage() {
           <>
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-300">
               <span>
-                当前页筛后 <span className="text-cyan-300">{filteredItems.length}</span> 条
+                当前页返回 <span className="text-cyan-300">{filteredItems.length}</span> 条
               </span>
               <span className="text-slate-500">/</span>
               <span>
-                原始返回 <span className="text-white">{searchResult.items.length}</span> 条
+                实际返回 <span className="text-white">{searchResult.items.length}</span> 条
               </span>
               <span className="text-slate-500">/</span>
               <span>
@@ -753,7 +787,7 @@ export default function SearchPage() {
               {hasLocalFilters ? (
                 <>
                   <span className="text-slate-500">/</span>
-                  <span className="text-cyan-300">前端高级筛选已生效</span>
+                  <span className="text-cyan-300">本地筛选已生效</span>
                 </>
               ) : null}
             </div>

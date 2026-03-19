@@ -819,6 +819,10 @@ class AdjustmentSearchRequest(SearchBaseRequest):
     school_tier: str | None = None
     candidate_score: int | None = Field(default=None, ge=0, le=500)
     year: int | None = Field(default=None, ge=2010, le=2100)
+    history_backed_only: bool = False
+    long_track_only: bool = False
+    reference_links_only: bool = False
+    exclude_mentor_warnings: bool = False
 
 
 class HistoricalAdjustmentInsight(BaseModel):

@@ -1000,6 +1000,187 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
     ]
 
 
+def test_adjustment_search_intelligence_filters_run_server_side(client):
+    for school_name in ("甲大学", "乙大学", "丙大学"):
+        response = client.post(
+            "/api/v1/content",
+            json={
+                "category": "adjustment",
+                "title": f"{school_name}电子信息调剂公告",
+                "body": "电子信息方向可申请调剂。",
+                "school_name": school_name,
+                "major": "电子信息",
+                "region": "上海",
+                "source_type": "crawler",
+                "source_url": f"https://example.com/{school_name}-adjustment",
+            },
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert response.status_code == 200
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                HistoricalAdjustmentProfile(
+                    profile_key="intelligence-filter-a-2023",
+                    year=2023,
+                    source_type="landing",
+                    source_dataset_key="adjustment_landing_2023_raw",
+                    school_name="甲大学",
+                    school_name_normalized="甲大学",
+                    school_code="10011",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    sample_count=2,
+                    vacancy_count=None,
+                    min_score=320,
+                    avg_score=325.0,
+                    max_score=330,
+                    meta_json={"reference_urls": ["https://example.com/a-history-2023"]},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="intelligence-filter-a-2024",
+                    year=2024,
+                    source_type="landing",
+                    source_dataset_key="adjustment_landing_2024_raw",
+                    school_name="甲大学",
+                    school_name_normalized="甲大学",
+                    school_code="10011",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    sample_count=3,
+                    vacancy_count=None,
+                    min_score=322,
+                    avg_score=327.0,
+                    max_score=332,
+                    meta_json={},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="intelligence-filter-a-2025",
+                    year=2025,
+                    source_type="future_program",
+                    source_dataset_key="admission_program_catalog_2025_raw",
+                    school_name="甲大学",
+                    school_name_normalized="甲大学",
+                    school_code="10011",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode=None,
+                    sample_count=1,
+                    vacancy_count=1,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    meta_json={"source_url": "https://example.com/a-program"},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="intelligence-filter-b-2025",
+                    year=2025,
+                    source_type="landing",
+                    source_dataset_key="adjustment_landing_2025_raw",
+                    school_name="乙大学",
+                    school_name_normalized="乙大学",
+                    school_code="10012",
+                    region_name="上海",
+                    school_tier="普本",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    sample_count=4,
+                    vacancy_count=None,
+                    min_score=305,
+                    avg_score=310.0,
+                    max_score=315,
+                    meta_json={},
+                ),
+            ]
+        )
+        db.add(
+            MentorEvaluation(
+                review_key="intelligence-filter-warning",
+                source_dataset_key="mentor_reviews_raw",
+                school_name="乙大学",
+                school_name_normalized="乙大学",
+                department_name=None,
+                department_name_normalized=None,
+                mentor_name="高风险导师",
+                mentor_name_normalized="高风险导师",
+                review_text="存在压榨和延毕风险。",
+                review_tags=["压榨", "延毕"],
+                risk_level="warning",
+                meta_json={},
+            )
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_filter_user")
+
+    history_search = client.post(
+        "/api/v1/search/adjustments",
+        json={
+            "major": "电子信息",
+            "region": "上海",
+            "history_backed_only": True,
+            "page_size": 1,
+        },
+        headers={"X-User-Token": token},
+    )
+    assert history_search.status_code == 200
+    history_payload = history_search.json()
+    assert history_payload["total"] == 2
+    assert len(history_payload["items"]) == 1
+
+    long_track_search = client.post(
+        "/api/v1/search/adjustments",
+        json={"major": "电子信息", "region": "上海", "long_track_only": True},
+        headers={"X-User-Token": token},
+    )
+    assert long_track_search.status_code == 200
+    long_track_payload = long_track_search.json()
+    assert long_track_payload["total"] == 1
+    assert [item["school_name"] for item in long_track_payload["items"]] == ["甲大学"]
+
+    reference_search = client.post(
+        "/api/v1/search/adjustments",
+        json={"major": "电子信息", "region": "上海", "reference_links_only": True},
+        headers={"X-User-Token": token},
+    )
+    assert reference_search.status_code == 200
+    reference_payload = reference_search.json()
+    assert reference_payload["total"] == 1
+    assert [item["school_name"] for item in reference_payload["items"]] == ["甲大学"]
+
+    warning_free_search = client.post(
+        "/api/v1/search/adjustments",
+        json={"major": "电子信息", "region": "上海", "exclude_mentor_warnings": True},
+        headers={"X-User-Token": token},
+    )
+    assert warning_free_search.status_code == 200
+    warning_free_payload = warning_free_search.json()
+    assert warning_free_payload["total"] == 2
+    assert {item["school_name"] for item in warning_free_payload["items"]} == {"甲大学", "丙大学"}
+
+
 def test_adjustment_search_sorts_by_intelligence_signal_before_recency(client):
     older = client.post(
         "/api/v1/content",

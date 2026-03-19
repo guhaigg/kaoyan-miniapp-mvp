@@ -425,6 +425,10 @@ export type AdjustmentSearchRequest = SearchBaseRequest & {
   school_tier?: string;
   candidate_score?: number;
   year?: number;
+  history_backed_only?: boolean;
+  long_track_only?: boolean;
+  reference_links_only?: boolean;
+  exclude_mentor_warnings?: boolean;
 };
 
 export type SchoolBulkImportResponse = {

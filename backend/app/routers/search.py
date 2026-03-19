@@ -945,12 +945,37 @@ def _merge_adjustment_search_responses(
     refresh_job_id: str | None,
     responses: list[SearchResponse],
 ) -> SearchResponse:
+    def _has_reference_links(item: SearchItem) -> bool:
+        reference_urls = item.school_intelligence.reference_urls if item.school_intelligence is not None else []
+        if reference_urls:
+            return True
+        return item.item_kind == "opportunity" and bool(str(item.source_url or "").strip())
+
+    def _matches_intelligence_filters(item: SearchItem) -> bool:
+        if payload.history_backed_only and (item.historical_adjustment.sample_count if item.historical_adjustment is not None else 0) <= 0:
+            return False
+        if payload.long_track_only and (item.school_intelligence.confidence_label if item.school_intelligence is not None else None) != "连续活跃":
+            return False
+        if payload.reference_links_only and not _has_reference_links(item):
+            return False
+        if payload.exclude_mentor_warnings and (item.mentor_radar.warning_count if item.mentor_radar is not None else 0) > 0:
+            return False
+        return True
+
+    def _has_intelligence_filters() -> bool:
+        return any(
+            (
+                payload.history_backed_only,
+                payload.long_track_only,
+                payload.reference_links_only,
+                payload.exclude_mentor_warnings,
+            )
+        )
+
     all_items: list[SearchItem] = []
     source_breakdown: dict[str, int] = {}
-    total = 0
     last_updated_candidates = []
     for response in responses:
-        total += response.total
         all_items.extend(response.items)
         if response.last_updated_at is not None:
             last_updated_candidates.append(response.last_updated_at)
@@ -960,6 +985,11 @@ def _merge_adjustment_search_responses(
     for item in all_items:
         deduped[item.id] = item
     merged_items = sorted(deduped.values(), key=_adjustment_sort_key, reverse=True)
+    if _has_intelligence_filters():
+        merged_items = [item for item in merged_items if _matches_intelligence_filters(item)]
+        source_breakdown = {}
+        for item in merged_items:
+            source_breakdown[item.source_type] = source_breakdown.get(item.source_type, 0) + 1
     start = (payload.page - 1) * payload.page_size
     end = start + payload.page_size
     return SearchResponse(
@@ -1128,14 +1158,26 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     refresh_job_id = None
     if payload.refresh:
         refresh_job_id = _create_refresh_job(db, "adjustment", payload.model_dump(mode="json"), user.id if user else None)
+    requires_full_scan = any(
+        (
+            payload.history_backed_only,
+            payload.long_track_only,
+            payload.reference_links_only,
+            payload.exclude_mentor_warnings,
+        )
+    )
     page_window = payload.page * payload.page_size
 
     content_total = content_query.count()
-    content_rows = (
-        content_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
-        .limit(page_window)
-        .all()
+    content_ordered_query = content_query.order_by(
+        Content.published_at.is_(None),
+        Content.published_at.desc(),
+        Content.updated_at.desc(),
     )
+    if requires_full_scan:
+        content_rows = content_ordered_query.all()
+    else:
+        content_rows = content_ordered_query.limit(page_window).all()
     content_stats_rows = content_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
     content_source_breakdown = {k: int(v) for k, v in content_stats_rows}
     content_response = _to_response(
@@ -1152,18 +1194,18 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     opportunity_query = db.query(AdjustmentOpportunity)
     opportunity_query = _apply_adjustment_opportunity_filters(opportunity_query, payload)
     opportunity_total = opportunity_query.count()
-    opportunity_rows = (
-        opportunity_query.order_by(
-            AdjustmentOpportunity.published_at.is_(None),
-            AdjustmentOpportunity.published_at.desc(),
-            AdjustmentOpportunity.year.desc(),
-            AdjustmentOpportunity.vacancy_count.is_(None),
-            AdjustmentOpportunity.vacancy_count.desc(),
-            AdjustmentOpportunity.updated_at.desc(),
-        )
-        .limit(page_window)
-        .all()
+    opportunity_ordered_query = opportunity_query.order_by(
+        AdjustmentOpportunity.published_at.is_(None),
+        AdjustmentOpportunity.published_at.desc(),
+        AdjustmentOpportunity.year.desc(),
+        AdjustmentOpportunity.vacancy_count.is_(None),
+        AdjustmentOpportunity.vacancy_count.desc(),
+        AdjustmentOpportunity.updated_at.desc(),
     )
+    if requires_full_scan:
+        opportunity_rows = opportunity_ordered_query.all()
+    else:
+        opportunity_rows = opportunity_ordered_query.limit(page_window).all()
     opportunity_stats_rows = (
         opportunity_query.with_entities(AdjustmentOpportunity.source_type, func.count(AdjustmentOpportunity.id))
         .group_by(AdjustmentOpportunity.source_type)
