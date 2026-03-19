@@ -2,12 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Search, SlidersHorizontal, Target } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock3,
+  History,
+  Search,
+  ShieldAlert,
+  SlidersHorizontal,
+  Target,
+  TrendingUp,
+} from "lucide-react";
 import FilterDrawer, { type SchoolTier, type StudyMode } from "@/components/search/FilterDrawer";
 import FeedCard, { FeedCardSkeleton } from "@/components/shared/FeedCard";
-import { ApiError, SearchResponse } from "@/lib/api";
+import { ApiError, SearchItem, SearchResponse } from "@/lib/api";
 import { useAdjustmentSearchMutation, useAnnouncementSearchMutation } from "@/hooks/useSearch";
 import { useAddSubscriptionMutation, useDeleteSubscriptionMutation, useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
@@ -157,6 +166,23 @@ export default function SearchPage() {
   }
 
   const isSearching = announcementMutation.isPending || adjustmentMutation.isPending;
+  const adjustmentSummary = useMemo(() => {
+    if (!searchResult || queryType !== "adjustments") return null;
+    const items = filteredItems;
+    const withHistory = items.filter((item) => item.historical_adjustment?.sample_count);
+    const withWarnings = items.filter((item) => (item.mentor_radar?.warning_count || 0) > 0);
+    const nightReleases = items.filter((item) => {
+      const value = item.published_at || item.updated_at;
+      const hour = new Date(value).getHours();
+      return Number.isFinite(hour) && hour >= 18;
+    });
+    return {
+      hits: items.length,
+      withHistory: withHistory.length,
+      withWarnings: withWarnings.length,
+      nightReleases: nightReleases.length,
+    };
+  }, [filteredItems, queryType, searchResult]);
 
   return (
     <motion.div
@@ -368,6 +394,56 @@ export default function SearchPage() {
           </div>
         ) : searchResult ? (
           <>
+            {queryType === "adjustments" ? (
+              <section className="overflow-hidden rounded-[28px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(8,145,178,0.14),transparent_30%),linear-gradient(180deg,rgba(10,15,24,0.98),rgba(8,12,20,0.95))] shadow-2xl">
+                <div className="border-b border-white/8 px-5 py-5 md:px-6">
+                  <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+                    <div>
+                      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-cyan-300/80">
+                        <Target size={14} className="text-cyan-400" />
+                        GEWUJL 情报分析终端
+                      </div>
+                      <h3 className="text-2xl font-black tracking-tight text-white">调剂实时决策流</h3>
+                      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                        把历史调剂分数、导师评价、发布时间信号和实时公告揉成一条决策流。当前不是简单全文检索，而是按“能不能报、值不值得报、何时容易出结果”来排视角。
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                      <IntelStatCard label="命中情报" value={`${adjustmentSummary?.hits || 0}`} accent="cyan" />
+                      <IntelStatCard label="历史样本" value={`${adjustmentSummary?.withHistory || 0}`} accent="emerald" />
+                      <IntelStatCard label="导师预警" value={`${adjustmentSummary?.withWarnings || 0}`} accent="amber" />
+                      <IntelStatCard label="晚间发布" value={`${adjustmentSummary?.nightReleases || 0}`} accent="violet" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 px-5 py-5 md:px-6 xl:grid-cols-3">
+                  <IntelSignalCard
+                    icon={<TrendingUp size={16} className="text-emerald-300" />}
+                    title="分数胜率"
+                    description={
+                      candidateScoreFilter.trim()
+                        ? `已按你的分数 ${candidateScoreFilter.trim()} 分做历史对比，优先展示有分数样本的院校。`
+                        : "输入你的初试分数后，卡片会直接给出历史最低分和胜率分层。"
+                    }
+                    accent="emerald"
+                  />
+                  <IntelSignalCard
+                    icon={<ShieldAlert size={16} className="text-amber-300" />}
+                    title="导师雷达"
+                    description="如果该校命中过去公开评价里的高风险导师信号，卡片会直接点亮导师预警。"
+                    accent="amber"
+                  />
+                  <IntelSignalCard
+                    icon={<History size={16} className="text-indigo-300" />}
+                    title="发布时间"
+                    description="当前先基于真实发布时间和历史样本覆盖做发榜信号，后续再叠加更细的生物钟统计。"
+                    accent="violet"
+                  />
+                </div>
+              </section>
+            ) : null}
+
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-300">
               <span>
                 当前页筛后 <span className="text-cyan-300">{filteredItems.length}</span> 条
@@ -395,96 +471,122 @@ export default function SearchPage() {
             </div>
 
             {filteredItems.length > 0 ? (
-              <div className="grid gap-6 md:grid-cols-2">
-                {filteredItems.map((item) => (
-                  <FeedCard
-                    key={item.id}
-                    item={{
-                      id: item.id,
-                      type: item.category === "adjustment" ? "adjustment" : "announcement",
-                      title: item.title,
-                      content:
-                        item.category === "adjustment" && item.historical_adjustment
-                          ? [
-                              item.summary || "系统已命中调剂历史样本。",
-                              item.historical_adjustment.min_score !== null
-                                ? `历史最低 ${item.historical_adjustment.min_score}`
-                                : null,
-                              item.historical_adjustment.avg_score !== null
-                                ? `历史均分 ${Math.round(item.historical_adjustment.avg_score)}`
-                                : null,
-                              item.historical_adjustment.sample_count > 0
-                                ? `样本 ${item.historical_adjustment.sample_count}`
-                                : null,
-                              item.mentor_radar?.warning_count
-                                ? `导师预警 ${item.mentor_radar.warning_count}`
-                                : item.mentor_radar?.review_count
-                                  ? `导师评价 ${item.mentor_radar.review_count}`
+              queryType === "adjustments" ? (
+                <div className="space-y-4">
+                  {filteredItems.map((item) => (
+                    <AdjustmentIntelCard
+                      key={item.id}
+                      item={item}
+                      candidateScore={candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined}
+                      bookmark={
+                        item.school_name
+                          ? {
+                              active: schoolSubscriptions.has(item.school_name),
+                              available: !isAnonymous && (portalAuth?.isAdmin || portalAuth?.isPremium),
+                              label: isAnonymous
+                                ? "登录后可收藏院校"
+                                : portalAuth?.isAdmin || portalAuth?.isPremium
+                                  ? `${schoolSubscriptions.has(item.school_name) ? "取消收藏" : "收藏院校"}：${item.school_name}`
+                                  : "院校收藏需要高级会员",
+                              onToggle: () => handleSchoolBookmark(item.school_name as string),
+                            }
+                          : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid gap-6 md:grid-cols-2">
+                  {filteredItems.map((item) => (
+                    <FeedCard
+                      key={item.id}
+                      item={{
+                        id: item.id,
+                        type: item.category === "adjustment" ? "adjustment" : "announcement",
+                        title: item.title,
+                        content:
+                          item.category === "adjustment" && item.historical_adjustment
+                            ? [
+                                item.summary || "系统已命中调剂历史样本。",
+                                item.historical_adjustment.min_score !== null
+                                  ? `历史最低 ${item.historical_adjustment.min_score}`
                                   : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : item.summary || "暂无摘要，点击查看源站原文。",
-                      badges: [
-                        ...(item.notice_kind === "link_notice" ? [{ label: "链接型公告", tone: "sky" as const }] : []),
-                        ...(item.pdf_parse_status === "needs_ocr"
-                          ? [{ label: "扫描件待查看", tone: "amber" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.adjustment_has_vacancy
-                          ? [{ label: "有缺额信号", tone: "amber" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.adjustment_study_modes.includes("fulltime")
-                          ? [{ label: "全日制", tone: "sky" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.adjustment_study_modes.includes("parttime")
-                          ? [{ label: "非全日制", tone: "sky" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.adjustment_major_codes.length > 0
-                          ? [{ label: `专业代码 ${item.adjustment_major_codes[0]}`, tone: "sky" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.historical_adjustment?.outlook_label
-                          ? [{ label: item.historical_adjustment.outlook_label, tone: "amber" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.historical_adjustment?.min_score !== null
-                          ? [{ label: `历史最低 ${item.historical_adjustment?.min_score}`, tone: "sky" as const }]
-                          : []),
-                        ...(item.mentor_radar?.warning_count
-                          ? [{ label: `导师预警 ${item.mentor_radar.warning_count}`, tone: "amber" as const }]
-                          : []),
-                        ...(!item.mentor_radar?.warning_count && (item.mentor_radar?.review_count || 0) > 0
-                          ? [{ label: `导师评价 ${item.mentor_radar?.review_count}`, tone: "sky" as const }]
-                          : []),
-                      ],
-                      publishTime: item.published_at || item.updated_at,
-                      href: item.source_url,
-                      isUrgent: /紧急|截止|补录|缺额/i.test(
-                        `${item.title} ${item.summary || ""} ${item.major || ""}`,
-                      ),
-                      tags:
-                        item.tags && item.tags.length > 0
-                          ? item.tags
-                          : [
-                              item.category === "adjustment" ? "调剂动态" : "最新公告",
-                              item.school_name || "未知院校",
-                              item.region || "区域待补充",
-                              item.major || "专业待补充",
-                            ],
-                      bookmark: item.school_name
-                        ? {
-                            active: schoolSubscriptions.has(item.school_name),
-                            available: !isAnonymous && (portalAuth?.isAdmin || portalAuth?.isPremium),
-                            label: isAnonymous
-                              ? "登录后可收藏院校"
-                              : portalAuth?.isAdmin || portalAuth?.isPremium
-                                ? `${schoolSubscriptions.has(item.school_name) ? "取消收藏" : "收藏院校"}：${item.school_name}`
-                                : "院校收藏需要高级会员",
-                            onToggle: () => handleSchoolBookmark(item.school_name as string),
-                          }
-                        : undefined,
-                    }}
-                  />
-                ))}
-              </div>
+                                item.historical_adjustment.avg_score !== null
+                                  ? `历史均分 ${Math.round(item.historical_adjustment.avg_score)}`
+                                  : null,
+                                item.historical_adjustment.sample_count > 0
+                                  ? `样本 ${item.historical_adjustment.sample_count}`
+                                  : null,
+                                item.mentor_radar?.warning_count
+                                  ? `导师预警 ${item.mentor_radar.warning_count}`
+                                  : item.mentor_radar?.review_count
+                                    ? `导师评价 ${item.mentor_radar.review_count}`
+                                    : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : item.summary || "暂无摘要，点击查看源站原文。",
+                        badges: [
+                          ...(item.notice_kind === "link_notice" ? [{ label: "链接型公告", tone: "sky" as const }] : []),
+                          ...(item.pdf_parse_status === "needs_ocr"
+                            ? [{ label: "扫描件待查看", tone: "amber" as const }]
+                            : []),
+                          ...(item.category === "adjustment" && item.adjustment_has_vacancy
+                            ? [{ label: "有缺额信号", tone: "amber" as const }]
+                            : []),
+                          ...(item.category === "adjustment" && item.adjustment_study_modes.includes("fulltime")
+                            ? [{ label: "全日制", tone: "sky" as const }]
+                            : []),
+                          ...(item.category === "adjustment" && item.adjustment_study_modes.includes("parttime")
+                            ? [{ label: "非全日制", tone: "sky" as const }]
+                            : []),
+                          ...(item.category === "adjustment" && item.adjustment_major_codes.length > 0
+                            ? [{ label: `专业代码 ${item.adjustment_major_codes[0]}`, tone: "sky" as const }]
+                            : []),
+                          ...(item.category === "adjustment" && item.historical_adjustment?.outlook_label
+                            ? [{ label: item.historical_adjustment.outlook_label, tone: "amber" as const }]
+                            : []),
+                          ...(item.category === "adjustment" && item.historical_adjustment?.min_score !== null
+                            ? [{ label: `历史最低 ${item.historical_adjustment?.min_score}`, tone: "sky" as const }]
+                            : []),
+                          ...(item.mentor_radar?.warning_count
+                            ? [{ label: `导师预警 ${item.mentor_radar.warning_count}`, tone: "amber" as const }]
+                            : []),
+                          ...(!item.mentor_radar?.warning_count && (item.mentor_radar?.review_count || 0) > 0
+                            ? [{ label: `导师评价 ${item.mentor_radar?.review_count}`, tone: "sky" as const }]
+                            : []),
+                        ],
+                        publishTime: item.published_at || item.updated_at,
+                        href: item.source_url,
+                        isUrgent: /紧急|截止|补录|缺额/i.test(
+                          `${item.title} ${item.summary || ""} ${item.major || ""}`,
+                        ),
+                        tags:
+                          item.tags && item.tags.length > 0
+                            ? item.tags
+                            : [
+                                item.category === "adjustment" ? "调剂动态" : "最新公告",
+                                item.school_name || "未知院校",
+                                item.region || "区域待补充",
+                                item.major || "专业待补充",
+                              ],
+                        bookmark: item.school_name
+                          ? {
+                              active: schoolSubscriptions.has(item.school_name),
+                              available: !isAnonymous && (portalAuth?.isAdmin || portalAuth?.isPremium),
+                              label: isAnonymous
+                                ? "登录后可收藏院校"
+                                : portalAuth?.isAdmin || portalAuth?.isPremium
+                                  ? `${schoolSubscriptions.has(item.school_name) ? "取消收藏" : "收藏院校"}：${item.school_name}`
+                                  : "院校收藏需要高级会员",
+                              onToggle: () => handleSchoolBookmark(item.school_name as string),
+                            }
+                          : undefined,
+                      }}
+                    />
+                  ))}
+                </div>
+              )
             ) : (
               <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-8 text-sm text-slate-300">
                 当前筛选条件下暂无匹配记录。你可以放宽院校层次或学习方式，重新聚合本页结果。
@@ -608,6 +710,278 @@ export default function SearchPage() {
       </div>
     </motion.div>
   );
+}
+
+function IntelStatCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent: "cyan" | "emerald" | "amber" | "violet";
+}) {
+  const styles = {
+    cyan: "border-cyan-400/15 bg-cyan-500/10 text-cyan-200",
+    emerald: "border-emerald-400/15 bg-emerald-500/10 text-emerald-200",
+    amber: "border-amber-400/15 bg-amber-500/10 text-amber-200",
+    violet: "border-violet-400/15 bg-violet-500/10 text-violet-200",
+  }[accent];
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${styles}`}>
+      <div className="text-[11px] uppercase tracking-[0.22em] text-white/60">{label}</div>
+      <div className="mt-1 text-2xl font-black text-white">{value}</div>
+    </div>
+  );
+}
+
+function IntelSignalCard({
+  icon,
+  title,
+  description,
+  accent,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  accent: "emerald" | "amber" | "violet";
+}) {
+  const styles = {
+    emerald: "border-emerald-400/15 bg-emerald-500/10",
+    amber: "border-amber-400/15 bg-amber-500/10",
+    violet: "border-violet-400/15 bg-violet-500/10",
+  }[accent];
+  return (
+    <div className={`rounded-2xl border px-4 py-4 ${styles}`}>
+      <div className="flex items-center gap-2 text-sm font-semibold text-white">
+        {icon}
+        {title}
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-300">{description}</p>
+    </div>
+  );
+}
+
+function AdjustmentIntelCard({
+  item,
+  candidateScore,
+  bookmark,
+}: {
+  item: SearchItem;
+  candidateScore?: number;
+  bookmark?: {
+    active: boolean;
+    available: boolean;
+    label: string;
+    onToggle: () => Promise<void> | void;
+  };
+}) {
+  const isUrgent = /紧急|截止|补录|缺额/i.test(`${item.title} ${item.summary || ""} ${item.major || ""}`);
+  const probability = getAdjustmentProbability(
+    candidateScore,
+    item.historical_adjustment?.min_score ?? null,
+    item.historical_adjustment?.avg_score ?? null,
+  );
+  const timingSignal = getTimingSignal(item);
+  const departmentLine = [item.major, item.adjustment_major_codes[0], item.region].filter(Boolean).join(" · ") || "调剂情报流";
+  const tags = item.tags.length > 0 ? item.tags : [item.school_name || "院校待补充", item.major || "专业待补充"];
+  const releaseTime = formatIntelTime(item.published_at || item.updated_at);
+  const mentorWarning = (item.mentor_radar?.warning_count || 0) > 0;
+
+  async function handleBookmarkClick() {
+    if (!bookmark) return;
+    await bookmark.onToggle();
+  }
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 260, damping: 28 }}
+      className={`relative overflow-hidden rounded-[26px] border bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(6,10,18,0.94))] shadow-[0_24px_80px_rgba(0,0,0,0.34)] ${isUrgent ? "border-cyan-400/25" : "border-white/10"}`}
+    >
+      {isUrgent ? <div className="absolute inset-y-0 left-0 w-1 bg-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.75)]" /> : null}
+      <div className="absolute -right-12 top-0 h-32 w-32 rounded-full bg-cyan-500/10 blur-3xl" />
+      <div className="relative space-y-5 p-5 md:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">{departmentLine}</div>
+            <h3 className="text-2xl font-black tracking-tight text-white">{item.school_name || "未知院校"}</h3>
+            <p className="mt-2 text-sm font-medium leading-6 text-slate-300">{item.title}</p>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="flex items-center justify-end gap-1 text-xs font-mono text-slate-500">
+              <Clock3 size={13} />
+              {releaseTime}
+            </div>
+            {isUrgent ? (
+              <div className="mt-2 inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200">
+                Latest
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {tags.slice(0, 6).map((tag) => (
+            <span key={tag} className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
+              {tag}
+            </span>
+          ))}
+        </div>
+
+        <div className="grid gap-3 border-t border-white/8 pt-4 xl:grid-cols-3">
+          <div className={`rounded-2xl border p-4 ${probability.bg} ${probability.border}`}>
+            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
+              <TrendingUp size={15} className={probability.iconClass} />
+              录取胜率预估
+            </div>
+            <div className={`text-2xl font-black ${probability.textClass}`}>{probability.label}</div>
+            <div className="mt-3 text-xs leading-5 text-slate-300">
+              <div>历史底线：{item.historical_adjustment?.min_score ?? "--"}</div>
+              <div>历史均分：{item.historical_adjustment?.avg_score ? Math.round(item.historical_adjustment.avg_score) : "--"}</div>
+              <div>样本数：{item.historical_adjustment?.sample_count ?? 0}</div>
+            </div>
+          </div>
+
+          <div className={`rounded-2xl border p-4 ${mentorWarning ? "border-red-400/20 bg-red-500/10" : "border-white/10 bg-white/[0.04]"}`}>
+            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
+              {mentorWarning ? (
+                <ShieldAlert size={15} className="text-red-300" />
+              ) : (
+                <CheckCircle2 size={15} className="text-emerald-300" />
+              )}
+              导师评价雷达
+            </div>
+            <div className={`text-lg font-bold ${mentorWarning ? "text-red-300" : "text-slate-100"}`}>
+              {item.mentor_radar?.risk_label || "暂无明显预警"}
+            </div>
+            <div className="mt-3 text-xs leading-5 text-slate-300">
+              <div>评价数：{item.mentor_radar?.review_count ?? 0}</div>
+              <div>预警数：{item.mentor_radar?.warning_count ?? 0}</div>
+              <div>标签：{item.mentor_radar?.top_tags?.slice(0, 3).join(" / ") || "暂无"}</div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
+              <History size={15} className="text-violet-300" />
+              发榜生物钟
+            </div>
+            <div className="text-lg font-bold text-slate-100">{timingSignal.title}</div>
+            <div className="mt-3 text-xs leading-5 text-slate-300">
+              <div>{timingSignal.detail}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4">
+          <div className="text-xs text-slate-400">
+            {item.summary || "暂无摘要，建议打开源站查看完整原文。"}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {bookmark ? (
+              <button
+                type="button"
+                onClick={handleBookmarkClick}
+                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                  bookmark.active
+                    ? "border-yellow-400/25 bg-yellow-500/10 text-yellow-200"
+                    : bookmark.available
+                      ? "border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"
+                      : "border-white/10 bg-white/[0.03] text-slate-400"
+                }`}
+                title={bookmark.label}
+              >
+                {bookmark.active ? "已收藏院校" : bookmark.available ? "收藏院校" : "收藏受限"}
+              </button>
+            ) : null}
+            {item.source_url ? (
+              <a
+                href={item.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-400"
+              >
+                查看原文
+              </a>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function getAdjustmentProbability(score?: number, min?: number | null, avg?: number | null) {
+  if (!score || min === null || min === undefined) {
+    return {
+      label: "等待评分",
+      textClass: "text-slate-100",
+      iconClass: "text-slate-300",
+      bg: "bg-white/[0.04]",
+      border: "border-white/10",
+    };
+  }
+  if (score < min) {
+    return {
+      label: "炮灰警告",
+      textClass: "text-red-300",
+      iconClass: "text-red-300",
+      bg: "bg-red-500/10",
+      border: "border-red-400/20",
+    };
+  }
+  if (avg !== null && avg !== undefined && score >= avg) {
+    return {
+      label: "极大概率",
+      textClass: "text-emerald-300",
+      iconClass: "text-emerald-300",
+      bg: "bg-emerald-500/10",
+      border: "border-emerald-400/20",
+    };
+  }
+  return {
+    label: "冲刺有戏",
+    textClass: "text-amber-300",
+    iconClass: "text-amber-300",
+    bg: "bg-amber-500/10",
+    border: "border-amber-400/20",
+  };
+}
+
+function getTimingSignal(item: SearchItem) {
+  const value = item.published_at || item.updated_at;
+  const date = new Date(value);
+  const hour = date.getHours();
+  const hasHistory = (item.historical_adjustment?.sample_years || []).length > 0;
+  if (Number.isFinite(hour) && hour >= 18) {
+    return {
+      title: "晚间发榜信号",
+      detail: hasHistory
+        ? `当前发布时间 ${formatIntelTime(value)}，且已命中 ${item.historical_adjustment?.sample_years.join(" / ")} 历史样本。`
+        : `当前发布时间 ${formatIntelTime(value)}，属于晚间高关注时段。`,
+    };
+  }
+  return {
+    title: "常规时段发布",
+    detail: hasHistory
+      ? `当前发布时间 ${formatIntelTime(value)}，已覆盖 ${item.historical_adjustment?.sample_years.join(" / ")} 历史样本。`
+      : `当前发布时间 ${formatIntelTime(value)}，后续会继续补发布时间规律统计。`,
+  };
+}
+
+function formatIntelTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 function matchesSchoolTier(tier: SchoolTier, text: string) {
