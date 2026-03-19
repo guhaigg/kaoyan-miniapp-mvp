@@ -44,6 +44,7 @@ SCHOOL_SUFFIXES = (
     "农业大学",
     "中医药大学",
 )
+DEPARTMENT_HINT_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|研究院|研究所|中心))")
 
 
 def _dedupe_terms(values: list[str]) -> list[str]:
@@ -79,6 +80,20 @@ def _build_keyword_terms(value: str) -> list[str]:
     compact = re.sub(r"\s+", "", raw)
     split_terms = [part.strip() for part in re.split(r"[\s,，、/|;；]+", raw) if part.strip()]
     return _dedupe_terms([raw, compact, *split_terms])
+
+
+def _extract_department_hints(*texts: str | None) -> list[str]:
+    values: list[str] = []
+    for text in texts:
+        content = str(text or "").strip()
+        if not content:
+            continue
+        for match in DEPARTMENT_HINT_PATTERN.findall(content):
+            normalized = str(match).strip(" ，,、;；:：")
+            normalized = re.sub(r"^[\u4e00-\u9fa5A-Za-z0-9（）()·、]+大学", "", normalized)
+            if normalized and not normalized.endswith("大学"):
+                values.append(normalized)
+    return _dedupe_terms(values)
 
 
 def _build_major_terms(value: str) -> list[str]:
@@ -282,6 +297,7 @@ def _build_adjustment_detail_from_opportunity(
     merged_rows = _load_merged_adjustment_opportunity_rows(db, row)
     merged = _merge_adjustment_opportunity_rows(merged_rows or [row])[0]
     row = merged["primary"]
+    display_departments = _resolve_adjustment_departments(db, row, merged["department_names"])
     normalized_school_name = normalize_school_name(row.school_name)
     historical_profiles = load_profiles_for_search(db, [row.school_name])
     mentor_radar = load_mentor_radar_for_search(db, [row.school_name])
@@ -320,7 +336,7 @@ def _build_adjustment_detail_from_opportunity(
         source_type=f"historical_{row.source_type}",
         title=row.title,
         school_name=row.school_name,
-        department_name=" / ".join(merged["department_names"]) if merged["department_names"] else row.department_name,
+        department_name=" / ".join(display_departments) if display_departments else row.department_name,
         region=row.region_name,
         major=row.major_name,
         major_code=row.major_code,
@@ -600,6 +616,31 @@ def _load_merged_adjustment_opportunity_rows(db: Session, row: AdjustmentOpportu
     return [candidate for candidate in rows if _build_adjustment_opportunity_merge_key(candidate) == _build_adjustment_opportunity_merge_key(row)]
 
 
+def _resolve_adjustment_departments(
+    db: Session,
+    row: AdjustmentOpportunity,
+    department_names: list[str],
+) -> list[str]:
+    if department_names:
+        return department_names
+
+    inferred = _extract_department_hints(row.title, row.summary)
+    if inferred:
+        return inferred
+
+    query = db.query(AdjustmentOpportunity.department_name).filter(
+        AdjustmentOpportunity.school_name_normalized == row.school_name_normalized,
+        AdjustmentOpportunity.department_name.is_not(None),
+    )
+    if row.major_code:
+        query = query.filter(AdjustmentOpportunity.major_code == row.major_code)
+    elif row.major_name_normalized:
+        query = query.filter(AdjustmentOpportunity.major_name_normalized == row.major_name_normalized)
+    rows = query.limit(10).all()
+    fallback = _dedupe_terms([value for (value,) in rows if str(value or "").strip()])
+    return fallback[:3]
+
+
 def _merge_adjustment_opportunity_rows(rows: list[AdjustmentOpportunity]) -> list[dict]:
     grouped: dict[str, list[AdjustmentOpportunity]] = defaultdict(list)
     for row in rows:
@@ -700,6 +741,7 @@ def _to_adjustment_opportunity_response(
     serialized: list[SearchItem] = []
     for merged in merged_rows:
         row = merged["primary"]
+        display_departments = _resolve_adjustment_departments(db, row, merged["department_names"])
         school_name = row.school_name
         normalized_school_name = normalize_school_name(school_name)
         school_profiles = historical_profiles.get(normalized_school_name, [])
@@ -740,7 +782,7 @@ def _to_adjustment_opportunity_response(
                 item_kind="opportunity",
                 category="adjustment",
                 school_name=school_name,
-                department_name=" / ".join(merged["department_names"][:2]) if merged["department_names"] else row.department_name,
+                department_name=" / ".join(display_departments[:2]) if display_departments else row.department_name,
                 title=row.title,
                 summary=_build_adjustment_opportunity_summary(row, insight),
                 tags=tags,

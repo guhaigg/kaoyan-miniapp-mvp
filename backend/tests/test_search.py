@@ -314,6 +314,49 @@ def test_adjustment_search_merges_same_school_year_major_and_vacancy_rows(client
     assert "https://example.com/hubu-merge-2" in urls
 
 
+def test_adjustment_search_infers_department_from_title_when_missing(client):
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="merge-opp-infer-1",
+                source_dataset_key="adjustment_announcement_2025_raw",
+                source_type="adjustment_notice",
+                year=2025,
+                school_name="福州大学",
+                school_name_normalized="福州大学",
+                school_code="10386",
+                region_name="福建",
+                school_tier=None,
+                department_name=None,
+                department_name_normalized=None,
+                major_code="045101",
+                major_name="教育管理",
+                major_name_normalized="教育管理",
+                study_mode="fulltime",
+                vacancy_count=3,
+                min_score=None,
+                avg_score=None,
+                max_score=None,
+                verification_status="官网",
+                title="福州大学经济与管理学院教育管理调剂公告",
+                summary="历史表格导入",
+                source_url="https://example.com/fzu-edu-mgmt",
+                meta_json={},
+            )
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_department_infer_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"keywords": "福州大学"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["items"][0]["department_name"] == "经济与管理学院"
+
+
 def test_adjustment_search_keyword_matches_region_in_structured_opportunities(client):
     with SessionLocal() as db:
         db.add(
