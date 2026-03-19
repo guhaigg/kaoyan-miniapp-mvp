@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from ..models import HistoricalAdjustmentProfile, MentorEvaluation, RawDatasetArchive, School
+from ..models import HistoricalAdjustmentProfile, MentorEvaluation, RawDatasetArchive, School, new_id, utcnow
 
 
 def _strip_text(value: Any) -> str:
@@ -208,7 +208,18 @@ def replace_historical_adjustment_profiles(db: Session, profiles: list[dict[str,
     db.commit()
     batch_size = 1000
     for start in range(0, len(profiles), batch_size):
-        db.bulk_insert_mappings(HistoricalAdjustmentProfile, profiles[start : start + batch_size])
+        timestamp = utcnow()
+        batch = []
+        for row in profiles[start : start + batch_size]:
+            batch.append(
+                {
+                    "id": new_id(),
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    **row,
+                }
+            )
+        db.bulk_insert_mappings(HistoricalAdjustmentProfile, batch)
         db.commit()
     return {"profiles": len(profiles)}
 
@@ -218,7 +229,18 @@ def replace_mentor_evaluations(db: Session, evaluations: list[dict[str, Any]]) -
     db.commit()
     batch_size = 1000
     for start in range(0, len(evaluations), batch_size):
-        db.bulk_insert_mappings(MentorEvaluation, evaluations[start : start + batch_size])
+        timestamp = utcnow()
+        batch = []
+        for row in evaluations[start : start + batch_size]:
+            batch.append(
+                {
+                    "id": new_id(),
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    **row,
+                }
+            )
+        db.bulk_insert_mappings(MentorEvaluation, batch)
         db.commit()
     return {"evaluations": len(evaluations)}
 
