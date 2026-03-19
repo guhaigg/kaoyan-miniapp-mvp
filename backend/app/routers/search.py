@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional
-from ..models import Content, CrawlJob, School
+from ..models import AdjustmentOpportunity, Content, CrawlJob, HistoricalAdjustmentProfile, School
 from ..schemas import (
     AdjustmentSearchRequest,
     AnnouncementSearchRequest,
@@ -98,6 +98,7 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
                         Content.title.ilike(f"%{term}%"),
                         Content.body.ilike(f"%{term}%"),
                         Content.major.ilike(f"%{term}%"),
+                        Content.region.ilike(f"%{term}%"),
                         School.name.ilike(f"%{term}%"),
                     )
                     for term in keyword_terms
@@ -108,6 +109,46 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
         query = query.filter(Content.published_at >= payload.start_date)
     if payload.end_date:
         query = query.filter(Content.published_at <= payload.end_date)
+    return query
+
+
+def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchRequest):
+    if payload.school_name:
+        terms = _build_school_search_terms(payload.school_name.strip())
+        query = query.filter(or_(*[AdjustmentOpportunity.school_name.ilike(f"%{term}%") for term in terms]))
+    if payload.keywords:
+        keyword_terms = _build_keyword_terms(payload.keywords.strip())
+        query = query.filter(
+            and_(
+                *[
+                    or_(
+                        AdjustmentOpportunity.school_name.ilike(f"%{term}%"),
+                        AdjustmentOpportunity.department_name.ilike(f"%{term}%"),
+                        AdjustmentOpportunity.major_name.ilike(f"%{term}%"),
+                        AdjustmentOpportunity.region_name.ilike(f"%{term}%"),
+                        AdjustmentOpportunity.title.ilike(f"%{term}%"),
+                        AdjustmentOpportunity.summary.ilike(f"%{term}%"),
+                    )
+                    for term in keyword_terms
+                ]
+            )
+        )
+    if payload.major:
+        major_terms = _build_major_terms(payload.major.strip())
+        query = query.filter(
+            or_(
+                *[
+                    or_(
+                        AdjustmentOpportunity.major_name.ilike(f"%{term}%"),
+                        AdjustmentOpportunity.major_code.ilike(f"%{term}%"),
+                        AdjustmentOpportunity.title.ilike(f"%{term}%"),
+                    )
+                    for term in major_terms
+                ]
+            )
+        )
+    if payload.region:
+        query = query.filter(AdjustmentOpportunity.region_name.ilike(f"%{payload.region.strip()}%"))
     return query
 
 
@@ -253,6 +294,136 @@ def _to_response(
         authenticated=authenticated,
         access_limited=access_limited,
         preview_limit=preview_limit,
+        items=serialized,
+        total=total,
+        page=payload.page,
+        page_size=payload.page_size,
+        source_breakdown=source_breakdown,
+        last_updated_at=last_updated,
+        refresh_job_id=refresh_job_id,
+    )
+
+
+def _historical_source_label(source_type: str) -> str:
+    labels = {
+        "adjustment_stats": "历史调剂统计",
+        "landing": "调剂上岸样本",
+        "future_program": "2026 招生专业",
+        "notice_reference": "历史调剂来源",
+        "snapshot": "历史调剂快照",
+        "announcement": "历史调剂公告",
+        "stats": "历史调剂统计",
+    }
+    return labels.get(source_type, source_type)
+
+def _build_adjustment_opportunity_summary(row: AdjustmentOpportunity, insight) -> str:
+    parts = []
+    if row.year:
+        parts.append(f"{row.year} 年 {_historical_source_label(row.source_type)}")
+    else:
+        parts.append(_historical_source_label(row.source_type))
+    if row.region_name:
+        parts.append(row.region_name)
+    if row.verification_status:
+        parts.append(row.verification_status)
+    if row.vacancy_count:
+        parts.append(f"计划 {row.vacancy_count}")
+    if row.min_score is not None:
+        parts.append(f"最低 {row.min_score}")
+    if row.avg_score is not None:
+        parts.append(f"均分 {round(row.avg_score)}")
+    if insight is not None and insight.outlook_label:
+        parts.append(insight.outlook_label)
+    if row.summary:
+        parts.append(row.summary)
+    return " · ".join(parts)
+
+
+def _to_adjustment_opportunity_response(
+    db: Session,
+    payload: AdjustmentSearchRequest,
+    request_id: str,
+    rows: list[AdjustmentOpportunity],
+    total: int,
+    source_breakdown: dict[str, int],
+    refresh_job_id: str | None,
+    *,
+    authenticated: bool,
+) -> SearchResponse:
+    school_names = [row.school_name for row in rows if row.school_name]
+    historical_profiles = load_profiles_for_search(db, school_names)
+    mentor_radar = load_mentor_radar_for_search(db, school_names)
+    release_timings = load_release_timing_for_search(db, school_names)
+    school_intelligence = load_school_intelligence_for_search(db, school_names)
+    serialized: list[SearchItem] = []
+    for row in rows:
+        school_name = row.school_name
+        normalized_school_name = normalize_school_name(school_name)
+        school_profiles = historical_profiles.get(normalized_school_name, [])
+        insight = build_search_insight(
+            school_profiles,
+            major_codes=[row.major_code] if row.major_code else [],
+            major_name=row.major_name,
+            study_modes=[row.study_mode] if row.study_mode else [],
+            candidate_score=payload.candidate_score,
+        )
+        mentor_signal = mentor_radar.get(normalized_school_name)
+        release_timing_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
+        school_signal = school_intelligence.get(normalized_school_name)
+        meta = dict(row.meta_json or {})
+        reference_urls = [str(url) for url in (meta.get("reference_urls") or []) if str(url or "").strip()]
+        source_url = (
+            (row.source_url or "").strip()
+            or
+            str(meta.get("source_url") or "").strip()
+            or str(meta.get("top_source_url") or "").strip()
+            or (reference_urls[0] if reference_urls else "")
+            or (school_signal.reference_urls[0] if school_signal and school_signal.reference_urls else "")
+        ) or None
+        tags = [
+            str(tag)
+            for tag in [
+                _historical_source_label(row.source_type),
+                row.region_name,
+                row.major_name,
+                row.major_code,
+                row.school_tier,
+            ]
+            if str(tag or "").strip()
+        ]
+        serialized.append(
+            SearchItem(
+                id=row.id,
+                category="adjustment",
+                school_name=school_name,
+                title=row.title,
+                summary=_build_adjustment_opportunity_summary(row, insight),
+                tags=tags,
+                notice_kind="historical_opportunity",
+                pdf_parse_status=None,
+                source_url=source_url,
+                source_type=f"historical_{row.source_type}",
+                published_at=row.published_at,
+                region=row.region_name,
+                major=row.major_name,
+                adjustment_major_codes=[row.major_code] if row.major_code else [],
+                adjustment_study_modes=[row.study_mode] if row.study_mode else [],
+                adjustment_has_vacancy=(row.vacancy_count > 0) if row.vacancy_count is not None else None,
+                historical_adjustment=insight.__dict__ if insight is not None else None,
+                mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
+                release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
+                school_intelligence=school_signal.__dict__ if school_signal is not None else None,
+                updated_at=row.updated_at,
+            )
+        )
+    serialized.sort(key=_adjustment_sort_key, reverse=True)
+    last_updated = max((row.updated_at for row in rows), default=None)
+    return SearchResponse(
+        request_id=request_id,
+        mode="hybrid_refresh" if payload.refresh else "cache",
+        authenticated=authenticated,
+        access_limited=False,
+        preview_limit=None,
         items=serialized,
         total=total,
         page=payload.page,
@@ -411,28 +582,61 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
         base_query = base_query.filter(Content.region.ilike(f"%{payload.region.strip()}%"))
 
     total = base_query.count()
-    rows = (
-        base_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
-        .offset((payload.page - 1) * payload.page_size)
-        .limit(payload.page_size)
-        .all()
-    )
-    stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
-    source_breakdown = {k: int(v) for k, v in stats_rows}
-
     refresh_job_id = None
     if payload.refresh:
         refresh_job_id = _create_refresh_job(db, "adjustment", payload.model_dump(mode="json"), user.id if user else None)
-    response = _to_response(
-        db,
-        payload,
-        request_id,
-        rows,
-        total,
-        source_breakdown,
-        refresh_job_id,
-        authenticated=True,
-    )
+    if total > 0:
+        rows = (
+            base_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
+            .offset((payload.page - 1) * payload.page_size)
+            .limit(payload.page_size)
+            .all()
+        )
+        stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
+        source_breakdown = {k: int(v) for k, v in stats_rows}
+        response = _to_response(
+            db,
+            payload,
+            request_id,
+            rows,
+            total,
+            source_breakdown,
+            refresh_job_id,
+            authenticated=True,
+        )
+    else:
+        opportunity_query = db.query(AdjustmentOpportunity)
+        opportunity_query = _apply_adjustment_opportunity_filters(opportunity_query, payload)
+        opportunity_total = opportunity_query.count()
+        opportunity_rows = (
+            opportunity_query.order_by(
+                AdjustmentOpportunity.published_at.is_(None),
+                AdjustmentOpportunity.published_at.desc(),
+                AdjustmentOpportunity.year.desc(),
+                AdjustmentOpportunity.vacancy_count.is_(None),
+                AdjustmentOpportunity.vacancy_count.desc(),
+                AdjustmentOpportunity.updated_at.desc(),
+            )
+            .offset((payload.page - 1) * payload.page_size)
+            .limit(payload.page_size)
+            .all()
+        )
+        stats_rows = (
+            opportunity_query.with_entities(AdjustmentOpportunity.source_type, func.count(AdjustmentOpportunity.id))
+            .group_by(AdjustmentOpportunity.source_type)
+            .all()
+        )
+        source_breakdown = {f"historical_{k}": int(v) for k, v in stats_rows}
+        response = _to_adjustment_opportunity_response(
+            db,
+            payload,
+            request_id,
+            opportunity_rows,
+            opportunity_total,
+            source_breakdown,
+            refresh_job_id,
+            authenticated=True,
+        )
     search_response_cache.set("adjustment", payload, response)
     _audit_search_event(
         db,

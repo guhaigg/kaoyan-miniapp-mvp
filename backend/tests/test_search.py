@@ -1,6 +1,6 @@
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
-from app.models import HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation
+from app.models import AdjustmentOpportunity, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation
 from app.services.search_cache import search_response_cache
 
 
@@ -176,6 +176,96 @@ def test_adjustment_search_school_filter_supports_shorter_school_root(client):
     payload = search.json()
     assert payload["total"] >= 1
     assert payload["items"][0]["school_name"] == "湖北大学"
+
+
+def test_adjustment_search_falls_back_to_structured_opportunities(client):
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="opp-1",
+                source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                source_type="snapshot",
+                year=2025,
+                school_name="山东大学",
+                school_name_normalized="山东大学",
+                school_code="10422",
+                region_name="山东",
+                school_tier="985",
+                department_name="外国语学院",
+                department_name_normalized="外国语学院",
+                major_code="055101",
+                major_name="英语笔译",
+                major_name_normalized="英语笔译",
+                study_mode="fulltime",
+                vacancy_count=4,
+                min_score=360,
+                avg_score=374.5,
+                max_score=389,
+                verification_status="官网",
+                title="山东大学 英语笔译 调剂信息",
+                summary="2025 年调剂快照 · 官网 · 计划 4",
+                source_url="https://example.com/sdu-adjustment",
+                meta_json={},
+            )
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_structured_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"keywords": "山东"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["school_name"] == "山东大学"
+    assert payload["items"][0]["notice_kind"] == "historical_opportunity"
+    assert payload["items"][0]["source_url"] == "https://example.com/sdu-adjustment"
+
+
+def test_adjustment_search_keyword_matches_region_in_structured_opportunities(client):
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="opp-2",
+                source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                source_type="snapshot",
+                year=2025,
+                school_name="青岛大学",
+                school_name_normalized="青岛大学",
+                school_code="11065",
+                region_name="山东",
+                school_tier=None,
+                department_name=None,
+                department_name_normalized=None,
+                major_code="085400",
+                major_name="电子信息",
+                major_name_normalized="电子信息",
+                study_mode="parttime",
+                vacancy_count=2,
+                min_score=None,
+                avg_score=None,
+                max_score=None,
+                verification_status="官网",
+                title="青岛大学电子信息调剂信息",
+                summary="2025 年调剂快照 · 官网 · 计划 2",
+                source_url="https://example.com/qdu-adjustment",
+                meta_json={},
+            )
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_region_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"keywords": "山东"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["region"] == "山东"
 
 
 def test_adjustment_search_exposes_historical_adjustment_insight(client):

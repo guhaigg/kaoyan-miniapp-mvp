@@ -16,6 +16,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ..models import (
+    AdjustmentOpportunity,
     HistoricalAdjustmentProfile,
     HistoricalReleaseTimingProfile,
     MentorEvaluation,
@@ -240,6 +241,30 @@ def build_review_key(
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def build_opportunity_key(
+    *,
+    source_dataset_key: str,
+    school_name_normalized: str,
+    department_name_normalized: str | None,
+    major_code: str | None,
+    major_name_normalized: str | None,
+    source_url: str | None,
+    published_at: datetime | None,
+) -> str:
+    raw = "|".join(
+        [
+            source_dataset_key,
+            school_name_normalized,
+            department_name_normalized or "",
+            major_code or "",
+            major_name_normalized or "",
+            (source_url or "").strip(),
+            published_at.isoformat() if published_at is not None else "",
+        ]
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def _risk_tags_and_level(review_text: str) -> tuple[list[str], str | None]:
     text = review_text.lower()
     tags: list[str] = []
@@ -341,6 +366,17 @@ def replace_release_timing_profiles(db: Session, profiles: list[dict[str, Any]])
         key_field="profile_key",
     )
     return {"profiles": count}
+
+
+def replace_adjustment_opportunities(db: Session, rows: list[dict[str, Any]]) -> dict[str, int]:
+    count = _replace_rows_by_unique_key(
+        db,
+        AdjustmentOpportunity,
+        rows,
+        key_field="opportunity_key",
+        batch_size=2000,
+    )
+    return {"opportunities": count}
 
 
 def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
@@ -604,6 +640,279 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
     deduped: dict[str, dict[str, Any]] = {}
     for row in profiles:
         deduped[row["profile_key"]] = row
+    return list(deduped.values())
+
+
+def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, Any]]:
+    archives = {
+        row.dataset_key: row
+        for row in db.query(RawDatasetArchive)
+        .filter(
+            RawDatasetArchive.dataset_key.in_(
+                [
+                    "adjustment_snapshot_2024_0414_raw",
+                    "adjustment_snapshot_2025_0409_raw",
+                    "adjustment_announcement_2025_raw",
+                    "adjustment_stats_2025_full_raw",
+                ]
+            )
+        )
+        .all()
+    }
+    school_lookup = _school_lookup(db)
+    opportunities: list[dict[str, Any]] = []
+
+    def add_row(
+        *,
+        source_dataset_key: str,
+        source_type: str,
+        year: int | None,
+        school_name: str,
+        school_code: str | None,
+        region_name: str | None,
+        school_tier: str | None,
+        department_name: str | None,
+        major_code: str | None,
+        major_name: str | None,
+        study_mode: str | None,
+        vacancy_count: int | None,
+        min_score: int | None,
+        avg_score: float | None,
+        max_score: int | None,
+        verification_status: str | None,
+        title: str,
+        summary: str | None,
+        source_url: str | None,
+        published_at: datetime | None,
+        captured_at: datetime | None,
+        meta_json: dict[str, Any],
+    ) -> None:
+        school_name_normalized = normalize_school_name(school_name)
+        if not school_name_normalized:
+            return
+        department_name_normalized = normalize_department_name(department_name)
+        major_name_normalized = normalize_major_name(major_name)
+        opportunity_key = build_opportunity_key(
+            source_dataset_key=source_dataset_key,
+            school_name_normalized=school_name_normalized,
+            department_name_normalized=department_name_normalized,
+            major_code=major_code,
+            major_name_normalized=major_name_normalized,
+            source_url=source_url,
+            published_at=published_at,
+        )
+        opportunities.append(
+            {
+                "opportunity_key": opportunity_key,
+                "source_dataset_key": source_dataset_key,
+                "source_type": source_type,
+                "year": year,
+                "school_id": school_lookup.get(school_name_normalized),
+                "school_name": school_name,
+                "school_name_normalized": school_name_normalized,
+                "school_code": school_code,
+                "region_name": region_name,
+                "school_tier": school_tier,
+                "department_name": department_name,
+                "department_name_normalized": department_name_normalized,
+                "major_code": major_code,
+                "major_name": major_name,
+                "major_name_normalized": major_name_normalized,
+                "study_mode": study_mode,
+                "vacancy_count": vacancy_count,
+                "min_score": min_score,
+                "avg_score": avg_score,
+                "max_score": max_score,
+                "verification_status": verification_status,
+                "title": title,
+                "summary": summary,
+                "source_url": source_url,
+                "published_at": published_at,
+                "captured_at": captured_at,
+                "meta_json": meta_json,
+            }
+        )
+
+    snapshot_2025 = archives.get("adjustment_snapshot_2025_0409_raw")
+    if snapshot_2025 is not None:
+        df = load_archive_dataframe(snapshot_2025)
+        default_capture = _parse_capture_datetime_from_filename(snapshot_2025.source_filename)
+        for row in df.to_dict(orient="records"):
+            school_name = _strip_text(row.get("学校") or row.get("大学") or row.get("院校名称"))
+            if not school_name:
+                continue
+            major_code = normalize_major_code(row.get("专业代码") or row.get("专业"))
+            major_name = normalize_major_name(row.get("专业名称") or row.get("专业"))
+            title = f"{school_name} {major_name or major_code or '调剂'} 调剂信息"
+            published_at = _parse_datetime(row.get("最新时间") or row.get("发布时间"))
+            source_url = _strip_text(row.get("原始网址") or row.get("链接") or row.get("网址") or row.get("原文链接")) or None
+            verification_status = _strip_text(row.get("验证状态")) or None
+            vacancy_count = _safe_int(row.get("计划人数"), default=0) or None
+            year = score_to_int(row.get("年份")) or 2025
+            summary_parts = [f"{year} 年调剂快照"]
+            if verification_status:
+                summary_parts.append(verification_status)
+            if vacancy_count:
+                summary_parts.append(f"计划 {vacancy_count}")
+            add_row(
+                source_dataset_key=snapshot_2025.dataset_key,
+                source_type="snapshot",
+                year=year,
+                school_name=school_name,
+                school_code=None,
+                region_name=parse_region_name(row.get("地区") or row.get("省份")),
+                school_tier=None,
+                department_name=_strip_text(row.get("学院")) or None,
+                major_code=major_code,
+                major_name=major_name,
+                study_mode=normalize_study_mode(row.get("学习形式")),
+                vacancy_count=vacancy_count,
+                min_score=None,
+                avg_score=None,
+                max_score=None,
+                verification_status=verification_status,
+                title=title,
+                summary=" · ".join(summary_parts),
+                source_url=source_url,
+                published_at=published_at,
+                captured_at=default_capture,
+                meta_json={"dataset_title": snapshot_2025.title},
+            )
+
+    snapshot_2024 = archives.get("adjustment_snapshot_2024_0414_raw")
+    if snapshot_2024 is not None:
+        df = load_archive_dataframe(snapshot_2024)
+        default_capture = _parse_capture_datetime_from_filename(snapshot_2024.source_filename)
+        for row in df.to_dict(orient="records"):
+            school_name = _strip_text(row.get("大学") or row.get("学校") or row.get("院校名称"))
+            if not school_name:
+                continue
+            major_code = normalize_major_code(row.get("专业代码") or row.get("专业"))
+            major_name = normalize_major_name(row.get("专业") or row.get("专业名称"))
+            department_name = _strip_text(row.get("学院")) or None
+            study_mode = normalize_study_mode(row.get("学习形式"))
+            vacancy_count = _safe_int(row.get("余额"), default=0) or None
+            title = f"{school_name} {major_name or major_code or '调剂'} 调剂信息"
+            summary_parts = ["2024 年调剂快照"]
+            if department_name:
+                summary_parts.append(department_name)
+            if vacancy_count:
+                summary_parts.append(f"余额 {vacancy_count}")
+            note = _strip_text(row.get("备注"))
+            if note:
+                summary_parts.append(note)
+            add_row(
+                source_dataset_key=snapshot_2024.dataset_key,
+                source_type="snapshot",
+                year=2024,
+                school_name=school_name,
+                school_code=_strip_text(row.get("学校代码")) or None,
+                region_name=None,
+                school_tier=None,
+                department_name=department_name,
+                major_code=major_code,
+                major_name=major_name,
+                study_mode=study_mode,
+                vacancy_count=vacancy_count,
+                min_score=None,
+                avg_score=None,
+                max_score=None,
+                verification_status=None,
+                title=title,
+                summary=" · ".join(summary_parts),
+                source_url=None,
+                published_at=None,
+                captured_at=default_capture,
+                meta_json={"dataset_title": snapshot_2024.title},
+            )
+
+    announcement_2025 = archives.get("adjustment_announcement_2025_raw")
+    if announcement_2025 is not None:
+        df = load_archive_dataframe(announcement_2025)
+        for row in df.to_dict(orient="records"):
+            school_name = _strip_text(row.get("学校") or row.get("大学") or row.get("院校名称"))
+            if not school_name:
+                continue
+            major_code = normalize_major_code(row.get("专业代码") or row.get("专业"))
+            major_name = normalize_major_name(row.get("专业名称") or row.get("专业"))
+            source_url = _strip_text(row.get("原始网址") or row.get("链接") or row.get("网址") or row.get("原文链接")) or None
+            published_at = _parse_datetime(row.get("最新时间") or row.get("发布时间"))
+            verification_status = _strip_text(row.get("验证状态")) or None
+            title = _strip_text(row.get("标题")) or f"{school_name} {major_name or major_code or '调剂'} 公告"
+            add_row(
+                source_dataset_key=announcement_2025.dataset_key,
+                source_type="announcement",
+                year=score_to_int(row.get("年份")) or 2025,
+                school_name=school_name,
+                school_code=None,
+                region_name=parse_region_name(row.get("地区") or row.get("省份")),
+                school_tier=None,
+                department_name=_strip_text(row.get("学院")) or None,
+                major_code=major_code,
+                major_name=major_name,
+                study_mode=normalize_study_mode(row.get("学习形式")),
+                vacancy_count=_safe_int(row.get("计划人数"), default=0) or None,
+                min_score=None,
+                avg_score=None,
+                max_score=None,
+                verification_status=verification_status,
+                title=title,
+                summary=_strip_text(row.get("备注")) or "历史调剂公告归档",
+                source_url=source_url,
+                published_at=published_at,
+                captured_at=None,
+                meta_json={"dataset_title": announcement_2025.title},
+            )
+
+    stats25 = archives.get("adjustment_stats_2025_full_raw")
+    if stats25 is not None:
+        df = load_archive_dataframe(stats25, sheet_name="调剂统计（含平均分）")
+        for row in df.to_dict(orient="records"):
+            school_code, school_name = parse_school_code_name(row.get("推荐院校"))
+            if not school_name:
+                continue
+            major_code = normalize_major_code(row.get("专业"))
+            major_name = normalize_major_name(row.get("专业"))
+            study_mode = normalize_study_mode(row.get("学习形式"))
+            vacancy_count = _safe_int(row.get("25调剂人数"), default=0) or None
+            min_score = score_to_int(row.get("25调剂录取最低分"))
+            avg_score = _safe_float(row.get("25调剂平均分"))
+            title = f"{school_name} {major_name or major_code or '调剂'} 历史统计"
+            summary_parts = ["2025 年历史调剂统计"]
+            if vacancy_count:
+                summary_parts.append(f"调剂人数 {vacancy_count}")
+            if min_score is not None:
+                summary_parts.append(f"最低 {min_score}")
+            if avg_score is not None:
+                summary_parts.append(f"均分 {round(avg_score, 1)}")
+            add_row(
+                source_dataset_key=stats25.dataset_key,
+                source_type="stats",
+                year=2025,
+                school_name=school_name,
+                school_code=school_code,
+                region_name=None,
+                school_tier=None,
+                department_name=None,
+                major_code=major_code,
+                major_name=major_name,
+                study_mode=study_mode,
+                vacancy_count=vacancy_count,
+                min_score=min_score,
+                avg_score=avg_score,
+                max_score=min_score,
+                verification_status="历史统计",
+                title=title,
+                summary=" · ".join(summary_parts),
+                source_url=None,
+                published_at=None,
+                captured_at=None,
+                meta_json={"dataset_title": stats25.title},
+            )
+
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in opportunities:
+        deduped[row["opportunity_key"]] = row
     return list(deduped.values())
 
 

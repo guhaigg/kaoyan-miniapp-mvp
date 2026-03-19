@@ -212,6 +212,55 @@ class RawDatasetArchive(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
+class AdjustmentOpportunity(Base):
+    __tablename__ = "adjustment_opportunities"
+    __table_args__ = (
+        UniqueConstraint("opportunity_key", name="uq_adjustment_opportunities_opportunity_key"),
+        Index(
+            "ix_adjustment_opportunities_lookup",
+            "school_name_normalized",
+            "major_code",
+            "major_name_normalized",
+            "region_name",
+        ),
+        Index("ix_adjustment_opportunities_source_year", "source_type", "year"),
+        Index("ix_adjustment_opportunities_published", "published_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    opportunity_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_dataset_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    school_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    school_name_normalized: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    school_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    region_name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    school_tier: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    department_name_normalized: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    major_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    major_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    major_name_normalized: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    study_mode: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    vacancy_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    avg_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    verification_status: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    meta_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    school: Mapped["School | None"] = relationship()
+
+
 class HistoricalAdjustmentProfile(Base):
     __tablename__ = "historical_adjustment_profiles"
     __table_args__ = (

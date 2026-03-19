@@ -4,6 +4,7 @@ from openpyxl import Workbook
 
 from app.db import SessionLocal
 from app.services.historical_intelligence import (
+    build_adjustment_opportunities_from_archives,
     build_historical_profiles_from_archives,
     build_release_timing_profiles_from_archives,
     build_mentor_evaluations_from_archives,
@@ -128,10 +129,17 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         )
         db.commit()
 
+        opportunities = build_adjustment_opportunities_from_archives(db)
         profiles = build_historical_profiles_from_archives(db)
         mentors = build_mentor_evaluations_from_archives(db)
         timings = build_release_timing_profiles_from_archives(db)
 
+    assert len(opportunities) == 4
+    snapshot_row = next(row for row in opportunities if row["source_type"] == "snapshot" and row["year"] == 2025)
+    assert snapshot_row["source_url"] == "https://example.com/1"
+    assert snapshot_row["vacancy_count"] == 4
+    stats_opportunity = next(row for row in opportunities if row["source_type"] == "stats")
+    assert stats_opportunity["min_score"] == 318
     assert len(profiles) == 5
     stats_row = next(row for row in profiles if row["source_type"] == "adjustment_stats")
     assert stats_row["major_code"] == "085400"
