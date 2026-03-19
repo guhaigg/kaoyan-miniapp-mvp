@@ -816,6 +816,7 @@ class AdjustmentSearchRequest(SearchBaseRequest):
     major: str | None = None
     region: str | None = None
     candidate_score: int | None = Field(default=None, ge=0, le=500)
+    year: int | None = Field(default=None, ge=2010, le=2100)
 
 
 class HistoricalAdjustmentInsight(BaseModel):

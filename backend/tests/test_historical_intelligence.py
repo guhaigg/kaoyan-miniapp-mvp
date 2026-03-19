@@ -24,6 +24,8 @@ def _write_xlsx(path: Path, sheet_name: str, header: list[str], rows: list[list[
 
 def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path):
     stats_path = tmp_path / "stats25.xlsx"
+    stats2325_path = tmp_path / "23-25调剂统计数据.xlsx"
+    balance24_path = tmp_path / "24.xlsx"
     landing24_path = tmp_path / "landing24.xlsx"
     landing25_path = tmp_path / "landing25.xlsx"
     program_path = tmp_path / "program2026.xlsx"
@@ -37,6 +39,12 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         "调剂统计（含平均分）",
         ["专业", "学习形式", "推荐院校", "25调剂人数", "25调剂录取最低分", "25调剂平均分"],
         [["(085400)电子信息", "非全日制", "(10001)XX大学", 3, 318, 326.5]],
+    )
+    _write_xlsx(
+        balance24_path,
+        "Sheet1",
+        ["采集时间", "招生单位", " 院系所", " 专业", " 学习方式", " 计划余额", " 总分", " 调剂说明"],
+        [["2024-04-08 23-14-23", "(10001)XX大学", "(001)信息学院", "(085400)电子信息", "非全日制", 5, "国家线", "补充说明"]],
     )
     _write_xlsx(
         landing24_path,
@@ -83,6 +91,13 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         ["学校", "学院", "专业代码", "专业名称", "计划人数", "最新时间", "验证状态", "原始网址", "年份", "标题", "备注"],
         [["XX大学", "信息学院", "085400", "电子信息", 3, "2025/4/9 20:03:00", "官网", "https://example.com/1", 2025, "XX大学电子信息调剂公告", "补充说明"]],
     )
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "23-24-25考研调剂数据-（考研调剂必看）"
+    worksheet.append(["本内容是23/24/25年全国院校全专业具体调剂数据", "Unnamed: 1", "Unnamed: 2", "Unnamed: 3", "Unnamed: 4", "Unnamed: 5", "Unnamed: 6", "Unnamed: 7", "Unnamed: 8", "    ", "Unnamed: 10", "Unnamed: 11"])
+    worksheet.append(["年份", "学校", "地区", "院校类别", "所属学院", "专业代码", "专业名称", "学习形式", "考生编号", "初试总分", "一志愿报考院校", "备注"])
+    worksheet.append([2023, "(10001)XX大学", "(31)上海市", "211", "信息学院", "085400", "电子信息", "非全日制", "101", 330, "复旦大学", None])
+    workbook.save(stats2325_path)
 
     with SessionLocal() as db:
         archive_dataset_file(
@@ -91,6 +106,20 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
             title="stats",
             dataset_type="adjustment_stats",
             input_path=stats_path,
+        )
+        archive_dataset_file(
+            db,
+            dataset_key="adjustment_stats_2023_2025_raw",
+            title="stats2325",
+            dataset_type="adjustment_stats",
+            input_path=stats2325_path,
+        )
+        archive_dataset_file(
+            db,
+            dataset_key="adjustment_opportunity_2024_raw",
+            title="balance24",
+            dataset_type="adjustment_balance",
+            input_path=balance24_path,
         )
         archive_dataset_file(
             db,
@@ -148,14 +177,23 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         mentors = build_mentor_evaluations_from_archives(db)
         timings = build_release_timing_profiles_from_archives(db)
 
-    assert len(opportunities) == 5
+    assert len(opportunities) == 10
     snapshot_row = next(row for row in opportunities if row["source_type"] == "snapshot" and row["year"] == 2025)
     assert snapshot_row["source_url"] == "https://example.com/1"
     assert snapshot_row["vacancy_count"] == 4
     adjustment_notice_row = next(row for row in opportunities if row["source_type"] == "adjustment_notice")
     assert adjustment_notice_row["source_url"] == "https://example.com/1"
-    stats_opportunity = next(row for row in opportunities if row["source_type"] == "stats")
+    stats_opportunity = next(
+        row for row in opportunities if row["source_type"] == "stats" and row["source_dataset_key"] == "adjustment_stats_2025_full_raw"
+    )
     assert stats_opportunity["min_score"] == 318
+    balance_opportunity = next(row for row in opportunities if row["source_type"] == "balance")
+    assert balance_opportunity["vacancy_count"] == 5
+    landing_opportunities = [row for row in opportunities if row["source_type"] == "landing"]
+    assert {row["year"] for row in landing_opportunities} == {2024, 2025}
+    stats2325_opportunity = next(row for row in opportunities if row["source_dataset_key"] == "adjustment_stats_2023_2025_raw")
+    assert stats2325_opportunity["year"] == 2023
+    assert stats2325_opportunity["avg_score"] == 330
     assert len(profiles) == 5
     stats_row = next(row for row in profiles if row["source_type"] == "adjustment_stats")
     assert stats_row["major_code"] == "085400"

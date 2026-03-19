@@ -1,7 +1,8 @@
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
-from app.models import AdjustmentOpportunity, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation
+from app.models import AdjustmentOpportunity, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive
 from app.services.search_cache import search_response_cache
+from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 
 
 def _register_and_login(client, username: str) -> str:
@@ -519,6 +520,132 @@ def test_adjustment_search_uses_adjustment_notice_label_for_table_results(client
     assert item["school_name"] == "山东科技大学"
     assert item["source_type"] == "historical_adjustment_notice"
     assert "表格调剂公告" in item["summary"]
+
+
+def test_adjustment_search_supports_year_filter(client):
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                AdjustmentOpportunity(
+                    opportunity_key="year-filter-2025",
+                    source_dataset_key="adjustment_announcement_2025_raw",
+                    source_type="adjustment_notice",
+                    year=2025,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北",
+                    school_tier=None,
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="030100",
+                    major_name="法学",
+                    major_name_normalized="法学",
+                    study_mode="fulltime",
+                    vacancy_count=3,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    verification_status="官网",
+                    title="湖北大学法学2025调剂公告",
+                    summary="2025 调剂",
+                    source_url="https://example.com/hubu-law-2025",
+                    meta_json={},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="year-filter-2026",
+                    source_dataset_key="admission_program_catalog_2026_raw",
+                    source_type="future_program",
+                    year=2026,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北",
+                    school_tier=None,
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="030100",
+                    major_name="法学",
+                    major_name_normalized="法学",
+                    study_mode="fulltime",
+                    vacancy_count=2,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    verification_status="2026招生专业",
+                    title="湖北大学法学2026招生信息",
+                    summary="2026 招生专业信息",
+                    source_url="https://example.com/hubu-law-2026",
+                    meta_json={},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_year_filter_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"keywords": "湖北大学", "year": 2026},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["source_type"] == "historical_future_program"
+    assert "2026" in payload["items"][0]["summary"]
+
+
+def test_build_adjustment_opportunities_from_archives_includes_2026_program_rows():
+    with SessionLocal() as db:
+        archive = RawDatasetArchive(
+            dataset_key="admission_program_catalog_2026_raw",
+            title="2026 招生专业信息表",
+            dataset_type="excel",
+            source_filename="2026.xlsx",
+            source_path="/tmp/2026.xlsx",
+            workbook_format="xlsx",
+            file_sha256="x" * 64,
+            file_size_bytes=1,
+            storage_encoding="gzip_base64",
+            raw_file_payload="H4sIAAAAAAAAA/NIzcnJVwjPL8pJAQCF/oQNCwAAAA==",
+            sheet_names=["Sheet1"],
+            primary_sheet_name="Sheet1",
+            total_rows=1,
+            total_columns=10,
+            header_row=["专业代码", "专业名称", "院校名称", "省份", "名额", "发布时间", "年份", "链接"],
+            preview_rows=[],
+            summary_json={},
+            notes=None,
+        )
+        db.add(archive)
+        db.commit()
+
+        from app.services import historical_intelligence as svc
+
+        original_loader = svc.load_archive_dataframe
+        svc.load_archive_dataframe = lambda *_args, **_kwargs: __import__("pandas").DataFrame(
+            [
+                {
+                    "专业代码": "095100",
+                    "专业名称": "农业",
+                    "院校名称": "湖北大学",
+                    "省份": "湖北",
+                    "名额": 2,
+                    "发布时间": "2026-03-15 10:00:00",
+                    "年份": 2026,
+                    "链接": "https://example.com/hubu-2026-agri",
+                }
+            ]
+        )
+        try:
+            rows = build_adjustment_opportunities_from_archives(db)
+        finally:
+            svc.load_archive_dataframe = original_loader
+
+    match = next(row for row in rows if row["school_name"] == "湖北大学")
+    assert match["source_type"] == "future_program"
+    assert match["year"] == 2026
+    assert match["major_name"] == "农业"
 
 
 def test_adjustment_search_exposes_historical_adjustment_insight(client):

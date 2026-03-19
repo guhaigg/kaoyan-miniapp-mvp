@@ -35,6 +35,7 @@ export default function SearchPage() {
   const [schoolName, setSchoolName] = useState("");
   const [majorFilter, setMajorFilter] = useState("");
   const [regionFilter, setRegionFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
   const [candidateScoreFilter, setCandidateScoreFilter] = useState("");
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [schoolTiers, setSchoolTiers] = useState<SchoolTier[]>([]);
@@ -152,7 +153,7 @@ export default function SearchPage() {
     majorFilter,
   });
   const hasAdvancedAdjustmentFilters = Boolean(
-    schoolName.trim() || majorFilter.trim() || regionFilter.trim() || candidateScoreFilter.trim(),
+    schoolName.trim() || majorFilter.trim() || regionFilter.trim() || yearFilter.trim() || candidateScoreFilter.trim(),
   );
 
   const calculateMatch = () => {
@@ -193,6 +194,7 @@ export default function SearchPage() {
               school_name: resolvedSchoolName || undefined,
               major: resolvedMajorFilter || undefined,
               region: regionFilter.trim() || undefined,
+              year: yearFilter.trim() ? Number(yearFilter.trim()) : undefined,
               candidate_score: candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined,
               page,
               page_size: 12,
@@ -204,6 +206,7 @@ export default function SearchPage() {
           schoolName: resolvedSchoolName,
           majorFilter: resolvedMajorFilter,
           regionFilter,
+          yearFilter,
           candidateScoreFilter,
         }));
       } else {
@@ -397,10 +400,11 @@ export default function SearchPage() {
                 <div className="flex items-center gap-3">
                   {hasAdvancedAdjustmentFilters ? (
                     <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
-                      已启用 {[
+                    已启用 {[
                         schoolName.trim() && "院校",
                         majorFilter.trim() && "专业",
                         regionFilter.trim() && "地区",
+                        yearFilter.trim() && "年份",
                         candidateScoreFilter.trim() && "分数",
                       ]
                         .filter(Boolean)
@@ -414,7 +418,7 @@ export default function SearchPage() {
                 </div>
               </button>
               {advancedFiltersOpen ? (
-                <div className="grid gap-2 border-t border-white/8 px-4 pb-4 pt-3 md:grid-cols-5">
+                <div className="grid gap-2 border-t border-white/8 px-4 pb-4 pt-3 md:grid-cols-6">
                   <input
                     value={schoolName}
                     onChange={(event) => setSchoolName(event.target.value)}
@@ -437,6 +441,13 @@ export default function SearchPage() {
                     className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
                   />
                   <input
+                    value={yearFilter}
+                    onChange={(event) => setYearFilter(event.target.value)}
+                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+                    placeholder="年份（如 2026）"
+                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                  />
+                  <input
                     value={candidateScoreFilter}
                     onChange={(event) => setCandidateScoreFilter(event.target.value)}
                     onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
@@ -450,6 +461,7 @@ export default function SearchPage() {
                       setSchoolName("");
                       setMajorFilter("");
                       setRegionFilter("");
+                      setYearFilter("");
                       setCandidateScoreFilter("");
                       setSchoolTiers([]);
                       setStudyMode("all");
@@ -489,6 +501,7 @@ export default function SearchPage() {
                   setKeywords("");
                   setSchoolName("");
                   setMajorFilter("");
+                  setYearFilter("");
                   setSchoolTiers([]);
                   setStudyMode("all");
                   setOnlyHistoryBacked(false);
@@ -1724,6 +1737,7 @@ function buildEmptyResultMessage(
     schoolName: string;
     majorFilter: string;
     regionFilter: string;
+    yearFilter: string;
     candidateScoreFilter: string;
   },
 ) {
@@ -1731,6 +1745,7 @@ function buildEmptyResultMessage(
   const schoolName = filters.schoolName.trim();
   const majorFilter = filters.majorFilter.trim();
   const regionFilter = filters.regionFilter.trim();
+  const yearFilter = filters.yearFilter.trim();
   const schoolLikeKeyword = isSchoolLikeQuery(keyword);
   if (queryType === "adjustments") {
     if (schoolName && majorFilter) {
@@ -1738,6 +1753,15 @@ function buildEmptyResultMessage(
     }
     if (regionFilter && majorFilter) {
       return "当前地区和专业条件过窄，没有命中调剂结果，建议先放宽地区或专业。";
+    }
+    if (yearFilter && schoolName) {
+      return "当前年份和院校组合下没有命中调剂结果，建议切换年份，或先去掉年份看看该校其他年份机会。";
+    }
+    if (yearFilter && majorFilter) {
+      return "当前年份和专业组合下没有命中调剂结果，建议切换年份，或先去掉专业看该年份整体机会。";
+    }
+    if (yearFilter) {
+      return "当前年份下没有命中调剂结果，建议切换年份，或再补一个学校、专业或地区条件。";
     }
     if (schoolName) {
       return "当前精确院校条件没有命中调剂结果。先试学校简称，或清空院校名只保留主搜索词再试。";

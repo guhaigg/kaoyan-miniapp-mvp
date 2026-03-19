@@ -138,6 +138,8 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
 
 
 def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchRequest):
+    if payload.year is not None:
+        query = query.filter(AdjustmentOpportunity.year == payload.year)
     if payload.school_name:
         terms = _build_exact_school_terms(payload.school_name.strip())
         query = query.filter(or_(*[AdjustmentOpportunity.school_name.ilike(f"%{term}%") for term in terms]))
@@ -538,6 +540,7 @@ def _historical_source_label(source_type: str) -> str:
         "future_program": "2026 招生专业",
         "notice_reference": "历史调剂来源",
         "snapshot": "历史调剂快照",
+        "balance": "2024 调剂余额表",
         "adjustment_notice": "表格调剂公告",
         "stats": "历史调剂统计",
     }

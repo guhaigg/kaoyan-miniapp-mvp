@@ -402,6 +402,7 @@ export type AdjustmentSearchRequest = SearchBaseRequest & {
   major?: string;
   region?: string;
   candidate_score?: number;
+  year?: number;
 };
 
 export type SchoolBulkImportResponse = {

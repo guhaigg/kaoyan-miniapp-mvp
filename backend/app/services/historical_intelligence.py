@@ -62,6 +62,16 @@ def parse_school_code_name(value: Any) -> tuple[str | None, str]:
     return None, text
 
 
+def parse_labeled_name(value: Any) -> tuple[str | None, str | None]:
+    text = _strip_text(value)
+    if not text:
+        return None, None
+    matched = re.match(r"^\(([^)]+)\)(.+)$", text)
+    if matched:
+        return matched.group(1).strip() or None, matched.group(2).strip() or None
+    return None, text or None
+
+
 def parse_region_name(value: Any) -> str | None:
     text = _strip_text(value)
     matched = re.match(r"^\((\d+)\)(.+)$", text)
@@ -208,6 +218,52 @@ def _safe_float(value: Any) -> float | None:
         return float(matched.group(0))
     except Exception:
         return None
+
+
+def _parse_capture_datetime(value: Any) -> datetime | None:
+    parsed = _parse_datetime(value)
+    if parsed is not None:
+        return parsed
+    text = _strip_text(value)
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H-%M-%S", "%Y/%m/%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _normalize_legacy_adjustment_stats_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    columns = [str(col).strip() for col in df.columns]
+    first_row = [_strip_text(value) for value in df.iloc[0].tolist()]
+    if "年份" not in first_row or "学校" not in first_row:
+        return df
+    normalized = df.iloc[1:].copy()
+    normalized.columns = first_row
+    normalized = normalized.reset_index(drop=True)
+    return normalized
+
+
+def _select_archive(
+    archives: dict[str, RawDatasetArchive],
+    *,
+    dataset_keys: tuple[str, ...] = (),
+    source_filenames: tuple[str, ...] = (),
+) -> RawDatasetArchive | None:
+    for key in dataset_keys:
+        if key in archives:
+            return archives[key]
+    wanted = {name.strip().lower() for name in source_filenames if name.strip()}
+    if not wanted:
+        return None
+    for archive in archives.values():
+        if (archive.source_filename or "").strip().lower() in wanted:
+            return archive
+    return None
 
 
 def _school_lookup(db: Session) -> dict[str, str]:
@@ -661,18 +717,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
 def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, Any]]:
     archives = {
         row.dataset_key: row
-        for row in db.query(RawDatasetArchive)
-        .filter(
-            RawDatasetArchive.dataset_key.in_(
-                [
-                    "adjustment_snapshot_2024_0414_raw",
-                    "adjustment_snapshot_2025_0409_raw",
-                    "adjustment_announcement_2025_raw",
-                    "adjustment_stats_2025_full_raw",
-                ]
-            )
-        )
-        .all()
+        for row in db.query(RawDatasetArchive).all()
     }
     school_lookup = _school_lookup(db)
     opportunities: list[dict[str, Any]] = []
@@ -748,7 +793,57 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             }
         )
 
-    snapshot_2025 = archives.get("adjustment_snapshot_2025_0409_raw")
+    program2026 = _select_archive(
+        archives,
+        dataset_keys=("admission_program_catalog_2026_raw",),
+        source_filenames=("2026年研究生招生专业信息表.xlsx",),
+    )
+    if program2026 is not None:
+        df = load_archive_dataframe(program2026)
+        for row in df.to_dict(orient="records"):
+            school_name = _strip_text(row.get("院校名称") or row.get("学校") or row.get("大学"))
+            if not school_name:
+                continue
+            major_code = normalize_major_code(row.get("专业代码") or row.get("专业"))
+            major_name = normalize_major_name(row.get("专业名称") or row.get("专业"))
+            vacancy_count = _safe_int(row.get("名额"), default=0) or None
+            source_url = _strip_text(row.get("链接") or row.get("原始网址") or row.get("网址") or row.get("原文链接")) or None
+            published_at = _parse_datetime(row.get("发布时间"))
+            region_name = _strip_text(row.get("省份")) or _strip_text(row.get("地区")) or None
+            summary_parts = ["2026 招生专业信息"]
+            if vacancy_count:
+                summary_parts.append(f"名额 {vacancy_count}")
+            title = f"{school_name} {major_name or major_code or '招生专业'} 2026 招生信息"
+            add_row(
+                source_dataset_key=program2026.dataset_key,
+                source_type="future_program",
+                year=score_to_int(row.get("年份")) or 2026,
+                school_name=school_name,
+                school_code=_strip_text(row.get("学校代码")) or None,
+                region_name=region_name,
+                school_tier=None,
+                department_name=_strip_text(row.get("学院")) or None,
+                major_code=major_code,
+                major_name=major_name,
+                study_mode=normalize_study_mode(row.get("学习形式")),
+                vacancy_count=vacancy_count,
+                min_score=None,
+                avg_score=None,
+                max_score=None,
+                verification_status="2026招生专业",
+                title=title,
+                summary=" · ".join(summary_parts),
+                source_url=source_url,
+                published_at=published_at,
+                captured_at=None,
+                meta_json={"dataset_title": program2026.title},
+            )
+
+    snapshot_2025 = _select_archive(
+        archives,
+        dataset_keys=("adjustment_snapshot_2025_0409_raw",),
+        source_filenames=("25年4月9日20时03分07秒调剂信息汇总.xlsx",),
+    )
     if snapshot_2025 is not None:
         df = load_archive_dataframe(snapshot_2025)
         default_capture = _parse_capture_datetime_from_filename(snapshot_2025.source_filename)
@@ -794,7 +889,68 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 meta_json={"dataset_title": snapshot_2025.title},
             )
 
-    snapshot_2024 = archives.get("adjustment_snapshot_2024_0414_raw")
+    legacy_balance_2024 = _select_archive(
+        archives,
+        dataset_keys=("adjustment_opportunity_2024_raw",),
+        source_filenames=("24.xlsx",),
+    )
+    if legacy_balance_2024 is not None:
+        df = load_archive_dataframe(legacy_balance_2024)
+        for row in df.to_dict(orient="records"):
+            school_code, school_name = parse_school_code_name(row.get("招生单位"))
+            if not school_name:
+                continue
+            _department_code, department_name = parse_labeled_name(row.get(" 院系所") or row.get("院系所"))
+            major_code = normalize_major_code(row.get(" 专业") or row.get("专业"))
+            major_name = normalize_major_name(row.get(" 专业") or row.get("专业"))
+            research_direction = _strip_text(row.get(" 研究方向") or row.get("研究方向")) or None
+            study_mode = normalize_study_mode(row.get(" 学习方式") or row.get("学习方式"))
+            vacancy_count = _safe_int(row.get(" 计划余额") or row.get("计划余额"), default=0) or None
+            captured_at = _parse_capture_datetime(row.get("采集时间"))
+            score_line = _strip_text(row.get(" 总分") or row.get("总分")) or None
+            summary_parts = ["2024 调剂余额表"]
+            if department_name:
+                summary_parts.append(department_name)
+            if research_direction and research_direction != "(00)不区分研究方向":
+                summary_parts.append(research_direction)
+            if vacancy_count:
+                summary_parts.append(f"余额 {vacancy_count}")
+            if score_line:
+                summary_parts.append(f"总分要求 {score_line}")
+            explanation = _strip_text(row.get(" 调剂说明") or row.get("调剂说明")) or None
+            if explanation:
+                summary_parts.append(explanation[:80])
+            title = f"{school_name} {major_name or major_code or '调剂'} 余额信息"
+            add_row(
+                source_dataset_key=legacy_balance_2024.dataset_key,
+                source_type="balance",
+                year=2024,
+                school_name=school_name,
+                school_code=school_code,
+                region_name=None,
+                school_tier=None,
+                department_name=department_name,
+                major_code=major_code,
+                major_name=major_name,
+                study_mode=study_mode,
+                vacancy_count=vacancy_count,
+                min_score=None,
+                avg_score=None,
+                max_score=None,
+                verification_status=score_line,
+                title=title,
+                summary=" · ".join(part for part in summary_parts if part),
+                source_url=None,
+                published_at=None,
+                captured_at=captured_at,
+                meta_json={"dataset_title": legacy_balance_2024.title},
+            )
+
+    snapshot_2024 = _select_archive(
+        archives,
+        dataset_keys=("adjustment_snapshot_2024_0414_raw",),
+        source_filenames=("24年4月14日10时55分调剂信息汇总.xlsx",),
+    )
     if snapshot_2024 is not None:
         df = load_archive_dataframe(snapshot_2024)
         default_capture = _parse_capture_datetime_from_filename(snapshot_2024.source_filename)
@@ -841,7 +997,11 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 meta_json={"dataset_title": snapshot_2024.title},
             )
 
-    announcement_2025 = archives.get("adjustment_announcement_2025_raw")
+    announcement_2025 = _select_archive(
+        archives,
+        dataset_keys=("adjustment_announcement_2025_raw",),
+        source_filenames=("2025年调剂信息公告.xls", "2025年调剂信息公告.xlsx"),
+    )
     if announcement_2025 is not None:
         df = load_archive_dataframe(announcement_2025)
         for row in df.to_dict(orient="records"):
@@ -879,7 +1039,11 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 meta_json={"dataset_title": announcement_2025.title},
             )
 
-    stats25 = archives.get("adjustment_stats_2025_full_raw")
+    stats25 = _select_archive(
+        archives,
+        dataset_keys=("adjustment_stats_2025_full_raw",),
+        source_filenames=("25 调剂信息统计_完整版（含调剂人数，最低分，平均分）.xlsx",),
+    )
     if stats25 is not None:
         df = load_archive_dataframe(stats25, sheet_name="调剂统计（含平均分）")
         for row in df.to_dict(orient="records"):
@@ -923,6 +1087,179 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 published_at=None,
                 captured_at=None,
                 meta_json={"dataset_title": stats25.title},
+            )
+
+    for landing_year, dataset_key, filename in (
+        (2024, "adjustment_landing_2024_raw", "24考研调剂上岸名单.xlsx"),
+        (2025, "adjustment_landing_2025_raw", "25考研调剂上岸名单.xlsx"),
+    ):
+        landing_archive = _select_archive(
+            archives,
+            dataset_keys=(dataset_key,),
+            source_filenames=(filename,),
+        )
+        if landing_archive is None:
+            continue
+        df = load_archive_dataframe(landing_archive, sheet_name="总表")
+        grouped: dict[tuple[str, str | None, str | None, str | None, str | None], dict[str, Any]] = {}
+        for row in df.to_dict(orient="records"):
+            school_code, school_name = parse_school_code_name(row.get("调剂学校") or row.get("学校"))
+            school_name_normalized = normalize_school_name(school_name)
+            if not school_name_normalized:
+                continue
+            department_name = _strip_text(row.get("所属学院")) or None
+            if department_name == "未区分院系" or department_name == "未区分院系所":
+                department_name = None
+            region_name = parse_region_name(row.get("地区"))
+            school_tier = _strip_text(row.get("院校类别")) or None
+            major_code = normalize_major_code(row.get("专业代码") or row.get("专业"))
+            major_name = normalize_major_name(row.get("专业名称") or row.get("专业"))
+            study_mode = normalize_study_mode(row.get("学习形式"))
+            score = score_to_int(row.get("初试总分"))
+            group_key = (
+                school_name_normalized,
+                normalize_department_name(department_name),
+                major_code,
+                normalize_major_name(major_name),
+                study_mode,
+            )
+            payload = grouped.setdefault(
+                group_key,
+                {
+                    "school_name": school_name,
+                    "school_code": school_code,
+                    "region_name": region_name,
+                    "school_tier": school_tier,
+                    "department_name": department_name,
+                    "major_code": major_code,
+                    "major_name": major_name,
+                    "study_mode": study_mode,
+                    "scores": [],
+                },
+            )
+            if score is not None:
+                payload["scores"].append(score)
+
+        for payload in grouped.values():
+            scores = payload.pop("scores")
+            sample_count = len(scores) or None
+            summary_parts = [f"{landing_year} 年调剂上岸样本"]
+            if payload["department_name"]:
+                summary_parts.append(payload["department_name"])
+            if sample_count:
+                summary_parts.append(f"样本 {sample_count}")
+            if scores:
+                summary_parts.append(f"最低 {min(scores)}")
+                summary_parts.append(f"均分 {round(sum(scores) / len(scores))}")
+            title = f"{payload['school_name']} {payload['major_name'] or payload['major_code'] or '调剂'} 上岸样本"
+            add_row(
+                source_dataset_key=landing_archive.dataset_key,
+                source_type="landing",
+                year=landing_year,
+                school_name=payload["school_name"],
+                school_code=payload["school_code"],
+                region_name=payload["region_name"],
+                school_tier=payload["school_tier"],
+                department_name=payload["department_name"],
+                major_code=payload["major_code"],
+                major_name=payload["major_name"],
+                study_mode=payload["study_mode"],
+                vacancy_count=sample_count,
+                min_score=min(scores) if scores else None,
+                avg_score=(sum(scores) / len(scores)) if scores else None,
+                max_score=max(scores) if scores else None,
+                verification_status="调剂上岸样本",
+                title=title,
+                summary=" · ".join(summary_parts),
+                source_url=None,
+                published_at=None,
+                captured_at=None,
+                meta_json={"dataset_title": landing_archive.title},
+            )
+
+    stats_2023_2025 = _select_archive(
+        archives,
+        dataset_keys=("adjustment_stats_2023_2025_raw",),
+        source_filenames=("23-25调剂统计数据.xlsx",),
+    )
+    if stats_2023_2025 is not None:
+        df = _normalize_legacy_adjustment_stats_frame(load_archive_dataframe(stats_2023_2025))
+        grouped: dict[tuple[int | None, str, str | None, str | None, str | None, str | None], dict[str, Any]] = {}
+        for row in df.to_dict(orient="records"):
+            year = score_to_int(row.get("年份"))
+            school_code, school_name = parse_school_code_name(row.get("学校"))
+            school_name_normalized = normalize_school_name(school_name)
+            if not school_name_normalized:
+                continue
+            department_name = _strip_text(row.get("所属学院")) or None
+            if department_name == "未区分院系":
+                department_name = None
+            major_code = normalize_major_code(row.get("专业代码"))
+            major_name = normalize_major_name(row.get("专业名称"))
+            study_mode = normalize_study_mode(row.get("学习形式"))
+            region_name = parse_region_name(row.get("地区"))
+            school_tier = _strip_text(row.get("院校类别")) or None
+            score = score_to_int(row.get("初试总分"))
+            group_key = (
+                year,
+                school_name_normalized,
+                normalize_department_name(department_name),
+                major_code,
+                normalize_major_name(major_name),
+                study_mode,
+            )
+            payload = grouped.setdefault(
+                group_key,
+                {
+                    "school_name": school_name,
+                    "school_code": school_code,
+                    "region_name": region_name,
+                    "school_tier": school_tier,
+                    "department_name": department_name,
+                    "major_code": major_code,
+                    "major_name": major_name,
+                    "study_mode": study_mode,
+                    "scores": [],
+                },
+            )
+            if score is not None:
+                payload["scores"].append(score)
+        for year, _school_name_normalized, _dept_norm, _major_code, _major_name_norm, _study_mode in grouped.keys():
+            payload = grouped[(year, _school_name_normalized, _dept_norm, _major_code, _major_name_norm, _study_mode)]
+            scores = payload.pop("scores")
+            sample_count = len(scores) or None
+            summary_parts = [f"{year or '未知'} 年历史调剂统计"]
+            if payload["department_name"]:
+                summary_parts.append(payload["department_name"])
+            if sample_count:
+                summary_parts.append(f"样本 {sample_count}")
+            if scores:
+                summary_parts.append(f"最低 {min(scores)}")
+                summary_parts.append(f"均分 {round(sum(scores) / len(scores))}")
+            title = f"{payload['school_name']} {payload['major_name'] or payload['major_code'] or '调剂'} 历史统计"
+            add_row(
+                source_dataset_key=stats_2023_2025.dataset_key,
+                source_type="stats",
+                year=year,
+                school_name=payload["school_name"],
+                school_code=payload["school_code"],
+                region_name=payload["region_name"],
+                school_tier=payload["school_tier"],
+                department_name=payload["department_name"],
+                major_code=payload["major_code"],
+                major_name=payload["major_name"],
+                study_mode=payload["study_mode"],
+                vacancy_count=sample_count,
+                min_score=min(scores) if scores else None,
+                avg_score=(sum(scores) / len(scores)) if scores else None,
+                max_score=max(scores) if scores else None,
+                verification_status="历史统计",
+                title=title,
+                summary=" · ".join(summary_parts),
+                source_url=None,
+                published_at=None,
+                captured_at=None,
+                meta_json={"dataset_title": stats_2023_2025.title},
             )
 
     deduped: dict[str, dict[str, Any]] = {}
