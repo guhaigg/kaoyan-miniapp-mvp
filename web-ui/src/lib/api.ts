@@ -317,6 +317,8 @@ export type SearchItem = {
     top_tags: string[];
     risk_label: string | null;
   } | null;
+  mentor_department_radar: SearchItem["mentor_radar"];
+  mentor_school_radar: SearchItem["mentor_radar"];
   release_timing: {
     sample_count: number;
     sample_years: number[];
@@ -399,6 +401,22 @@ export type AdjustmentSearchDetailResponse = {
   historical_adjustment: SearchItem["historical_adjustment"];
   mentor_radar: SearchItem["mentor_radar"];
   mentor_reviews: {
+    mentor_name: string;
+    department_name: string | null;
+    risk_level: string | null;
+    review_tags: string[];
+    review_text: string;
+  }[];
+  mentor_department_radar: SearchItem["mentor_radar"];
+  mentor_school_radar: SearchItem["mentor_radar"];
+  mentor_department_reviews: {
+    mentor_name: string;
+    department_name: string | null;
+    risk_level: string | null;
+    review_tags: string[];
+    review_text: string;
+  }[];
+  mentor_school_reviews: {
     mentor_name: string;
     department_name: string | null;
     risk_level: string | null;

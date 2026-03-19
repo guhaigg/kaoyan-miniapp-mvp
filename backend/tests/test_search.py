@@ -1162,9 +1162,11 @@ def test_adjustment_search_mentor_matching_does_not_mix_other_departments_when_d
     )
     assert search.status_code == 200
     item = search.json()["items"][0]
-    assert item["mentor_radar"]["review_count"] == 1
-    assert item["mentor_radar"]["warning_count"] == 0
+    assert item["mentor_radar"]["review_count"] == 2
+    assert item["mentor_radar"]["warning_count"] == 1
     assert item["mentor_radar"]["positive_count"] == 1
+    assert item["mentor_department_radar"] is None
+    assert item["mentor_school_radar"]["review_count"] == 2
 
 
 def test_adjustment_search_intelligence_filters_run_server_side(client):
@@ -2073,12 +2075,15 @@ def test_adjustment_detail_returns_structured_opportunity_payload():
     assert payload["links"][0]["url"] == "https://example.com/sdu-adjustment"
     assert payload["historical_adjustment"]["initial_score_min"] == 360
     assert payload["historical_adjustment"]["initial_score_max"] == 389
-    assert payload["mentor_radar"]["review_count"] == 1
-    assert payload["mentor_radar"]["warning_count"] == 1
-    assert {review["mentor_name"] for review in payload["mentor_reviews"]} == {"李老师"}
-    assert payload["mentor_reviews"][0]["mentor_name"] == "李老师"
-    assert "延毕风险" in payload["mentor_reviews"][0]["review_text"]
-    assert "<br>" not in payload["mentor_reviews"][0]["review_text"]
+    assert payload["mentor_radar"]["review_count"] == 3
+    assert payload["mentor_radar"]["warning_count"] == 2
+    assert payload["mentor_department_radar"]["review_count"] == 1
+    assert payload["mentor_school_radar"]["review_count"] == 3
+    assert {review["mentor_name"] for review in payload["mentor_department_reviews"]} == {"李老师"}
+    assert {review["mentor_name"] for review in payload["mentor_school_reviews"]} == {"李老师", "王老师", "周老师"}
+    assert payload["mentor_department_reviews"][0]["mentor_name"] == "李老师"
+    assert "延毕风险" in payload["mentor_department_reviews"][0]["review_text"]
+    assert "<br>" not in payload["mentor_department_reviews"][0]["review_text"]
 
 
 def test_adjustment_detail_returns_content_body(client):

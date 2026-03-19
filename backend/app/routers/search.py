@@ -236,6 +236,58 @@ def _append_unique_link(links: list[AdjustmentSearchLinkItem], *, label: str, ur
     )
 
 
+def _build_mentor_scope_signals(
+    evaluations,
+    *,
+    department_name: str | None,
+):
+    department_signal = (
+        build_mentor_radar_insight(
+            evaluations,
+            department_name=department_name,
+            scope="department",
+        )
+        if department_name
+        else None
+    )
+    school_signal = build_mentor_radar_insight(
+        evaluations,
+        department_name=department_name,
+        scope="school",
+    )
+    primary_signal = school_signal or department_signal
+    return primary_signal, department_signal, school_signal
+
+
+def _build_mentor_review_scopes(
+    db: Session,
+    *,
+    school_name: str | None,
+    department_name: str | None,
+    limit: int = 5,
+):
+    department_reviews = (
+        load_mentor_review_excerpts(
+            db,
+            school_name=school_name,
+            department_name=department_name,
+            limit=limit,
+            scope="department",
+        )
+        if department_name
+        else []
+    )
+    school_reviews = load_mentor_review_excerpts(
+        db,
+        school_name=school_name,
+        department_name=department_name,
+        limit=limit,
+        scope="school",
+    )
+    primary_reviews = school_reviews or department_reviews
+    return primary_reviews, department_reviews, school_reviews
+
+
 def _build_adjustment_detail_from_content(
     db: Session,
     row: Content,
@@ -262,20 +314,23 @@ def _build_adjustment_detail_from_content(
             reference_year=row.published_at.year if row.published_at is not None else None,
         )
 
-    mentor_signal = (
-        build_mentor_radar_insight(
+    mentor_signal = None
+    mentor_department_signal = None
+    mentor_school_signal = None
+    mentor_reviews = []
+    mentor_department_reviews = []
+    mentor_school_reviews = []
+    if school_name:
+        mentor_signal, mentor_department_signal, mentor_school_signal = _build_mentor_scope_signals(
             mentor_evaluations.get(normalized_school_name, []),
             department_name=department_name,
         )
-        if school_name
-        else None
-    )
-    mentor_reviews = load_mentor_review_excerpts(
-        db,
-        school_name=school_name,
-        department_name=department_name,
-        limit=5,
-    )
+        mentor_reviews, mentor_department_reviews, mentor_school_reviews = _build_mentor_review_scopes(
+            db,
+            school_name=school_name,
+            department_name=department_name,
+            limit=5,
+        )
     release_signal = build_release_timing_insight(release_timings.get(normalized_school_name)) if school_name else None
     school_signal = school_intelligence.get(normalized_school_name) if school_name else None
 
@@ -338,6 +393,10 @@ def _build_adjustment_detail_from_content(
         historical_adjustment=insight.__dict__ if insight is not None else None,
         mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
         mentor_reviews=[review.__dict__ for review in mentor_reviews],
+        mentor_department_radar=mentor_department_signal.__dict__ if mentor_department_signal is not None else None,
+        mentor_school_radar=mentor_school_signal.__dict__ if mentor_school_signal is not None else None,
+        mentor_department_reviews=[review.__dict__ for review in mentor_department_reviews],
+        mentor_school_reviews=[review.__dict__ for review in mentor_school_reviews],
         release_timing=release_signal.__dict__ if release_signal is not None else None,
         school_intelligence=school_signal.__dict__ if school_signal is not None else None,
         meta_json={
@@ -371,11 +430,11 @@ def _build_adjustment_detail_from_opportunity(
         candidate_score=None,
         reference_year=row.year,
     )
-    mentor_signal = build_mentor_radar_insight(
+    mentor_signal, mentor_department_signal, mentor_school_signal = _build_mentor_scope_signals(
         mentor_evaluations.get(normalized_school_name, []),
         department_name=resolved_department_name,
     )
-    mentor_reviews = load_mentor_review_excerpts(
+    mentor_reviews, mentor_department_reviews, mentor_school_reviews = _build_mentor_review_scopes(
         db,
         school_name=row.school_name,
         department_name=resolved_department_name,
@@ -440,6 +499,10 @@ def _build_adjustment_detail_from_opportunity(
         historical_adjustment=insight.__dict__ if insight is not None else None,
         mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
         mentor_reviews=[review.__dict__ for review in mentor_reviews],
+        mentor_department_radar=mentor_department_signal.__dict__ if mentor_department_signal is not None else None,
+        mentor_school_radar=mentor_school_signal.__dict__ if mentor_school_signal is not None else None,
+        mentor_department_reviews=[review.__dict__ for review in mentor_department_reviews],
+        mentor_school_reviews=[review.__dict__ for review in mentor_school_reviews],
         release_timing=release_signal.__dict__ if release_signal is not None else None,
         school_intelligence=school_signal.__dict__ if school_signal is not None else None,
         meta_json=meta,
@@ -542,14 +605,14 @@ def _to_response(
             )
             if insight is not None:
                 historical_adjustment = insight.__dict__
-        mentor_signal = (
-            build_mentor_radar_insight(
+        mentor_signal = None
+        mentor_department_signal = None
+        mentor_school_signal = None
+        if school_name:
+            mentor_signal, mentor_department_signal, mentor_school_signal = _build_mentor_scope_signals(
                 mentor_evaluations.get(normalize_school_name(school_name), []),
                 department_name=department_name,
             )
-            if school_name
-            else None
-        )
         release_timing_signal = (
             build_release_timing_insight(release_timings.get(normalize_school_name(school_name)))
             if school_name
@@ -590,6 +653,8 @@ def _to_response(
                 ),
                 historical_adjustment=historical_adjustment,
                 mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
+                mentor_department_radar=mentor_department_signal.__dict__ if mentor_department_signal is not None else None,
+                mentor_school_radar=mentor_school_signal.__dict__ if mentor_school_signal is not None else None,
                 release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
                 school_intelligence=school_signal.__dict__ if school_signal is not None else None,
                 merged_count=1,
@@ -1089,7 +1154,7 @@ def _to_adjustment_opportunity_response(
             candidate_score=payload.candidate_score,
             reference_year=row.year,
         )
-        mentor_signal = build_mentor_radar_insight(
+        mentor_signal, mentor_department_signal, mentor_school_signal = _build_mentor_scope_signals(
             mentor_evaluations.get(normalized_school_name, []),
             department_name=resolved_department_name,
         )
@@ -1142,6 +1207,8 @@ def _to_adjustment_opportunity_response(
                 adjustment_has_vacancy=(row.vacancy_count > 0) if row.vacancy_count is not None else None,
                 historical_adjustment=insight.__dict__ if insight is not None else None,
                 mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
+                mentor_department_radar=mentor_department_signal.__dict__ if mentor_department_signal is not None else None,
+                mentor_school_radar=mentor_school_signal.__dict__ if mentor_school_signal is not None else None,
                 release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
                 school_intelligence=school_signal.__dict__ if school_signal is not None else None,
                 merged_count=int(merged["merged_count"]),

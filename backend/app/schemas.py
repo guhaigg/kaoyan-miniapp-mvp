@@ -914,6 +914,8 @@ class SearchItem(BaseModel):
     adjustment_has_vacancy: bool | None = None
     historical_adjustment: HistoricalAdjustmentInsight | None = None
     mentor_radar: MentorRadarInsight | None = None
+    mentor_department_radar: MentorRadarInsight | None = None
+    mentor_school_radar: MentorRadarInsight | None = None
     release_timing: ReleaseTimingInsight | None = None
     school_intelligence: SchoolIntelligenceInsight | None = None
     merged_count: int = 1
@@ -979,6 +981,10 @@ class AdjustmentSearchDetailResponse(BaseModel):
     historical_adjustment: HistoricalAdjustmentInsight | None = None
     mentor_radar: MentorRadarInsight | None = None
     mentor_reviews: list[MentorReviewExcerpt] = Field(default_factory=list)
+    mentor_department_radar: MentorRadarInsight | None = None
+    mentor_school_radar: MentorRadarInsight | None = None
+    mentor_department_reviews: list[MentorReviewExcerpt] = Field(default_factory=list)
+    mentor_school_reviews: list[MentorReviewExcerpt] = Field(default_factory=list)
     release_timing: ReleaseTimingInsight | None = None
     school_intelligence: SchoolIntelligenceInsight | None = None
     meta_json: dict[str, Any] = Field(default_factory=dict)

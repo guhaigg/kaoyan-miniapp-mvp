@@ -856,11 +856,7 @@ export default function SearchPage() {
                                 item.historical_adjustment.sample_count > 0
                                   ? `样本 ${item.historical_adjustment.sample_count}`
                                   : null,
-                                item.mentor_radar?.warning_count
-                                  ? `导师预警 ${item.mentor_radar.warning_count}`
-                                  : item.mentor_radar?.review_count
-                                    ? `导师评价 ${item.mentor_radar.review_count}`
-                                    : null,
+                                getPrimaryMentorLabel(item),
                               ]
                                 .filter(Boolean)
                                 .join(" · ")
@@ -888,11 +884,11 @@ export default function SearchPage() {
                           ...(item.category === "adjustment" && item.historical_adjustment?.min_score !== null
                             ? [{ label: `历史最低 ${item.historical_adjustment?.min_score}`, tone: "sky" as const }]
                             : []),
-                          ...(item.mentor_radar?.warning_count
-                            ? [{ label: `导师预警 ${item.mentor_radar.warning_count}`, tone: "amber" as const }]
+                          ...(getMentorWarningCount(item) > 0
+                            ? [{ label: `本学校预警 ${getMentorWarningCount(item)}`, tone: "amber" as const }]
                             : []),
-                          ...(!item.mentor_radar?.warning_count && (item.mentor_radar?.review_count || 0) > 0
-                            ? [{ label: `导师评价 ${item.mentor_radar?.review_count}`, tone: "sky" as const }]
+                          ...(getMentorWarningCount(item) === 0
+                            ? getMentorPresenceLabels(item).map((label) => ({ label, tone: "sky" as const }))
                             : []),
                         ],
                         publishTime: item.published_at || item.updated_at,
@@ -1200,7 +1196,8 @@ function AdjustmentIntelCard({
   const departmentLine = [item.department_name, item.major, item.adjustment_major_codes[0], item.city, item.region].filter(Boolean).join(" · ") || "调剂情报流";
   const tags = item.tags.length > 0 ? item.tags : [item.school_name || "院校待补充", item.major || "专业待补充"];
   const releaseTime = formatIntelTime(item.published_at || item.updated_at);
-  const mentorWarning = (item.mentor_radar?.warning_count || 0) > 0;
+  const mentorSignals = getMentorScopeSignals(item);
+  const mentorWarning = getMentorWarningCount(item) > 0;
   const historicalReferenceUrl = item.school_intelligence?.reference_urls?.find((url) => url && url !== item.source_url) || null;
 
   async function handleBookmarkClick() {
@@ -1300,12 +1297,13 @@ function AdjustmentIntelCard({
               导师评价雷达
             </div>
             <div className={`text-lg font-bold ${mentorWarning ? "text-red-300" : "text-slate-100"}`}>
-              {item.mentor_radar?.risk_label || "暂无明显预警"}
+              {mentorSignals.school?.risk_label || mentorSignals.department?.risk_label || "暂无明显预警"}
             </div>
             <div className="mt-3 text-xs leading-5 text-slate-300">
-              <div>评价数：{item.mentor_radar?.review_count ?? 0}</div>
-              <div>预警数：{item.mentor_radar?.warning_count ?? 0}</div>
-              <div>标签：{item.mentor_radar?.top_tags?.slice(0, 3).join(" / ") || "暂无"}</div>
+              {item.department_name ? <div>本学院评价：{mentorSignals.department?.review_count ?? 0}</div> : null}
+              <div>本学校评价：{mentorSignals.school?.review_count ?? 0}</div>
+              <div>本学校预警：{mentorSignals.school?.warning_count ?? 0}</div>
+              <div>标签：{mentorSignals.school?.top_tags?.slice(0, 3).join(" / ") || mentorSignals.department?.top_tags?.slice(0, 3).join(" / ") || "暂无"}</div>
             </div>
           </div>
 
@@ -1406,11 +1404,15 @@ function AdjustmentDetailDrawer({
     setShowAllMentorReviews(false);
   }, [item?.id, detail?.id]);
 
-  const visibleMentorReviews = detail
-    ? showAllMentorReviews
-      ? detail.mentor_reviews
-      : detail.mentor_reviews.slice(0, 3)
-    : [];
+  const mentorSignals = detail ? getMentorScopeSignals(detail) : { department: null, school: null };
+  const departmentMentorReviews = detail?.mentor_department_reviews || [];
+  const schoolMentorReviews = detail?.mentor_school_reviews || detail?.mentor_reviews || [];
+  const visibleDepartmentMentorReviews = showAllMentorReviews
+    ? departmentMentorReviews
+    : departmentMentorReviews.slice(0, 3);
+  const visibleSchoolMentorReviews = showAllMentorReviews
+    ? schoolMentorReviews
+    : schoolMentorReviews.slice(0, 3);
 
   return (
     <AnimatePresence>
@@ -1527,7 +1529,7 @@ function AdjustmentDetailDrawer({
                         value={formatNationalLineDetail(detail.historical_adjustment)}
                       />
                       <DetailRow label="活跃度" value={detail.school_intelligence?.confidence_label || null} />
-                      <DetailRow label="导师预警" value={detail.mentor_radar?.risk_label || "暂无明显预警"} />
+                      <DetailRow label="本学校导师预警" value={mentorSignals.school?.risk_label || "暂无明显预警"} />
                       <DetailRow label="发布时间规律" value={detail.release_timing?.signal_label || null} />
                       <DetailRow
                         label="发榜样本年份"
@@ -1554,22 +1556,74 @@ function AdjustmentDetailDrawer({
                     <DetailRow label="更新时间" value={formatIntelTime(detail.updated_at)} />
                   </DetailBlock>
                   <DetailBlock title="导师雷达">
-                    <DetailRow label="风险等级" value={detail.mentor_radar?.risk_label || "暂无明显预警"} />
-                    <DetailRow label="评价数" value={`${detail.mentor_radar?.review_count ?? 0}`} />
-                    <DetailRow label="预警数" value={`${detail.mentor_radar?.warning_count ?? 0}`} />
-                    <DetailRow label="高频标签" value={detail.mentor_radar?.top_tags?.slice(0, 4).join(" / ") || "暂无"} />
+                    {detail.department_name ? (
+                      <>
+                        <DetailRow label="本学院风险" value={mentorSignals.department?.risk_label || "暂无明显预警"} />
+                        <DetailRow label="本学院评价数" value={`${mentorSignals.department?.review_count ?? 0}`} />
+                        <DetailRow label="本学院预警数" value={`${mentorSignals.department?.warning_count ?? 0}`} />
+                      </>
+                    ) : null}
+                    <DetailRow label="本学校风险" value={mentorSignals.school?.risk_label || "暂无明显预警"} />
+                    <DetailRow label="本学校评价数" value={`${mentorSignals.school?.review_count ?? 0}`} />
+                    <DetailRow label="本学校预警数" value={`${mentorSignals.school?.warning_count ?? 0}`} />
+                    <DetailRow
+                      label="本学校高频标签"
+                      value={mentorSignals.school?.top_tags?.slice(0, 4).join(" / ") || mentorSignals.department?.top_tags?.slice(0, 4).join(" / ") || "暂无"}
+                    />
                   </DetailBlock>
                 </div>
 
                 <DetailBlock title="导师真实评价">
-                  <div className="space-y-3">
-                    {detail.mentor_reviews.length > 0 ? (
+                  <div className="space-y-4">
+                    {(departmentMentorReviews.length > 0 || schoolMentorReviews.length > 0) ? (
                       <>
                         <div className="rounded-2xl border border-amber-400/15 bg-amber-500/10 p-4 text-sm leading-7 text-amber-50">
-                          这里展示的是命中该院校/学院的真实评价片段。先看这里，再决定要不要打开原始链接。
+                          这里先分开给你看本学院评价和本学校评价。本学校评价包含本学院评价，用来判断学院内外整体导师风格。
                         </div>
-                        {visibleMentorReviews.map((review, index) => (
-                        <div key={`${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                        {detail.department_name ? (
+                          <div className="space-y-3">
+                            <div className="text-sm font-semibold text-slate-100">本学院评价</div>
+                            {departmentMentorReviews.length > 0 ? visibleDepartmentMentorReviews.map((review, index) => (
+                              <div key={`dept-${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-semibold text-white">{review.mentor_name}</span>
+                                  {review.department_name ? (
+                                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
+                                      {review.department_name}
+                                    </span>
+                                  ) : null}
+                                  {review.risk_level ? (
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[11px] ${
+                                        review.risk_level === "warning"
+                                          ? "border border-red-400/20 bg-red-500/10 text-red-200"
+                                          : "border border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
+                                      }`}
+                                    >
+                                      {review.risk_level === "warning" ? "预警" : "正向"}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {review.review_tags.length > 0 ? (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {review.review_tags.map((tag) => (
+                                      <span key={tag} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                <p className="mt-3 text-sm leading-7 text-slate-300">{review.review_text}</p>
+                              </div>
+                            )) : (
+                              <div className="text-sm text-slate-500">当前没有可展示的本学院评价。</div>
+                            )}
+                          </div>
+                        ) : null}
+                        <div className="space-y-3">
+                          <div className="text-sm font-semibold text-slate-100">本学校评价</div>
+                          {schoolMentorReviews.length > 0 ? visibleSchoolMentorReviews.map((review, index) => (
+                        <div key={`school-${review.mentor_name}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold text-white">{review.mentor_name}</span>
                             {review.department_name ? (
@@ -1600,8 +1654,11 @@ function AdjustmentDetailDrawer({
                           ) : null}
                           <p className="mt-3 text-sm leading-7 text-slate-300">{review.review_text}</p>
                         </div>
-                        ))}
-                        {detail.mentor_reviews.length > 3 ? (
+                          )) : (
+                            <div className="text-sm text-slate-500">当前没有可展示的本学校评价。</div>
+                          )}
+                        </div>
+                        {(departmentMentorReviews.length > 3 || schoolMentorReviews.length > 3) ? (
                           <button
                             type="button"
                             onClick={() => setShowAllMentorReviews((value) => !value)}
@@ -1609,7 +1666,7 @@ function AdjustmentDetailDrawer({
                           >
                             {showAllMentorReviews
                               ? "收起更多评价"
-                              : `查看其余 ${detail.mentor_reviews.length - 3} 条评价`}
+                              : "展开更多导师评价"}
                           </button>
                         ) : null}
                       </>
@@ -1775,6 +1832,55 @@ function formatHistoricalSourceTypes(sourceTypes: string[] | null | undefined) {
     }
   });
   return Array.from(new Set(labels)).join(" / ");
+}
+
+function getMentorScopeSignals(source: {
+  mentor_radar: SearchItem["mentor_radar"];
+  mentor_department_radar?: SearchItem["mentor_radar"];
+  mentor_school_radar?: SearchItem["mentor_radar"];
+}) {
+  return {
+    department: source.mentor_department_radar || null,
+    school: source.mentor_school_radar || source.mentor_radar || null,
+  };
+}
+
+function getMentorPresenceLabels(source: {
+  mentor_radar: SearchItem["mentor_radar"];
+  mentor_department_radar?: SearchItem["mentor_radar"];
+  mentor_school_radar?: SearchItem["mentor_radar"];
+}) {
+  const { department, school } = getMentorScopeSignals(source);
+  const labels: string[] = [];
+  if ((department?.review_count || 0) > 0) {
+    labels.push(`本学院评价 ${department?.review_count}`);
+  }
+  if ((school?.review_count || 0) > 0) {
+    labels.push(`本学校评价 ${school?.review_count}`);
+  }
+  return labels;
+}
+
+function getMentorWarningCount(source: {
+  mentor_radar: SearchItem["mentor_radar"];
+  mentor_department_radar?: SearchItem["mentor_radar"];
+  mentor_school_radar?: SearchItem["mentor_radar"];
+}) {
+  const { school, department } = getMentorScopeSignals(source);
+  return school?.warning_count ?? department?.warning_count ?? 0;
+}
+
+function getPrimaryMentorLabel(source: {
+  mentor_radar: SearchItem["mentor_radar"];
+  mentor_department_radar?: SearchItem["mentor_radar"];
+  mentor_school_radar?: SearchItem["mentor_radar"];
+}) {
+  const warningCount = getMentorWarningCount(source);
+  if (warningCount > 0) {
+    return `本学校预警 ${warningCount}`;
+  }
+  const labels = getMentorPresenceLabels(source);
+  return labels[0] || null;
 }
 
 function getTimingSignal(item: SearchItem) {

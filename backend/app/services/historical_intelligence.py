@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from html import unescape
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 from sqlalchemy.dialects.mysql import insert as mysql_insert
@@ -755,6 +755,25 @@ def _apply_mentor_department_scope(
         for row in rows
         if not normalize_department_name(row.department_name_normalized or row.department_name)
     ]
+
+
+def _apply_school_level_mentor_scope(rows: list[MentorEvaluation]) -> list[MentorEvaluation]:
+    return rows
+
+
+def _apply_exact_department_mentor_scope(
+    rows: list[MentorEvaluation],
+    *,
+    department_name: str | None,
+) -> list[MentorEvaluation]:
+    normalized_department_name = normalize_department_name(department_name)
+    if normalized_department_name:
+        return [
+            row
+            for row in rows
+            if normalize_department_name(row.department_name_normalized or row.department_name) == normalized_department_name
+        ]
+    return []
 
 
 def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
@@ -2502,11 +2521,20 @@ def build_mentor_radar_insight(
     evaluations: list[MentorEvaluation],
     *,
     department_name: str | None = None,
+    scope: Literal["resolved", "department", "school"] = "resolved",
 ) -> MentorRadarInsightResult | None:
-    scoped_evaluations = _apply_mentor_department_scope(
-        evaluations,
-        department_name=department_name,
-    )
+    if scope == "school":
+        scoped_evaluations = _apply_school_level_mentor_scope(evaluations)
+    elif scope == "department":
+        scoped_evaluations = _apply_exact_department_mentor_scope(
+            evaluations,
+            department_name=department_name,
+        )
+    else:
+        scoped_evaluations = _apply_mentor_department_scope(
+            evaluations,
+            department_name=department_name,
+        )
     if not scoped_evaluations:
         return None
     mentor_names = {
@@ -2555,6 +2583,7 @@ def load_mentor_review_excerpts(
     school_name: str | None,
     department_name: str | None = None,
     limit: int = 5,
+    scope: Literal["resolved", "department", "school"] = "resolved",
 ) -> list[MentorReviewExcerptResult]:
     normalized_school_name = normalize_school_name(school_name)
     if not normalized_school_name:
@@ -2565,10 +2594,18 @@ def load_mentor_review_excerpts(
         .filter(MentorEvaluation.school_name_normalized == normalized_school_name)
         .all()
     )
-    scoped_rows = _apply_mentor_department_scope(
-        rows,
-        department_name=department_name,
-    )
+    if scope == "school":
+        scoped_rows = _apply_school_level_mentor_scope(rows)
+    elif scope == "department":
+        scoped_rows = _apply_exact_department_mentor_scope(
+            rows,
+            department_name=department_name,
+        )
+    else:
+        scoped_rows = _apply_mentor_department_scope(
+            rows,
+            department_name=department_name,
+        )
     if not scoped_rows:
         return []
 
