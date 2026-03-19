@@ -27,6 +27,125 @@ from ..models import (
     utcnow,
 )
 
+ENGINEERING_CARE_PREFIXES = ("0801", "0806", "0807", "0815", "0818", "0819", "0824", "0825", "0826", "0827", "0828")
+SCORE_COLUMN_ALIASES = {
+    "initial": (
+        "初试总分",
+        "初试成绩",
+        "初始成绩",
+        "初试分数",
+        "总分",
+    ),
+    "adjustment": (
+        "调剂成绩",
+        "调剂总成绩",
+        "调剂录取成绩",
+        "拟录取成绩",
+        "录取成绩",
+        "复试成绩",
+        "总成绩",
+    ),
+}
+NATIONAL_LINES = {
+    2023: {
+        "philosophy": {"label": "哲学", "zone_a": 323, "zone_b": 313},
+        "economics": {"label": "经济学", "zone_a": 346, "zone_b": 336},
+        "law": {"label": "法学", "zone_a": 326, "zone_b": 316},
+        "education": {"label": "教育学", "zone_a": 350, "zone_b": 340},
+        "sports": {"label": "体育学/体育", "zone_a": 305, "zone_b": 295},
+        "literature": {"label": "文学", "zone_a": 363, "zone_b": 353},
+        "history": {"label": "历史学", "zone_a": 336, "zone_b": 326},
+        "science": {"label": "理学", "zone_a": 279, "zone_b": 269},
+        "engineering": {"label": "工学", "zone_a": 273, "zone_b": 263},
+        "engineering_care": {"label": "工学照顾专业", "zone_a": 260, "zone_b": 250},
+        "agriculture": {"label": "农学", "zone_a": 251, "zone_b": 241},
+        "medicine": {"label": "医学", "zone_a": 296, "zone_b": 286},
+        "medicine_tcm": {"label": "中医类照顾专业", "zone_a": 295, "zone_b": 285},
+        "military": {"label": "军事学", "zone_a": 260, "zone_b": 250},
+        "management": {"label": "管理学", "zone_a": 340, "zone_b": 330},
+        "mba": {"label": "工商管理/旅游管理", "zone_a": 167, "zone_b": 157},
+        "mpa": {"label": "公共管理", "zone_a": 175, "zone_b": 165},
+        "accounting": {"label": "会计/审计", "zone_a": 197, "zone_b": 187},
+        "library_info": {"label": "图书情报", "zone_a": 198, "zone_b": 188},
+        "engineering_mgmt": {"label": "工程管理", "zone_a": 178, "zone_b": 168},
+        "art": {"label": "艺术学/艺术", "zone_a": 362, "zone_b": 352},
+        "interdisciplinary": {"label": "交叉学科", "zone_a": 265, "zone_b": 255},
+    },
+    2024: {
+        "philosophy": {"label": "哲学", "zone_a": 333, "zone_b": 323},
+        "economics": {"label": "经济学", "zone_a": 338, "zone_b": 328},
+        "law": {"label": "法学", "zone_a": 331, "zone_b": 321},
+        "education": {"label": "教育学/教育专硕", "zone_a": 350, "zone_b": 340},
+        "sports": {"label": "体育学/体育", "zone_a": 313, "zone_b": 303},
+        "literature": {"label": "文学", "zone_a": 365, "zone_b": 355},
+        "history": {"label": "历史学", "zone_a": 345, "zone_b": 335},
+        "science": {"label": "理学", "zone_a": 288, "zone_b": 278},
+        "engineering": {"label": "工学", "zone_a": 273, "zone_b": 263},
+        "engineering_care": {"label": "工学照顾专业", "zone_a": 260, "zone_b": 250},
+        "agriculture": {"label": "农学", "zone_a": 251, "zone_b": 241},
+        "medicine": {"label": "医学", "zone_a": 304, "zone_b": 294},
+        "medicine_tcm": {"label": "中医学/中西医结合/中医", "zone_a": 303, "zone_b": 293},
+        "military": {"label": "军事学", "zone_a": 260, "zone_b": 250},
+        "management": {"label": "管理学", "zone_a": 347, "zone_b": 337},
+        "mba": {"label": "工商管理/旅游管理", "zone_a": 162, "zone_b": 152},
+        "tourism": {"label": "旅游管理", "zone_a": 162, "zone_b": 152},
+        "mpa": {"label": "公共管理", "zone_a": 173, "zone_b": 163},
+        "accounting": {"label": "会计/审计", "zone_a": 201, "zone_b": 191},
+        "library_info": {"label": "图书情报", "zone_a": 198, "zone_b": 188},
+        "engineering_mgmt": {"label": "工程管理", "zone_a": 176, "zone_b": 166},
+        "art": {"label": "艺术学/艺术", "zone_a": 362, "zone_b": 352},
+        "interdisciplinary": {"label": "交叉学科", "zone_a": 275, "zone_b": 265},
+    },
+    2025: {
+        "philosophy": {"label": "哲学", "zone_a": 321, "zone_b": 311},
+        "economics": {"label": "经济学", "zone_a": 323, "zone_b": 313},
+        "law": {"label": "法学", "zone_a": 323, "zone_b": 313},
+        "education": {"label": "教育学/教育专硕", "zone_a": 341, "zone_b": 331},
+        "sports": {"label": "体育学/体育", "zone_a": 304, "zone_b": 294},
+        "literature": {"label": "文学", "zone_a": 351, "zone_b": 341},
+        "history": {"label": "历史学", "zone_a": 336, "zone_b": 326},
+        "science": {"label": "理学", "zone_a": 274, "zone_b": 264},
+        "engineering": {"label": "工学", "zone_a": 260, "zone_b": 250},
+        "engineering_care": {"label": "工学照顾专业", "zone_a": 251, "zone_b": 241},
+        "agriculture": {"label": "农学", "zone_a": 245, "zone_b": 235},
+        "medicine": {"label": "医学", "zone_a": 293, "zone_b": 283},
+        "military": {"label": "军事学", "zone_a": 260, "zone_b": 250},
+        "management": {"label": "管理学", "zone_a": 333, "zone_b": 323},
+        "mba": {"label": "工商管理", "zone_a": 151, "zone_b": 141},
+        "tourism": {"label": "旅游管理", "zone_a": 151, "zone_b": 141},
+        "mpa": {"label": "公共管理", "zone_a": 164, "zone_b": 154},
+        "accounting": {"label": "会计/审计", "zone_a": 194, "zone_b": 184},
+        "library_info": {"label": "图书情报", "zone_a": 191, "zone_b": 181},
+        "engineering_mgmt": {"label": "工程管理", "zone_a": 162, "zone_b": 152},
+        "art": {"label": "艺术学/艺术", "zone_a": 351, "zone_b": 341},
+        "interdisciplinary": {"label": "交叉学科", "zone_a": 266, "zone_b": 256},
+    },
+    2026: {
+        "philosophy": {"label": "哲学", "zone_a": 326, "zone_b": 316},
+        "economics": {"label": "经济学", "zone_a": 324, "zone_b": 314},
+        "law": {"label": "法学", "zone_a": 321, "zone_b": 311},
+        "education": {"label": "教育学/教育专硕", "zone_a": 347, "zone_b": 337},
+        "sports": {"label": "体育学/体育", "zone_a": 310, "zone_b": 300},
+        "literature": {"label": "文学", "zone_a": 354, "zone_b": 344},
+        "history": {"label": "历史学", "zone_a": 341, "zone_b": 331},
+        "science": {"label": "理学", "zone_a": 275, "zone_b": 265},
+        "engineering": {"label": "工学", "zone_a": 264, "zone_b": 254},
+        "engineering_care": {"label": "工学照顾专业", "zone_a": 251, "zone_b": 241},
+        "agriculture": {"label": "农学", "zone_a": 240, "zone_b": 230},
+        "medicine": {"label": "医学", "zone_a": 294, "zone_b": 284},
+        "military": {"label": "军事学", "zone_a": 260, "zone_b": 250},
+        "management": {"label": "管理学", "zone_a": 332, "zone_b": 322},
+        "mba": {"label": "工商管理", "zone_a": 146, "zone_b": 136},
+        "tourism": {"label": "旅游管理", "zone_a": 151, "zone_b": 141},
+        "mpa": {"label": "公共管理", "zone_a": 168, "zone_b": 158},
+        "accounting": {"label": "会计/图书情报/审计", "zone_a": 199, "zone_b": 189},
+        "library_info": {"label": "会计/图书情报/审计", "zone_a": 199, "zone_b": 189},
+        "engineering_mgmt": {"label": "工程管理", "zone_a": 166, "zone_b": 156},
+        "art": {"label": "艺术学/艺术", "zone_a": 354, "zone_b": 344},
+        "interdisciplinary": {"label": "交叉学科", "zone_a": 266, "zone_b": 256},
+    },
+}
+
 
 def _strip_text(value: Any) -> str:
     return str(value or "").strip()
@@ -78,6 +197,31 @@ def parse_region_name(value: Any) -> str | None:
     if matched:
         return matched.group(2).strip() or None
     return text or None
+
+
+def _compact_place_name(value: str | None) -> str | None:
+    text = _strip_text(value)
+    if not text:
+        return None
+    text = re.sub(r"(省|市|壮族自治区|回族自治区|维吾尔自治区|自治区|特别行政区|地区|自治州|盟)$", "", text)
+    return text or None
+
+
+def parse_region_parts(value: Any) -> tuple[str | None, str | None]:
+    text = parse_region_name(value)
+    if not text:
+        return None, None
+    province_match = re.match(r"^(.*?(?:省|市|自治区|特别行政区|壮族自治区|回族自治区|维吾尔自治区))(.*)$", text)
+    if province_match:
+        province = _compact_place_name(province_match.group(1))
+        tail = province_match.group(2).strip()
+        if tail:
+            city_match = re.match(r"^(.*?(?:市|地区|自治州|盟)).*$", tail)
+            city = _compact_place_name(city_match.group(1) if city_match else tail)
+            return province, city
+        return province, province
+    compact = _compact_place_name(text)
+    return compact, compact
 
 
 def normalize_major_code(value: Any) -> str | None:
@@ -143,6 +287,43 @@ def score_to_int(value: Any) -> int | None:
         return int(round(float(matched.group(0))))
     except Exception:
         return None
+
+
+def _extract_score_from_columns(row: dict[str, Any], *columns: str) -> int | None:
+    for column in columns:
+        if column in row:
+            parsed = score_to_int(row.get(column))
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _extract_initial_score(row: dict[str, Any]) -> int | None:
+    return _extract_score_from_columns(row, *SCORE_COLUMN_ALIASES["initial"])
+
+
+def _extract_adjustment_score(row: dict[str, Any]) -> int | None:
+    return _extract_score_from_columns(row, *SCORE_COLUMN_ALIASES["adjustment"])
+
+
+def _resolve_city_name(row: dict[str, Any], *, region_value: Any = None) -> str | None:
+    for column in ("城市", "城市名称", "市", "地级市"):
+        text = _compact_place_name(row.get(column))
+        if text:
+            return text
+    _province, city = parse_region_parts(region_value)
+    return city
+
+
+def _resolve_region_and_city(row: dict[str, Any], *columns: str) -> tuple[str | None, str | None]:
+    for column in columns:
+        if column in row:
+            region_name = parse_region_name(row.get(column))
+            city_name = _resolve_city_name(row, region_value=row.get(column))
+            if region_name or city_name:
+                return region_name, city_name
+    explicit_city = _resolve_city_name(row)
+    return None, explicit_city
 
 
 def decode_raw_archive_bytes(archive: RawDatasetArchive) -> bytes:
@@ -218,6 +399,13 @@ def _safe_float(value: Any) -> float | None:
         return float(matched.group(0))
     except Exception:
         return None
+
+
+def _score_bounds(values: list[int]) -> tuple[int | None, int | None]:
+    cleaned = [value for value in values if value is not None]
+    if not cleaned:
+        return None, None
+    return min(cleaned), max(cleaned)
 
 
 def _parse_capture_datetime(value: Any) -> datetime | None:
@@ -458,6 +646,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
             RawDatasetArchive.dataset_key.in_(
                 [
                     "adjustment_stats_2025_full_raw",
+                    "adjustment_stats_2023_2025_raw",
                     "adjustment_landing_2024_raw",
                     "adjustment_landing_2025_raw",
                     "admission_program_catalog_2026_raw",
@@ -484,6 +673,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
             study_mode = normalize_study_mode(row.get("学习形式"))
             vacancy_count = _safe_int(row.get("25调剂人数"), default=0)
             min_score = score_to_int(row.get("25调剂录取最低分"))
+            max_score = score_to_int(row.get("25调剂录取最高分")) or min_score
             avg_score = _safe_float(row.get("25调剂平均分"))
             profile_key = build_profile_key(
                 year=2025,
@@ -504,6 +694,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "school_name_normalized": school_name_normalized,
                     "school_code": school_code,
                     "region_name": None,
+                    "city_name": None,
                     "school_tier": None,
                     "department_name": None,
                     "department_name_normalized": None,
@@ -513,10 +704,97 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "study_mode": study_mode,
                     "sample_count": vacancy_count,
                     "vacancy_count": vacancy_count,
+                    "initial_score_min": None,
+                    "initial_score_max": None,
+                    "adjustment_score_min": min_score,
+                    "adjustment_score_max": max_score,
                     "min_score": min_score,
                     "avg_score": avg_score,
-                    "max_score": min_score,
+                    "max_score": max_score,
                     "meta_json": {"title": "2025 调剂统计完整版"},
+                }
+            )
+
+    stats_2023_2025 = archives.get("adjustment_stats_2023_2025_raw")
+    if stats_2023_2025 is not None:
+        df = _normalize_legacy_adjustment_stats_frame(load_archive_dataframe(stats_2023_2025))
+        grouped: dict[tuple[int | None, str, str | None, str | None, str | None], dict[str, Any]] = {}
+        for row in df.to_dict(orient="records"):
+            year = score_to_int(row.get("年份"))
+            school_code, school_name = parse_school_code_name(row.get("学校"))
+            school_name_normalized = normalize_school_name(school_name)
+            if not school_name_normalized:
+                continue
+            department_name = _strip_text(row.get("所属学院")) or None
+            if department_name == "未区分院系":
+                department_name = None
+            department_name_normalized = normalize_department_name(department_name)
+            region_name, city_name = _resolve_region_and_city(row, "地区", "省份")
+            school_tier = _strip_text(row.get("院校类别")) or None
+            major_code = normalize_major_code(row.get("专业代码"))
+            major_name = normalize_major_name(row.get("专业名称"))
+            study_mode = normalize_study_mode(row.get("学习形式"))
+            initial_score = _extract_initial_score(row)
+            adjustment_score = _extract_adjustment_score(row)
+            if initial_score is None and adjustment_score is None:
+                continue
+            group_key = (year, school_name_normalized, major_code, major_name, study_mode)
+            current = grouped.setdefault(
+                group_key,
+                {
+                    "school_name": school_name,
+                    "school_name_normalized": school_name_normalized,
+                    "school_code": school_code,
+                    "region_name": region_name,
+                    "city_name": city_name,
+                    "school_tier": school_tier,
+                    "department_name": department_name,
+                    "department_name_normalized": department_name_normalized,
+                    "major_code": major_code,
+                    "major_name": major_name,
+                    "major_name_normalized": major_name,
+                    "study_mode": study_mode,
+                    "initial_scores": [],
+                    "adjustment_scores": [],
+                },
+            )
+            if initial_score is not None:
+                current["initial_scores"].append(initial_score)
+            if adjustment_score is not None:
+                current["adjustment_scores"].append(adjustment_score)
+        for (year, _school_name_normalized, _major_code, _major_name, _study_mode), payload in grouped.items():
+            initial_scores = payload.pop("initial_scores")
+            adjustment_scores = payload.pop("adjustment_scores")
+            initial_min, initial_max = _score_bounds(initial_scores)
+            adjustment_min, adjustment_max = _score_bounds(adjustment_scores)
+            sample_count = max(len(initial_scores), len(adjustment_scores))
+            avg_score = round(sum(initial_scores) / sample_count, 2) if initial_scores and sample_count else None
+            profile_key = build_profile_key(
+                year=year or 0,
+                source_type="adjustment_stats",
+                school_name_normalized=payload["school_name_normalized"],
+                major_code=payload["major_code"],
+                major_name_normalized=payload["major_name_normalized"],
+                study_mode=payload["study_mode"],
+            )
+            profiles.append(
+                {
+                    "profile_key": profile_key,
+                    "year": year or 0,
+                    "source_type": "adjustment_stats",
+                    "source_dataset_key": stats_2023_2025.dataset_key,
+                    "school_id": school_lookup.get(payload["school_name_normalized"]),
+                    **payload,
+                    "sample_count": sample_count,
+                    "vacancy_count": sample_count,
+                    "initial_score_min": initial_min,
+                    "initial_score_max": initial_max,
+                    "adjustment_score_min": adjustment_min,
+                    "adjustment_score_max": adjustment_max,
+                    "min_score": initial_min,
+                    "avg_score": avg_score,
+                    "max_score": initial_max,
+                    "meta_json": {"title": "23-25 调剂统计数据"},
                 }
             )
 
@@ -533,13 +811,14 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                 continue
             department_name = _strip_text(row.get("所属学院")) or None
             department_name_normalized = normalize_department_name(department_name)
-            region_name = parse_region_name(row.get("地区"))
+            region_name, city_name = _resolve_region_and_city(row, "地区", "省份")
             school_tier = _strip_text(row.get("院校类别")) or None
             major_code = normalize_major_code(row.get("专业代码") or row.get("专业"))
             major_name = normalize_major_name(row.get("专业名称") or row.get("专业"))
             study_mode = normalize_study_mode(row.get("学习形式"))
-            score = score_to_int(row.get("初试总分"))
-            if score is None:
+            initial_score = _extract_initial_score(row)
+            adjustment_score = _extract_adjustment_score(row)
+            if initial_score is None and adjustment_score is None:
                 continue
             group_key = (school_name_normalized, major_code, major_name, study_mode)
             current = grouped.setdefault(
@@ -549,6 +828,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "school_name_normalized": school_name_normalized,
                     "school_code": school_code,
                     "region_name": region_name,
+                    "city_name": city_name,
                     "school_tier": school_tier,
                     "department_name": department_name,
                     "department_name_normalized": department_name_normalized,
@@ -556,13 +836,21 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "major_name": major_name,
                     "major_name_normalized": major_name,
                     "study_mode": study_mode,
-                    "scores": [],
+                    "initial_scores": [],
+                    "adjustment_scores": [],
                 },
             )
-            current["scores"].append(score)
+            if initial_score is not None:
+                current["initial_scores"].append(initial_score)
+            if adjustment_score is not None:
+                current["adjustment_scores"].append(adjustment_score)
         for payload in grouped.values():
-            scores = payload.pop("scores")
-            sample_count = len(scores)
+            initial_scores = payload.pop("initial_scores")
+            adjustment_scores = payload.pop("adjustment_scores")
+            sample_count = max(len(initial_scores), len(adjustment_scores))
+            initial_min, initial_max = _score_bounds(initial_scores)
+            adjustment_min, adjustment_max = _score_bounds(adjustment_scores)
+            avg_score = round(sum(initial_scores) / sample_count, 2) if initial_scores and sample_count else None
             profile_key = build_profile_key(
                 year=year,
                 source_type="landing",
@@ -581,9 +869,13 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     **payload,
                     "sample_count": sample_count,
                     "vacancy_count": None,
-                    "min_score": min(scores) if scores else None,
-                    "avg_score": round(sum(scores) / sample_count, 2) if scores else None,
-                    "max_score": max(scores) if scores else None,
+                    "initial_score_min": initial_min,
+                    "initial_score_max": initial_max,
+                    "adjustment_score_min": adjustment_min,
+                    "adjustment_score_max": adjustment_max,
+                    "min_score": initial_min,
+                    "avg_score": avg_score,
+                    "max_score": initial_max,
                     "meta_json": {"title": f"{year} 调剂上岸名单"},
                 }
             )
@@ -599,6 +891,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
             major_code = normalize_major_code(row.get("专业代码"))
             major_name = normalize_major_name(row.get("专业名称"))
             vacancy_count = _safe_int(row.get("名额"), default=0)
+            region_name, city_name = _resolve_region_and_city(row, "省份", "地区")
             profile_key = build_profile_key(
                 year=2026,
                 source_type="future_program",
@@ -617,7 +910,8 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "school_name": school_name,
                     "school_name_normalized": school_name_normalized,
                     "school_code": None,
-                    "region_name": _strip_text(row.get("省份")) or None,
+                    "region_name": region_name,
+                    "city_name": city_name,
                     "school_tier": None,
                     "department_name": None,
                     "department_name_normalized": None,
@@ -627,6 +921,10 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "study_mode": None,
                     "sample_count": vacancy_count,
                     "vacancy_count": vacancy_count,
+                    "initial_score_min": None,
+                    "initial_score_max": None,
+                    "adjustment_score_min": None,
+                    "adjustment_score_max": None,
                     "min_score": None,
                     "avg_score": None,
                     "max_score": None,
@@ -656,7 +954,8 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                 school_name_normalized,
                 {
                     "school_name": school_name,
-                    "region_name": parse_region_name(row.get("地区") or row.get("省份")),
+                    "region_name": _resolve_region_and_city(row, "地区", "省份")[0],
+                    "city_name": _resolve_region_and_city(row, "地区", "省份")[1],
                     "urls": Counter(),
                     "count": 0,
                 },
@@ -688,6 +987,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "school_name_normalized": school_name_normalized,
                     "school_code": None,
                     "region_name": payload["region_name"],
+                    "city_name": payload["city_name"],
                     "school_tier": None,
                     "department_name": None,
                     "department_name_normalized": None,
@@ -697,6 +997,10 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "study_mode": None,
                     "sample_count": int(payload["count"]),
                     "vacancy_count": None,
+                    "initial_score_min": None,
+                    "initial_score_max": None,
+                    "adjustment_score_min": None,
+                    "adjustment_score_max": None,
                     "min_score": None,
                     "avg_score": None,
                     "max_score": None,
@@ -730,12 +1034,17 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
         school_name: str,
         school_code: str | None,
         region_name: str | None,
+        city_name: str | None,
         school_tier: str | None,
         department_name: str | None,
         major_code: str | None,
         major_name: str | None,
         study_mode: str | None,
         vacancy_count: int | None,
+        initial_score_min: int | None,
+        initial_score_max: int | None,
+        adjustment_score_min: int | None,
+        adjustment_score_max: int | None,
         min_score: int | None,
         avg_score: float | None,
         max_score: int | None,
@@ -772,6 +1081,7 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 "school_name_normalized": school_name_normalized,
                 "school_code": school_code,
                 "region_name": region_name,
+                "city_name": city_name,
                 "school_tier": school_tier,
                 "department_name": department_name,
                 "department_name_normalized": department_name_normalized,
@@ -780,6 +1090,10 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 "major_name_normalized": major_name_normalized,
                 "study_mode": study_mode,
                 "vacancy_count": vacancy_count,
+                "initial_score_min": initial_score_min,
+                "initial_score_max": initial_score_max,
+                "adjustment_score_min": adjustment_score_min,
+                "adjustment_score_max": adjustment_score_max,
                 "min_score": min_score,
                 "avg_score": avg_score,
                 "max_score": max_score,
@@ -809,7 +1123,7 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             vacancy_count = _safe_int(row.get("名额"), default=0) or None
             source_url = _strip_text(row.get("链接") or row.get("原始网址") or row.get("网址") or row.get("原文链接")) or None
             published_at = _parse_datetime(row.get("发布时间"))
-            region_name = _strip_text(row.get("省份")) or _strip_text(row.get("地区")) or None
+            region_name, city_name = _resolve_region_and_city(row, "省份", "地区")
             summary_parts = ["2026 招生专业信息"]
             if vacancy_count:
                 summary_parts.append(f"名额 {vacancy_count}")
@@ -821,12 +1135,17 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 school_name=school_name,
                 school_code=_strip_text(row.get("学校代码")) or None,
                 region_name=region_name,
+                city_name=city_name,
                 school_tier=None,
                 department_name=_strip_text(row.get("学院")) or None,
                 major_code=major_code,
                 major_name=major_name,
                 study_mode=normalize_study_mode(row.get("学习形式")),
                 vacancy_count=vacancy_count,
+                initial_score_min=None,
+                initial_score_max=None,
+                adjustment_score_min=None,
+                adjustment_score_max=None,
                 min_score=None,
                 avg_score=None,
                 max_score=None,
@@ -859,6 +1178,7 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             verification_status = _strip_text(row.get("验证状态")) or None
             vacancy_count = _safe_int(row.get("计划人数"), default=0) or None
             year = score_to_int(row.get("年份")) or 2025
+            region_name, city_name = _resolve_region_and_city(row, "地区", "省份")
             summary_parts = [f"{year} 年调剂快照"]
             if verification_status:
                 summary_parts.append(verification_status)
@@ -870,13 +1190,18 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 year=year,
                 school_name=school_name,
                 school_code=None,
-                region_name=parse_region_name(row.get("地区") or row.get("省份")),
+                region_name=region_name,
+                city_name=city_name,
                 school_tier=None,
                 department_name=_strip_text(row.get("学院")) or None,
                 major_code=major_code,
                 major_name=major_name,
                 study_mode=normalize_study_mode(row.get("学习形式")),
                 vacancy_count=vacancy_count,
+                initial_score_min=None,
+                initial_score_max=None,
+                adjustment_score_min=None,
+                adjustment_score_max=None,
                 min_score=None,
                 avg_score=None,
                 max_score=None,
@@ -928,12 +1253,17 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 school_name=school_name,
                 school_code=school_code,
                 region_name=None,
+                city_name=None,
                 school_tier=None,
                 department_name=department_name,
                 major_code=major_code,
                 major_name=major_name,
                 study_mode=study_mode,
                 vacancy_count=vacancy_count,
+                initial_score_min=None,
+                initial_score_max=None,
+                adjustment_score_min=None,
+                adjustment_score_max=None,
                 min_score=None,
                 avg_score=None,
                 max_score=None,
@@ -972,19 +1302,25 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             note = _strip_text(row.get("备注"))
             if note:
                 summary_parts.append(note)
+            region_name, city_name = _resolve_region_and_city(row, "地区", "省份")
             add_row(
                 source_dataset_key=snapshot_2024.dataset_key,
                 source_type="snapshot",
                 year=2024,
                 school_name=school_name,
                 school_code=_strip_text(row.get("学校代码")) or None,
-                region_name=None,
+                region_name=region_name,
+                city_name=city_name,
                 school_tier=None,
                 department_name=department_name,
                 major_code=major_code,
                 major_name=major_name,
                 study_mode=study_mode,
                 vacancy_count=vacancy_count,
+                initial_score_min=None,
+                initial_score_max=None,
+                adjustment_score_min=None,
+                adjustment_score_max=None,
                 min_score=None,
                 avg_score=None,
                 max_score=None,
@@ -1014,19 +1350,25 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             published_at = _parse_datetime(row.get("最新时间") or row.get("发布时间"))
             verification_status = _strip_text(row.get("验证状态")) or None
             title = _strip_text(row.get("标题")) or f"{school_name} {major_name or major_code or '调剂'} 公告"
+            region_name, city_name = _resolve_region_and_city(row, "地区", "省份")
             add_row(
                 source_dataset_key=announcement_2025.dataset_key,
                 source_type="adjustment_notice",
                 year=score_to_int(row.get("年份")) or 2025,
                 school_name=school_name,
                 school_code=None,
-                region_name=parse_region_name(row.get("地区") or row.get("省份")),
+                region_name=region_name,
+                city_name=city_name,
                 school_tier=None,
                 department_name=_strip_text(row.get("学院")) or None,
                 major_code=major_code,
                 major_name=major_name,
                 study_mode=normalize_study_mode(row.get("学习形式")),
                 vacancy_count=_safe_int(row.get("计划人数"), default=0) or None,
+                initial_score_min=None,
+                initial_score_max=None,
+                adjustment_score_min=None,
+                adjustment_score_max=None,
                 min_score=None,
                 avg_score=None,
                 max_score=None,
@@ -1054,14 +1396,17 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             major_name = normalize_major_name(row.get("专业"))
             study_mode = normalize_study_mode(row.get("学习形式"))
             vacancy_count = _safe_int(row.get("25调剂人数"), default=0) or None
-            min_score = score_to_int(row.get("25调剂录取最低分"))
+            adjustment_min_score = score_to_int(row.get("25调剂录取最低分"))
+            adjustment_max_score = score_to_int(row.get("25调剂录取最高分")) or adjustment_min_score
             avg_score = _safe_float(row.get("25调剂平均分"))
             title = f"{school_name} {major_name or major_code or '调剂'} 历史统计"
             summary_parts = ["2025 年历史调剂统计"]
             if vacancy_count:
                 summary_parts.append(f"调剂人数 {vacancy_count}")
-            if min_score is not None:
-                summary_parts.append(f"最低 {min_score}")
+            if adjustment_min_score is not None:
+                summary_parts.append(f"最低 {adjustment_min_score}")
+            if adjustment_max_score is not None and adjustment_max_score != adjustment_min_score:
+                summary_parts.append(f"最高 {adjustment_max_score}")
             if avg_score is not None:
                 summary_parts.append(f"均分 {round(avg_score, 1)}")
             add_row(
@@ -1071,15 +1416,20 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 school_name=school_name,
                 school_code=school_code,
                 region_name=None,
+                city_name=None,
                 school_tier=None,
                 department_name=None,
                 major_code=major_code,
                 major_name=major_name,
                 study_mode=study_mode,
                 vacancy_count=vacancy_count,
-                min_score=min_score,
+                initial_score_min=None,
+                initial_score_max=None,
+                adjustment_score_min=adjustment_min_score,
+                adjustment_score_max=adjustment_max_score,
+                min_score=adjustment_min_score,
                 avg_score=avg_score,
-                max_score=min_score,
+                max_score=adjustment_max_score,
                 verification_status="历史统计",
                 title=title,
                 summary=" · ".join(summary_parts),
@@ -1110,12 +1460,13 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             department_name = _strip_text(row.get("所属学院")) or None
             if department_name == "未区分院系" or department_name == "未区分院系所":
                 department_name = None
-            region_name = parse_region_name(row.get("地区"))
+            region_name, city_name = _resolve_region_and_city(row, "地区", "省份")
             school_tier = _strip_text(row.get("院校类别")) or None
             major_code = normalize_major_code(row.get("专业代码") or row.get("专业"))
             major_name = normalize_major_name(row.get("专业名称") or row.get("专业"))
             study_mode = normalize_study_mode(row.get("学习形式"))
-            score = score_to_int(row.get("初试总分"))
+            initial_score = _extract_initial_score(row)
+            adjustment_score = _extract_adjustment_score(row)
             group_key = (
                 school_name_normalized,
                 normalize_department_name(department_name),
@@ -1129,28 +1480,37 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                     "school_name": school_name,
                     "school_code": school_code,
                     "region_name": region_name,
+                    "city_name": city_name,
                     "school_tier": school_tier,
                     "department_name": department_name,
                     "major_code": major_code,
                     "major_name": major_name,
                     "study_mode": study_mode,
-                    "scores": [],
+                    "initial_scores": [],
+                    "adjustment_scores": [],
                 },
             )
-            if score is not None:
-                payload["scores"].append(score)
+            if initial_score is not None:
+                payload["initial_scores"].append(initial_score)
+            if adjustment_score is not None:
+                payload["adjustment_scores"].append(adjustment_score)
 
         for payload in grouped.values():
-            scores = payload.pop("scores")
-            sample_count = len(scores) or None
+            initial_scores = payload.pop("initial_scores")
+            adjustment_scores = payload.pop("adjustment_scores")
+            sample_count = len(initial_scores) or len(adjustment_scores) or None
+            initial_min, initial_max = _score_bounds(initial_scores)
+            adjustment_min, adjustment_max = _score_bounds(adjustment_scores)
             summary_parts = [f"{landing_year} 年调剂上岸样本"]
             if payload["department_name"]:
                 summary_parts.append(payload["department_name"])
             if sample_count:
                 summary_parts.append(f"样本 {sample_count}")
-            if scores:
-                summary_parts.append(f"最低 {min(scores)}")
-                summary_parts.append(f"均分 {round(sum(scores) / len(scores))}")
+            if initial_min is not None:
+                summary_parts.append(f"初试 {initial_min}-{initial_max}")
+            if adjustment_min is not None:
+                summary_parts.append(f"调剂 {adjustment_min}-{adjustment_max}")
+            avg_score = round(sum(initial_scores) / len(initial_scores), 2) if initial_scores else None
             title = f"{payload['school_name']} {payload['major_name'] or payload['major_code'] or '调剂'} 上岸样本"
             add_row(
                 source_dataset_key=landing_archive.dataset_key,
@@ -1159,15 +1519,20 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 school_name=payload["school_name"],
                 school_code=payload["school_code"],
                 region_name=payload["region_name"],
+                city_name=payload["city_name"],
                 school_tier=payload["school_tier"],
                 department_name=payload["department_name"],
                 major_code=payload["major_code"],
                 major_name=payload["major_name"],
                 study_mode=payload["study_mode"],
                 vacancy_count=sample_count,
-                min_score=min(scores) if scores else None,
-                avg_score=(sum(scores) / len(scores)) if scores else None,
-                max_score=max(scores) if scores else None,
+                initial_score_min=initial_min,
+                initial_score_max=initial_max,
+                adjustment_score_min=adjustment_min,
+                adjustment_score_max=adjustment_max,
+                min_score=initial_min,
+                avg_score=avg_score,
+                max_score=initial_max,
                 verification_status="调剂上岸样本",
                 title=title,
                 summary=" · ".join(summary_parts),
@@ -1197,9 +1562,10 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             major_code = normalize_major_code(row.get("专业代码"))
             major_name = normalize_major_name(row.get("专业名称"))
             study_mode = normalize_study_mode(row.get("学习形式"))
-            region_name = parse_region_name(row.get("地区"))
+            region_name, city_name = _resolve_region_and_city(row, "地区", "省份")
             school_tier = _strip_text(row.get("院校类别")) or None
-            score = score_to_int(row.get("初试总分"))
+            initial_score = _extract_initial_score(row)
+            adjustment_score = _extract_adjustment_score(row)
             group_key = (
                 year,
                 school_name_normalized,
@@ -1214,28 +1580,37 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                     "school_name": school_name,
                     "school_code": school_code,
                     "region_name": region_name,
+                    "city_name": city_name,
                     "school_tier": school_tier,
                     "department_name": department_name,
                     "major_code": major_code,
                     "major_name": major_name,
                     "study_mode": study_mode,
-                    "scores": [],
+                    "initial_scores": [],
+                    "adjustment_scores": [],
                 },
             )
-            if score is not None:
-                payload["scores"].append(score)
+            if initial_score is not None:
+                payload["initial_scores"].append(initial_score)
+            if adjustment_score is not None:
+                payload["adjustment_scores"].append(adjustment_score)
         for year, _school_name_normalized, _dept_norm, _major_code, _major_name_norm, _study_mode in grouped.keys():
             payload = grouped[(year, _school_name_normalized, _dept_norm, _major_code, _major_name_norm, _study_mode)]
-            scores = payload.pop("scores")
-            sample_count = len(scores) or None
+            initial_scores = payload.pop("initial_scores")
+            adjustment_scores = payload.pop("adjustment_scores")
+            sample_count = len(initial_scores) or len(adjustment_scores) or None
+            initial_min, initial_max = _score_bounds(initial_scores)
+            adjustment_min, adjustment_max = _score_bounds(adjustment_scores)
             summary_parts = [f"{year or '未知'} 年历史调剂统计"]
             if payload["department_name"]:
                 summary_parts.append(payload["department_name"])
             if sample_count:
                 summary_parts.append(f"样本 {sample_count}")
-            if scores:
-                summary_parts.append(f"最低 {min(scores)}")
-                summary_parts.append(f"均分 {round(sum(scores) / len(scores))}")
+            if initial_min is not None:
+                summary_parts.append(f"初试 {initial_min}-{initial_max}")
+            if adjustment_min is not None:
+                summary_parts.append(f"调剂 {adjustment_min}-{adjustment_max}")
+            avg_score = round(sum(initial_scores) / len(initial_scores), 2) if initial_scores else None
             title = f"{payload['school_name']} {payload['major_name'] or payload['major_code'] or '调剂'} 历史统计"
             add_row(
                 source_dataset_key=stats_2023_2025.dataset_key,
@@ -1244,15 +1619,20 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
                 school_name=payload["school_name"],
                 school_code=payload["school_code"],
                 region_name=payload["region_name"],
+                city_name=payload["city_name"],
                 school_tier=payload["school_tier"],
                 department_name=payload["department_name"],
                 major_code=payload["major_code"],
                 major_name=payload["major_name"],
                 study_mode=payload["study_mode"],
                 vacancy_count=sample_count,
-                min_score=min(scores) if scores else None,
-                avg_score=(sum(scores) / len(scores)) if scores else None,
-                max_score=max(scores) if scores else None,
+                initial_score_min=initial_min,
+                initial_score_max=initial_max,
+                adjustment_score_min=adjustment_min,
+                adjustment_score_max=adjustment_max,
+                min_score=initial_min,
+                avg_score=avg_score,
+                max_score=initial_max,
                 verification_status="历史统计",
                 title=title,
                 summary=" · ".join(summary_parts),
@@ -1265,7 +1645,40 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
     deduped: dict[str, dict[str, Any]] = {}
     for row in opportunities:
         deduped[row["opportunity_key"]] = row
-    return list(deduped.values())
+
+    school_dimension_map: dict[str, dict[str, str]] = defaultdict(dict)
+    school_tier_counts: dict[str, Counter] = defaultdict(Counter)
+    region_counts: dict[str, Counter] = defaultdict(Counter)
+    city_counts: dict[str, Counter] = defaultdict(Counter)
+    for row in deduped.values():
+        school_key = str(row.get("school_name_normalized") or "").strip()
+        if not school_key:
+            continue
+        if row.get("school_tier"):
+            school_tier_counts[school_key][str(row["school_tier"]).strip()] += 1
+        if row.get("region_name"):
+            region_counts[school_key][str(row["region_name"]).strip()] += 1
+        if row.get("city_name"):
+            city_counts[school_key][str(row["city_name"]).strip()] += 1
+    for school_key, counter in school_tier_counts.items():
+        school_dimension_map[school_key]["school_tier"] = counter.most_common(1)[0][0]
+    for school_key, counter in region_counts.items():
+        school_dimension_map[school_key]["region_name"] = counter.most_common(1)[0][0]
+    for school_key, counter in city_counts.items():
+        school_dimension_map[school_key]["city_name"] = counter.most_common(1)[0][0]
+
+    normalized_rows: list[dict[str, Any]] = []
+    for row in deduped.values():
+        school_key = str(row.get("school_name_normalized") or "").strip()
+        if school_key:
+            if not row.get("school_tier") and school_dimension_map[school_key].get("school_tier"):
+                row["school_tier"] = school_dimension_map[school_key]["school_tier"]
+            if not row.get("region_name") and school_dimension_map[school_key].get("region_name"):
+                row["region_name"] = school_dimension_map[school_key]["region_name"]
+            if not row.get("city_name") and school_dimension_map[school_key].get("city_name"):
+                row["city_name"] = school_dimension_map[school_key]["city_name"]
+        normalized_rows.append(row)
+    return normalized_rows
 
 
 def build_mentor_evaluations_from_archives(db: Session) -> list[dict[str, Any]]:
@@ -1325,13 +1738,38 @@ class HistoricalAdjustmentInsightResult:
     sample_years: list[int]
     source_types: list[str]
     sample_count: int
+    initial_score_min: int | None
+    initial_score_max: int | None
+    adjustment_score_min: int | None
+    adjustment_score_max: int | None
     min_score: int | None
     avg_score: float | None
     max_score: int | None
     candidate_score: int | None
-    outlook: str | None
-    outlook_label: str | None
-    future_program_count: int | None
+    delta_to_min: int | None
+    delta_to_avg: int | None
+    delta_to_max: int | None
+    national_line_year: int | None = None
+    national_line_major_category: str | None = None
+    national_line_zone_a: int | None = None
+    national_line_zone_b: int | None = None
+    delta_to_zone_a: int | None = None
+    delta_to_zone_b: int | None = None
+    outlook: str | None = None
+    outlook_label: str | None = None
+    future_program_count: int | None = None
+
+
+@dataclass
+class NationalAdjustmentLineResult:
+    year: int
+    category_label: str
+    area_a_total: int
+    area_b_total: int
+    comparison_area: str | None = None
+    comparison_total: int | None = None
+    delta_to_a: int | None = None
+    delta_to_b: int | None = None
 
 
 @dataclass
@@ -1376,6 +1814,225 @@ class SchoolIntelligenceInsightResult:
     signal_detail: str
 
 
+ENGINEERING_CARE_MAJOR_CODES = {
+    "0801",
+    "0806",
+    "0807",
+    "0815",
+    "0818",
+    "0819",
+    "0824",
+    "0825",
+    "0826",
+    "0827",
+    "0828",
+}
+
+AREA_B_REGION_TOKENS = ("内蒙古", "广西", "海南", "贵州", "云南", "西藏", "甘肃", "青海", "宁夏", "新疆")
+
+NATIONAL_ADJUSTMENT_LINES: dict[int, dict[str, tuple[str, int, int]]] = {
+    2023: {
+        "01": ("哲学", 323, 313),
+        "02": ("经济学/经济类专硕", 346, 336),
+        "03": ("法学/法律社工警务", 326, 316),
+        "0403": ("体育学/体育", 305, 295),
+        "0452": ("体育学/体育", 305, 295),
+        "0451": ("教育/国际中文教育", 350, 340),
+        "0453": ("教育/国际中文教育", 350, 340),
+        "04": ("教育学", 350, 340),
+        "05": ("文学/翻译新传出版", 363, 353),
+        "06": ("历史学/文博", 336, 326),
+        "07": ("理学", 279, 269),
+        "08_care": ("工学照顾专业", 260, 250),
+        "08": ("工学/电子信息机械等专硕", 273, 263),
+        "09": ("农学/农业兽医园林林业", 251, 241),
+        "1005": ("中医类照顾专业", 295, 285),
+        "1006": ("中医类照顾专业", 295, 285),
+        "1057": ("中医类照顾专业", 295, 285),
+        "10": ("医学", 296, 286),
+        "11": ("军事", 260, 250),
+        "1251": ("工商管理", 167, 157),
+        "1254": ("旅游管理", 167, 157),
+        "1252": ("公共管理", 175, 165),
+        "1253": ("会计/审计", 197, 187),
+        "1257": ("会计/审计", 197, 187),
+        "1255": ("图书情报", 198, 188),
+        "1256": ("工程管理", 178, 168),
+        "12": ("管理学", 340, 330),
+        "13": ("艺术", 362, 352),
+        "14": ("交叉学科", 265, 255),
+    },
+    2024: {
+        "01": ("哲学", 333, 323),
+        "02": ("经济学", 338, 328),
+        "03": ("法学", 331, 321),
+        "0403": ("体育学/体育", 313, 303),
+        "0452": ("体育学/体育", 313, 303),
+        "0451": ("教育/国际中文教育", 350, 340),
+        "0453": ("教育/国际中文教育", 350, 340),
+        "04": ("教育学", 350, 340),
+        "05": ("文学", 365, 355),
+        "06": ("历史学", 345, 335),
+        "07": ("理学", 288, 278),
+        "08_care": ("工学照顾专业", 260, 250),
+        "08": ("工学", 273, 263),
+        "09": ("农学", 251, 241),
+        "1005": ("中医学/中西医结合/中医", 303, 293),
+        "1006": ("中医学/中西医结合/中医", 303, 293),
+        "1057": ("中医学/中西医结合/中医", 303, 293),
+        "10": ("医学", 304, 294),
+        "11": ("军事", 260, 250),
+        "1251": ("工商管理/旅游管理", 162, 152),
+        "1254": ("工商管理/旅游管理", 162, 152),
+        "1252": ("公共管理", 173, 163),
+        "1253": ("会计/审计", 201, 191),
+        "1257": ("会计/审计", 201, 191),
+        "1255": ("图书情报", 198, 188),
+        "1256": ("工程管理", 176, 166),
+        "12": ("管理学", 347, 337),
+        "13": ("艺术", 362, 352),
+        "14": ("交叉学科", 275, 265),
+    },
+    2025: {
+        "01": ("哲学", 321, 311),
+        "02": ("经济学", 323, 313),
+        "03": ("法学", 323, 313),
+        "0403": ("体育学/体育", 304, 294),
+        "0452": ("体育学/体育", 304, 294),
+        "0451": ("教育/国际中文教育", 341, 331),
+        "0453": ("教育/国际中文教育", 341, 331),
+        "04": ("教育学", 341, 331),
+        "05": ("文学", 351, 341),
+        "06": ("历史学", 336, 326),
+        "07": ("理学", 274, 264),
+        "08_care": ("工学照顾专业", 251, 241),
+        "08": ("工学", 260, 250),
+        "09": ("农学", 245, 235),
+        "10": ("医学", 293, 283),
+        "11": ("军事", 260, 250),
+        "1251": ("工商管理/旅游管理", 151, 141),
+        "1254": ("工商管理/旅游管理", 151, 141),
+        "1252": ("公共管理", 164, 154),
+        "1253": ("会计/审计", 194, 184),
+        "1257": ("会计/审计", 194, 184),
+        "1255": ("图书情报", 191, 181),
+        "1256": ("工程管理", 162, 152),
+        "12": ("管理学", 333, 323),
+        "13": ("艺术", 351, 341),
+        "14": ("交叉学科", 266, 256),
+    },
+    2026: {
+        "01": ("哲学", 326, 316),
+        "02": ("经济学", 324, 314),
+        "03": ("法学", 321, 311),
+        "0403": ("体育学/体育", 310, 300),
+        "0452": ("体育学/体育", 310, 300),
+        "0451": ("教育/国际中文教育", 347, 337),
+        "0453": ("教育/国际中文教育", 347, 337),
+        "04": ("教育学", 347, 337),
+        "05": ("文学", 354, 344),
+        "06": ("历史学", 341, 331),
+        "07": ("理学", 275, 265),
+        "08_care": ("工学照顾专业", 251, 241),
+        "08": ("工学", 264, 254),
+        "09": ("农学", 240, 230),
+        "10": ("医学", 294, 284),
+        "11": ("军事", 260, 250),
+        "1251": ("工商管理", 146, 136),
+        "1254": ("旅游管理", 151, 141),
+        "1252": ("公共管理", 168, 158),
+        "1253": ("会计/图情/审计", 199, 189),
+        "1255": ("会计/图情/审计", 199, 189),
+        "1257": ("会计/图情/审计", 199, 189),
+        "1256": ("工程管理", 166, 156),
+        "12": ("管理学", 332, 322),
+        "13": ("艺术", 354, 344),
+        "14": ("交叉学科", 266, 256),
+    },
+}
+
+
+def resolve_national_line_key(major_code: str | None) -> str | None:
+    normalized = normalize_major_code(major_code)
+    if not normalized:
+        return None
+    prefix4 = normalized[:4]
+    prefix2 = normalized[:2]
+    if prefix4 in ENGINEERING_CARE_MAJOR_CODES:
+        return "08_care"
+    if prefix4 in {"0403", "0452", "0451", "0453", "1005", "1006", "1057", "1251", "1252", "1253", "1254", "1255", "1256", "1257"}:
+        return prefix4
+    return prefix2
+
+
+def resolve_score_area(region_name: str | None) -> str:
+    text = _strip_text(region_name)
+    if any(token in text for token in AREA_B_REGION_TOKENS):
+        return "B"
+    return "A"
+
+
+def _get_line_totals(year: int | None, major_code: str | None) -> tuple[str, int, int] | None:
+    if year is None:
+        return None
+    year_lines = NATIONAL_ADJUSTMENT_LINES.get(int(year))
+    if not year_lines:
+        return None
+    line_key = resolve_national_line_key(major_code)
+    if not line_key:
+        return None
+    return year_lines.get(line_key) or year_lines.get(line_key[:2])
+
+
+def build_national_adjustment_line(
+    *,
+    year: int | None,
+    major_code: str | None,
+    comparison_area: str | None,
+    candidate_score: int | None,
+) -> NationalAdjustmentLineResult | None:
+    payload = _get_line_totals(year, major_code)
+    if payload is None:
+        return None
+    category_label, area_a_total, area_b_total = payload
+    comparison_total = None
+    if comparison_area == "A":
+        comparison_total = area_a_total
+    elif comparison_area == "B":
+        comparison_total = area_b_total
+    return NationalAdjustmentLineResult(
+        year=int(year),
+        category_label=category_label,
+        area_a_total=area_a_total,
+        area_b_total=area_b_total,
+        comparison_area=comparison_area,
+        comparison_total=comparison_total,
+        delta_to_a=(candidate_score - area_a_total) if candidate_score is not None else None,
+        delta_to_b=(candidate_score - area_b_total) if candidate_score is not None else None,
+    )
+
+
+def convert_score_between_years(
+    *,
+    score: int | float | None,
+    from_year: int | None,
+    to_year: int | None,
+    major_code: str | None,
+    area: str,
+) -> float | None:
+    if score is None:
+        return None
+    from_payload = _get_line_totals(from_year, major_code)
+    to_payload = _get_line_totals(to_year, major_code)
+    if from_payload is None or to_payload is None:
+        return None
+    _from_label, from_a_total, from_b_total = from_payload
+    _to_label, to_a_total, to_b_total = to_payload
+    from_total = from_b_total if area == "B" else from_a_total
+    to_total = to_b_total if area == "B" else to_a_total
+    return round(float(score) - float(from_total) + float(to_total), 1)
+
+
 def _match_profile(
     profile: HistoricalAdjustmentProfile,
     *,
@@ -1402,6 +2059,7 @@ def build_search_insight(
     major_name: str | None,
     study_modes: list[str],
     candidate_score: int | None,
+    reference_year: int | None = None,
 ) -> HistoricalAdjustmentInsightResult | None:
     normalized_codes = [code for code in (normalize_major_code(code) for code in major_codes) if code]
     normalized_name = normalize_major_name(major_name)
@@ -1420,25 +2078,110 @@ def build_search_insight(
         return None
     score_profiles = [row for row in matched if row.source_type in {"adjustment_stats", "landing"}]
     future_profiles = [row for row in matched if row.source_type == "future_program"]
-    years = sorted({row.year for row in score_profiles})
+    if reference_year is not None:
+        same_year_profiles = [row for row in score_profiles if row.year == reference_year]
+        if same_year_profiles:
+            score_profiles = same_year_profiles
+
+    years = sorted({row.year for row in score_profiles if row.year})
     source_types = sorted({row.source_type for row in score_profiles})
     sample_count = sum(max(1, row.sample_count) for row in score_profiles)
-    min_candidates = [row.min_score for row in score_profiles if row.min_score is not None]
-    max_candidates = [row.max_score for row in score_profiles if row.max_score is not None]
+    initial_min_candidates = [
+        row.initial_score_min if row.initial_score_min is not None else row.min_score
+        for row in score_profiles
+        if row.initial_score_min is not None or (row.adjustment_score_min is None and row.min_score is not None)
+    ]
+    initial_max_candidates = [
+        row.initial_score_max if row.initial_score_max is not None else row.max_score
+        for row in score_profiles
+        if row.initial_score_max is not None or (row.adjustment_score_max is None and row.max_score is not None)
+    ]
+    adjustment_min_candidates = [
+        row.adjustment_score_min for row in score_profiles if row.adjustment_score_min is not None
+    ]
+    adjustment_max_candidates = [
+        row.adjustment_score_max for row in score_profiles if row.adjustment_score_max is not None
+    ]
+
     weighted_avg_num = 0.0
     weighted_avg_den = 0
+    target_year = max(NATIONAL_ADJUSTMENT_LINES)
+    line_major_code = normalized_codes[0] if normalized_codes else next(
+        (row.major_code for row in matched if row.major_code),
+        None,
+    )
+    comparison_area = next(
+        (resolve_score_area(row.region_name) for row in score_profiles if _strip_text(row.region_name)),
+        None,
+    ) or next(
+        (resolve_score_area(row.region_name) for row in future_profiles if _strip_text(row.region_name)),
+        None,
+    ) or "A"
+
     for row in score_profiles:
-        if row.avg_score is None:
+        row_major_code = row.major_code or line_major_code
+        row_area = resolve_score_area(row.region_name) if _strip_text(row.region_name) else comparison_area
+        baseline = row.avg_score if (row.initial_score_min is not None or row.initial_score_max is not None or row.adjustment_score_min is None) else None
+        if baseline is None and row.initial_score_min is not None and row.initial_score_max is not None:
+            baseline = (row.initial_score_min + row.initial_score_max) / 2
+        converted_baseline = convert_score_between_years(
+            score=baseline,
+            from_year=row.year,
+            to_year=target_year,
+            major_code=row_major_code,
+            area=row_area,
+        )
+        if converted_baseline is None:
             continue
         weight = max(1, row.sample_count)
-        weighted_avg_num += row.avg_score * weight
+        weighted_avg_num += converted_baseline * weight
         weighted_avg_den += weight
     avg_score = round(weighted_avg_num / weighted_avg_den, 1) if weighted_avg_den else None
-    min_score = min(min_candidates) if min_candidates else None
-    max_score = max(max_candidates) if max_candidates else None
+    initial_score_min = min(initial_min_candidates) if initial_min_candidates else None
+    initial_score_max = max(initial_max_candidates) if initial_max_candidates else None
+    adjustment_score_min = min(adjustment_min_candidates) if adjustment_min_candidates else None
+    adjustment_score_max = max(adjustment_max_candidates) if adjustment_max_candidates else None
+    converted_min_candidates: list[float] = []
+    converted_max_candidates: list[float] = []
+    for row in score_profiles:
+        row_major_code = row.major_code or line_major_code
+        row_area = resolve_score_area(row.region_name) if _strip_text(row.region_name) else comparison_area
+        raw_min = row.initial_score_min
+        if raw_min is None and row.adjustment_score_min is None:
+            raw_min = row.min_score
+        raw_max = row.initial_score_max
+        if raw_max is None and row.adjustment_score_max is None:
+            raw_max = row.max_score
+        converted_min = convert_score_between_years(
+            score=raw_min,
+            from_year=row.year,
+            to_year=target_year,
+            major_code=row_major_code,
+            area=row_area,
+        )
+        converted_max = convert_score_between_years(
+            score=raw_max,
+            from_year=row.year,
+            to_year=target_year,
+            major_code=row_major_code,
+            area=row_area,
+        )
+        if converted_min is not None:
+            converted_min_candidates.append(converted_min)
+        if converted_max is not None:
+            converted_max_candidates.append(converted_max)
+    min_score = int(round(min(converted_min_candidates))) if converted_min_candidates else initial_score_min
+    max_score = int(round(max(converted_max_candidates))) if converted_max_candidates else initial_score_max
 
     outlook = None
     outlook_label = None
+    delta_to_min = (candidate_score - min_score) if candidate_score is not None and min_score is not None else None
+    delta_to_avg = (
+        int(round(candidate_score - avg_score))
+        if candidate_score is not None and avg_score is not None
+        else None
+    )
+    delta_to_max = (candidate_score - max_score) if candidate_score is not None and max_score is not None else None
     if candidate_score is not None:
         if avg_score is not None and candidate_score >= avg_score:
             outlook = "high"
@@ -1451,16 +2194,36 @@ def build_search_insight(
             outlook_label = "谨慎尝试"
 
     future_program_count = sum(max(0, row.vacancy_count or row.sample_count) for row in future_profiles) or None
-    if not years and avg_score is None and min_score is None and future_program_count is None:
+    line_year = target_year
+    national_line = build_national_adjustment_line(
+        year=line_year,
+        major_code=line_major_code,
+        comparison_area=comparison_area,
+        candidate_score=candidate_score,
+    )
+    if not years and avg_score is None and min_score is None and future_program_count is None and national_line is None:
         return None
     return HistoricalAdjustmentInsightResult(
         sample_years=years,
         source_types=source_types,
         sample_count=sample_count,
+        initial_score_min=initial_score_min,
+        initial_score_max=initial_score_max,
+        adjustment_score_min=adjustment_score_min,
+        adjustment_score_max=adjustment_score_max,
         min_score=min_score,
         avg_score=avg_score,
         max_score=max_score,
         candidate_score=candidate_score,
+        delta_to_min=delta_to_min,
+        delta_to_avg=delta_to_avg,
+        delta_to_max=delta_to_max,
+        national_line_year=national_line.year if national_line is not None else None,
+        national_line_major_category=national_line.category_label if national_line is not None else None,
+        national_line_zone_a=national_line.area_a_total if national_line is not None else None,
+        national_line_zone_b=national_line.area_b_total if national_line is not None else None,
+        delta_to_zone_a=national_line.delta_to_a if national_line is not None else None,
+        delta_to_zone_b=national_line.delta_to_b if national_line is not None else None,
         outlook=outlook,
         outlook_label=outlook_label,
         future_program_count=future_program_count,

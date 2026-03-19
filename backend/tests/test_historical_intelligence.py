@@ -49,14 +49,14 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
     _write_xlsx(
         landing24_path,
         "总表",
-        ["调剂学校", "地区", "院校类别", "所属学院", "专业代码", "专业名称", "初试总分"],
-        [["(10001)XX大学", "(31)上海市", "211", "信息学院", 85400, "电子信息", 321]],
+        ["调剂学校", "地区", "院校类别", "所属学院", "专业代码", "专业名称", "初试总分", "调剂成绩"],
+        [["(10001)XX大学", "(31)上海市", "211", "信息学院", 85400, "电子信息", 321, 78]],
     )
     _write_xlsx(
         landing25_path,
         "总表",
-        ["学校", "地区", "院校类别", "所属学院", "专业", "学习形式", "初试总分"],
-        [["(10001)XX大学", "(31)上海市", "211", "信息学院", "(085400)电子信息", "非全日制", 335]],
+        ["学校", "地区", "院校类别", "所属学院", "专业", "学习形式", "初试总分", "调剂成绩"],
+        [["(10001)XX大学", "(31)上海市", "211", "信息学院", "(085400)电子信息", "非全日制", 335, 82]],
     )
     _write_xlsx(
         program_path,
@@ -95,8 +95,8 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
     worksheet = workbook.active
     worksheet.title = "23-24-25考研调剂数据-（考研调剂必看）"
     worksheet.append(["本内容是23/24/25年全国院校全专业具体调剂数据", "Unnamed: 1", "Unnamed: 2", "Unnamed: 3", "Unnamed: 4", "Unnamed: 5", "Unnamed: 6", "Unnamed: 7", "Unnamed: 8", "    ", "Unnamed: 10", "Unnamed: 11"])
-    worksheet.append(["年份", "学校", "地区", "院校类别", "所属学院", "专业代码", "专业名称", "学习形式", "考生编号", "初试总分", "一志愿报考院校", "备注"])
-    worksheet.append([2023, "(10001)XX大学", "(31)上海市", "211", "信息学院", "085400", "电子信息", "非全日制", "101", 330, "复旦大学", None])
+    worksheet.append(["年份", "学校", "地区", "院校类别", "所属学院", "专业代码", "专业名称", "学习形式", "考生编号", "初试总分", "调剂成绩", "一志愿报考院校", "备注"])
+    worksheet.append([2023, "(10001)XX大学", "(31)上海市", "211", "信息学院", "085400", "电子信息", "非全日制", "101", 330, 79, "复旦大学", None])
     workbook.save(stats2325_path)
 
     with SessionLocal() as db:
@@ -194,13 +194,21 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
     stats2325_opportunity = next(row for row in opportunities if row["source_dataset_key"] == "adjustment_stats_2023_2025_raw")
     assert stats2325_opportunity["year"] == 2023
     assert stats2325_opportunity["avg_score"] == 330
-    assert len(profiles) == 5
+    assert len(profiles) == 6
     stats_row = next(row for row in profiles if row["source_type"] == "adjustment_stats")
     assert stats_row["major_code"] == "085400"
     assert stats_row["avg_score"] == 326.5
+    assert stats_row["adjustment_score_min"] == 318
 
     landing_rows = [row for row in profiles if row["source_type"] == "landing"]
     assert {row["year"] for row in landing_rows} == {2024, 2025}
+    assert all(row["city_name"] == "上海" for row in landing_rows)
+    assert all(row["initial_score_min"] is not None for row in landing_rows)
+    assert all(row["adjustment_score_min"] is not None for row in landing_rows)
+    legacy_stats_row = next(row for row in profiles if row["source_dataset_key"] == "adjustment_stats_2023_2025_raw")
+    assert legacy_stats_row["year"] == 2023
+    assert legacy_stats_row["initial_score_min"] == 330
+    assert legacy_stats_row["adjustment_score_min"] == 79
     notice_reference = next(row for row in profiles if row["source_type"] == "notice_reference")
     assert notice_reference["meta_json"]["top_source_url"] == "https://example.com/1"
     assert "https://example.com/1" in notice_reference["meta_json"]["reference_urls"]

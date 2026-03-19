@@ -595,6 +595,78 @@ def test_adjustment_search_supports_year_filter(client):
     assert "2026" in payload["items"][0]["summary"]
 
 
+def test_adjustment_search_supports_city_filter(client):
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                AdjustmentOpportunity(
+                    opportunity_key="city-filter-wh",
+                    source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                    source_type="snapshot",
+                    year=2025,
+                    school_name="湖北大学",
+                    school_name_normalized="湖北大学",
+                    school_code="10512",
+                    region_name="湖北省",
+                    city_name="武汉",
+                    school_tier="双一流",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    vacancy_count=3,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    title="湖北大学电子信息调剂快照",
+                    summary="武汉校区",
+                    source_url="https://example.com/hubu-wh",
+                    meta_json={},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="city-filter-cs",
+                    source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                    source_type="snapshot",
+                    year=2025,
+                    school_name="湖南大学",
+                    school_name_normalized="湖南大学",
+                    school_code="10532",
+                    region_name="湖南省",
+                    city_name="长沙",
+                    school_tier="985",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    vacancy_count=2,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    title="湖南大学电子信息调剂快照",
+                    summary="长沙校区",
+                    source_url="https://example.com/hnu-cs",
+                    meta_json={},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_city_filter_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"major": "电子信息", "city": "武汉"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["city"] == "武汉"
+
+
 def test_build_adjustment_opportunities_from_archives_includes_2026_program_rows():
     with SessionLocal() as db:
         archive = RawDatasetArchive(
@@ -818,10 +890,17 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
     item = search.json()["items"][0]
     assert item["historical_adjustment"]["sample_years"] == [2024, 2025]
     assert item["historical_adjustment"]["sample_count"] == 10
-    assert item["historical_adjustment"]["min_score"] == 315
-    assert item["historical_adjustment"]["avg_score"] == 330.0
+    assert item["historical_adjustment"]["initial_score_min"] == 315
+    assert item["historical_adjustment"]["initial_score_max"] == 341
+    assert item["historical_adjustment"]["min_score"] == 306
+    assert item["historical_adjustment"]["avg_score"] == 326.2
+    assert item["historical_adjustment"]["max_score"] == 332
     assert item["historical_adjustment"]["outlook"] == "high"
     assert item["historical_adjustment"]["future_program_count"] == 3
+    assert item["historical_adjustment"]["national_line_year"] == 2026
+    assert item["historical_adjustment"]["national_line_major_category"] == "工学"
+    assert item["historical_adjustment"]["national_line_zone_a"] == 264
+    assert item["historical_adjustment"]["national_line_zone_b"] == 254
     assert item["mentor_radar"]["review_count"] == 2
     assert item["mentor_radar"]["warning_count"] == 1
     assert item["mentor_radar"]["risk_label"] == "有导师预警"

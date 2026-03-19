@@ -153,6 +153,7 @@ def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchReques
                         AdjustmentOpportunity.department_name.ilike(f"%{term}%"),
                         AdjustmentOpportunity.major_name.ilike(f"%{term}%"),
                         AdjustmentOpportunity.region_name.ilike(f"%{term}%"),
+                        AdjustmentOpportunity.city_name.ilike(f"%{term}%"),
                         AdjustmentOpportunity.title.ilike(f"%{term}%"),
                         AdjustmentOpportunity.summary.ilike(f"%{term}%"),
                     )
@@ -176,6 +177,10 @@ def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchReques
         )
     if payload.region:
         query = query.filter(AdjustmentOpportunity.region_name.ilike(f"%{payload.region.strip()}%"))
+    if payload.city:
+        query = query.filter(AdjustmentOpportunity.city_name.ilike(f"%{payload.city.strip()}%"))
+    if payload.school_tier:
+        query = query.filter(AdjustmentOpportunity.school_tier.ilike(f"%{payload.school_tier.strip()}%"))
     return query
 
 
@@ -216,6 +221,7 @@ def _build_adjustment_detail_from_content(
             major_name=row.major,
             study_modes=[str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()],
             candidate_score=None,
+            reference_year=row.published_at.year if row.published_at is not None else None,
         )
 
     mentor_signal = mentor_radar.get(normalized_school_name) if school_name else None
@@ -260,6 +266,7 @@ def _build_adjustment_detail_from_content(
         school_name=school_name,
         department_name=str(extra.get("department_name") or "").strip() or None,
         region=row.region,
+        city=None,
         major=row.major,
         major_code=next((str(code) for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()), None),
         school_code=None,
@@ -267,6 +274,10 @@ def _build_adjustment_detail_from_content(
         study_mode=next((str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()), None),
         verification_status=None,
         vacancy_count=None,
+        initial_score_min=insight.initial_score_min if insight is not None else None,
+        initial_score_max=insight.initial_score_max if insight is not None else None,
+        adjustment_score_min=insight.adjustment_score_min if insight is not None else None,
+        adjustment_score_max=insight.adjustment_score_max if insight is not None else None,
         min_score=insight.min_score if insight is not None else None,
         avg_score=insight.avg_score if insight is not None else None,
         max_score=insight.max_score if insight is not None else None,
@@ -311,6 +322,7 @@ def _build_adjustment_detail_from_opportunity(
         major_name=row.major_name,
         study_modes=[row.study_mode] if row.study_mode else [],
         candidate_score=None,
+        reference_year=row.year,
     )
     mentor_signal = mentor_radar.get(normalized_school_name)
     mentor_reviews = load_mentor_review_excerpts(
@@ -340,6 +352,7 @@ def _build_adjustment_detail_from_opportunity(
         school_name=row.school_name,
         department_name=" / ".join(display_departments) if display_departments else row.department_name,
         region=row.region_name,
+        city=row.city_name,
         major=row.major_name,
         major_code=row.major_code,
         school_code=row.school_code,
@@ -347,6 +360,10 @@ def _build_adjustment_detail_from_opportunity(
         study_mode=row.study_mode,
         verification_status=" / ".join(merged["verification_statuses"]) if merged["verification_statuses"] else row.verification_status,
         vacancy_count=row.vacancy_count,
+        initial_score_min=merged["initial_score_min"],
+        initial_score_max=merged["initial_score_max"],
+        adjustment_score_min=merged["adjustment_score_min"],
+        adjustment_score_max=merged["adjustment_score_max"],
         min_score=merged["min_score"],
         avg_score=merged["avg_score"],
         max_score=merged["max_score"],
@@ -360,6 +377,7 @@ def _build_adjustment_detail_from_opportunity(
             for tag in [
                 _historical_source_label(row.source_type),
                 row.region_name,
+                row.city_name,
                 row.major_name,
                 row.major_code,
                 row.school_tier,
@@ -468,6 +486,7 @@ def _to_response(
                 major_name=row.major,
                 study_modes=[str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()],
                 candidate_score=payload.candidate_score,
+                reference_year=row.published_at.year if row.published_at is not None else None,
             )
             if insight is not None:
                 historical_adjustment = insight.__dict__
@@ -494,7 +513,9 @@ def _to_response(
                 source_type=row.source_type,
                 published_at=row.published_at,
                 region=row.region,
+                city=None,
                 major=row.major,
+                school_tier=None,
                 adjustment_major_codes=[
                     str(code) for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()
                 ],
@@ -554,14 +575,22 @@ def _build_adjustment_opportunity_summary(row: AdjustmentOpportunity, insight) -
         parts.append(_historical_source_label(row.source_type))
     if row.region_name:
         parts.append(row.region_name)
+    if row.city_name:
+        parts.append(row.city_name)
     if row.verification_status:
         parts.append(row.verification_status)
     if row.vacancy_count:
         parts.append(f"计划 {row.vacancy_count}")
-    if row.min_score is not None:
-        parts.append(f"最低 {row.min_score}")
-    if row.avg_score is not None:
-        parts.append(f"均分 {round(row.avg_score)}")
+    if row.initial_score_min is not None:
+        if row.initial_score_max is not None and row.initial_score_max != row.initial_score_min:
+            parts.append(f"初试 {row.initial_score_min}-{row.initial_score_max}")
+        else:
+            parts.append(f"初试 {row.initial_score_min}")
+    if row.adjustment_score_min is not None:
+        if row.adjustment_score_max is not None and row.adjustment_score_max != row.adjustment_score_min:
+            parts.append(f"调剂 {row.adjustment_score_min}-{row.adjustment_score_max}")
+        else:
+            parts.append(f"调剂 {row.adjustment_score_min}")
     if insight is not None and insight.outlook_label:
         parts.append(insight.outlook_label)
     if row.summary:
@@ -696,6 +725,10 @@ def _merge_adjustment_opportunity_rows(rows: list[AdjustmentOpportunity]) -> lis
         min_scores = [row.min_score for row in ordered if row.min_score is not None]
         avg_scores = [row.avg_score for row in ordered if row.avg_score is not None]
         max_scores = [row.max_score for row in ordered if row.max_score is not None]
+        initial_min_scores = [row.initial_score_min for row in ordered if row.initial_score_min is not None]
+        initial_max_scores = [row.initial_score_max for row in ordered if row.initial_score_max is not None]
+        adjustment_min_scores = [row.adjustment_score_min for row in ordered if row.adjustment_score_min is not None]
+        adjustment_max_scores = [row.adjustment_score_max for row in ordered if row.adjustment_score_max is not None]
 
         merged_meta = dict(primary.meta_json or {})
         merged_meta["reference_urls"] = reference_urls
@@ -714,6 +747,10 @@ def _merge_adjustment_opportunity_rows(rows: list[AdjustmentOpportunity]) -> lis
                 "reference_urls": reference_urls,
                 "dataset_keys": dataset_keys,
                 "source_types": source_types,
+                "initial_score_min": min(initial_min_scores) if initial_min_scores else None,
+                "initial_score_max": max(initial_max_scores) if initial_max_scores else None,
+                "adjustment_score_min": min(adjustment_min_scores) if adjustment_min_scores else None,
+                "adjustment_score_max": max(adjustment_max_scores) if adjustment_max_scores else None,
                 "min_score": min(min_scores) if min_scores else None,
                 "avg_score": (sum(avg_scores) / len(avg_scores)) if avg_scores else None,
                 "max_score": max(max_scores) if max_scores else None,
@@ -754,6 +791,7 @@ def _to_adjustment_opportunity_response(
             major_name=row.major_name,
             study_modes=[row.study_mode] if row.study_mode else [],
             candidate_score=payload.candidate_score,
+            reference_year=row.year,
         )
         mentor_signal = mentor_radar.get(normalized_school_name)
         release_timing_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
@@ -773,6 +811,7 @@ def _to_adjustment_opportunity_response(
             for tag in [
                 _historical_source_label(row.source_type),
                 row.region_name,
+                row.city_name,
                 row.major_name,
                 row.major_code,
                 row.school_tier,
@@ -795,7 +834,9 @@ def _to_adjustment_opportunity_response(
                 source_type=f"historical_{row.source_type}",
                 published_at=row.published_at,
                 region=row.region_name,
+                city=row.city_name,
                 major=row.major_name,
+                school_tier=row.school_tier,
                 adjustment_major_codes=[row.major_code] if row.major_code else [],
                 adjustment_study_modes=[row.study_mode] if row.study_mode else [],
                 adjustment_has_vacancy=(row.vacancy_count > 0) if row.vacancy_count is not None else None,

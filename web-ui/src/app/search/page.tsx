@@ -35,7 +35,9 @@ export default function SearchPage() {
   const [schoolName, setSchoolName] = useState("");
   const [majorFilter, setMajorFilter] = useState("");
   const [regionFilter, setRegionFilter] = useState("");
+  const [cityFilter, setCityFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
+  const [schoolTierFilter, setSchoolTierFilter] = useState("");
   const [candidateScoreFilter, setCandidateScoreFilter] = useState("");
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [schoolTiers, setSchoolTiers] = useState<SchoolTier[]>([]);
@@ -64,9 +66,9 @@ export default function SearchPage() {
   const filteredItems = useMemo(() => {
     if (!searchResult) return [];
     const filtered = searchResult.items.filter((item) => {
-      const text = [item.school_name, item.title, item.summary, item.major].filter(Boolean).join(" ");
+      const text = [item.school_name, item.title, item.summary, item.major, item.city, item.school_tier].filter(Boolean).join(" ");
       const matchesTier =
-        schoolTiers.length === 0 || schoolTiers.some((tier) => matchesSchoolTier(tier, text));
+        schoolTiers.length === 0 || schoolTiers.some((tier) => matchesSchoolTier(tier, item.school_tier, text));
       const matchesMode = matchesStudyMode(studyMode, text, item.adjustment_study_modes);
       const matchesHistory = !onlyHistoryBacked || (item.historical_adjustment?.sample_count || 0) > 0;
       const matchesLongTrack = !onlyLongTrack || item.school_intelligence?.confidence_label === "连续活跃";
@@ -153,7 +155,13 @@ export default function SearchPage() {
     majorFilter,
   });
   const hasAdvancedAdjustmentFilters = Boolean(
-    schoolName.trim() || majorFilter.trim() || regionFilter.trim() || yearFilter.trim() || candidateScoreFilter.trim(),
+    schoolName.trim() ||
+      majorFilter.trim() ||
+      regionFilter.trim() ||
+      cityFilter.trim() ||
+      yearFilter.trim() ||
+      schoolTierFilter.trim() ||
+      candidateScoreFilter.trim(),
   );
 
   const calculateMatch = () => {
@@ -194,6 +202,8 @@ export default function SearchPage() {
               school_name: resolvedSchoolName || undefined,
               major: resolvedMajorFilter || undefined,
               region: regionFilter.trim() || undefined,
+              city: cityFilter.trim() || undefined,
+              school_tier: schoolTierFilter.trim() || undefined,
               year: yearFilter.trim() ? Number(yearFilter.trim()) : undefined,
               candidate_score: candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined,
               page,
@@ -206,6 +216,8 @@ export default function SearchPage() {
           schoolName: resolvedSchoolName,
           majorFilter: resolvedMajorFilter,
           regionFilter,
+          cityFilter,
+          schoolTierFilter,
           yearFilter,
           candidateScoreFilter,
         }));
@@ -404,7 +416,9 @@ export default function SearchPage() {
                         schoolName.trim() && "院校",
                         majorFilter.trim() && "专业",
                         regionFilter.trim() && "地区",
+                        cityFilter.trim() && "城市",
                         yearFilter.trim() && "年份",
+                        schoolTierFilter.trim() && "院校类别",
                         candidateScoreFilter.trim() && "分数",
                       ]
                         .filter(Boolean)
@@ -418,7 +432,7 @@ export default function SearchPage() {
                 </div>
               </button>
               {advancedFiltersOpen ? (
-                <div className="grid gap-2 border-t border-white/8 px-4 pb-4 pt-3 md:grid-cols-6">
+                <div className="grid gap-2 border-t border-white/8 px-4 pb-4 pt-3 md:grid-cols-7">
                   <input
                     value={schoolName}
                     onChange={(event) => setSchoolName(event.target.value)}
@@ -441,12 +455,30 @@ export default function SearchPage() {
                     className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
                   />
                   <input
+                    value={cityFilter}
+                    onChange={(event) => setCityFilter(event.target.value)}
+                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
+                    placeholder="城市（如 武汉、上海）"
+                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                  />
+                  <input
                     value={yearFilter}
                     onChange={(event) => setYearFilter(event.target.value)}
                     onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
                     placeholder="年份（如 2026）"
                     className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
                   />
+                  <select
+                    value={schoolTierFilter}
+                    onChange={(event) => setSchoolTierFilter(event.target.value)}
+                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                  >
+                    <option value="">院校类别（全部）</option>
+                    <option value="985">985</option>
+                    <option value="211">211</option>
+                    <option value="双一流">双一流</option>
+                    <option value="普本">普本</option>
+                  </select>
                   <input
                     value={candidateScoreFilter}
                     onChange={(event) => setCandidateScoreFilter(event.target.value)}
@@ -461,7 +493,9 @@ export default function SearchPage() {
                       setSchoolName("");
                       setMajorFilter("");
                       setRegionFilter("");
+                      setCityFilter("");
                       setYearFilter("");
+                      setSchoolTierFilter("");
                       setCandidateScoreFilter("");
                       setSchoolTiers([]);
                       setStudyMode("all");
@@ -501,7 +535,9 @@ export default function SearchPage() {
                   setKeywords("");
                   setSchoolName("");
                   setMajorFilter("");
+                  setCityFilter("");
                   setYearFilter("");
+                  setSchoolTierFilter("");
                   setSchoolTiers([]);
                   setStudyMode("all");
                   setOnlyHistoryBacked(false);
@@ -761,11 +797,14 @@ export default function SearchPage() {
                           item.category === "adjustment" && item.historical_adjustment
                             ? [
                                 item.summary || "系统已命中调剂历史样本。",
-                                item.historical_adjustment.min_score !== null
-                                  ? `历史最低 ${item.historical_adjustment.min_score}`
+                                item.historical_adjustment.initial_score_min !== null
+                                  ? `初试 ${item.historical_adjustment.initial_score_min}-${item.historical_adjustment.initial_score_max ?? item.historical_adjustment.initial_score_min}`
                                   : null,
-                                item.historical_adjustment.avg_score !== null
-                                  ? `历史均分 ${Math.round(item.historical_adjustment.avg_score)}`
+                                item.historical_adjustment.adjustment_score_min !== null
+                                  ? `调剂 ${item.historical_adjustment.adjustment_score_min}-${item.historical_adjustment.adjustment_score_max ?? item.historical_adjustment.adjustment_score_min}`
+                                  : null,
+                                item.historical_adjustment.national_line_zone_a !== null
+                                  ? `A/B线 ${item.historical_adjustment.national_line_zone_a}/${item.historical_adjustment.national_line_zone_b}`
                                   : null,
                                 item.historical_adjustment.sample_count > 0
                                   ? `样本 ${item.historical_adjustment.sample_count}`
@@ -851,9 +890,10 @@ export default function SearchPage() {
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
                   {queryType === "adjustments" ? (
                     <>
-                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">先去掉一个筛选条件</span>
-                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">优先尝试学校名或专业代码</span>
-                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">必要时取消情报快筛</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">先去掉一个筛选条件</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">优先尝试学校名或专业代码</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">城市和院校类别可单独试</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">必要时取消情报快筛</span>
                     </>
                   ) : (
                     <>
@@ -1104,11 +1144,11 @@ function AdjustmentIntelCard({
   const probability = getAdjustmentProbability(
     candidateScore,
     item.historical_adjustment?.min_score ?? null,
-    item.historical_adjustment?.avg_score ?? null,
+    item.historical_adjustment?.max_score ?? null,
   );
   const timingSignal = getTimingSignal(item);
   const schoolSignal = getSchoolSignal(item);
-  const departmentLine = [item.department_name, item.major, item.adjustment_major_codes[0], item.region].filter(Boolean).join(" · ") || "调剂情报流";
+  const departmentLine = [item.department_name, item.major, item.adjustment_major_codes[0], item.city, item.region].filter(Boolean).join(" · ") || "调剂情报流";
   const tags = item.tags.length > 0 ? item.tags : [item.school_name || "院校待补充", item.major || "专业待补充"];
   const releaseTime = formatIntelTime(item.published_at || item.updated_at);
   const mentorWarning = (item.mentor_radar?.warning_count || 0) > 0;
@@ -1176,8 +1216,30 @@ function AdjustmentIntelCard({
             </div>
             <div className={`text-2xl font-black ${probability.textClass}`}>{probability.label}</div>
             <div className="mt-3 text-xs leading-5 text-slate-300">
-              <div>历史底线：{item.historical_adjustment?.min_score ?? "--"}</div>
-              <div>历史均分：{item.historical_adjustment?.avg_score ? Math.round(item.historical_adjustment.avg_score) : "--"}</div>
+              <div>
+                等效到
+                {item.historical_adjustment?.national_line_year ?? "当前年"}
+                ：
+                {formatScoreRange(item.historical_adjustment?.min_score, item.historical_adjustment?.max_score)}
+              </div>
+              <div>
+                国家线：
+                {formatNationalLineSummary(item.historical_adjustment)}
+              </div>
+              <div>
+                原始初试：
+                {formatScoreRange(
+                  item.historical_adjustment?.initial_score_min,
+                  item.historical_adjustment?.initial_score_max,
+                )}
+              </div>
+              <div>
+                原始调剂：
+                {formatScoreRange(
+                  item.historical_adjustment?.adjustment_score_min,
+                  item.historical_adjustment?.adjustment_score_max,
+                )}
+              </div>
               <div>样本数：{item.historical_adjustment?.sample_count ?? 0}</div>
             </div>
           </div>
@@ -1359,6 +1421,7 @@ function AdjustmentDetailDrawer({
                     <DetailRow label="院校" value={detail.school_name} />
                     <DetailRow label="学院" value={detail.department_name} />
                     <DetailRow label="地区" value={detail.region} />
+                    <DetailRow label="城市" value={detail.city} />
                     <DetailRow label="院校层级" value={detail.school_tier} />
                     <DetailRow label="学校代码" value={detail.school_code} />
                   </DetailBlock>
@@ -1372,9 +1435,23 @@ function AdjustmentDetailDrawer({
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-3">
-                  <DetailStat label="最低分" value={detail.min_score} />
-                  <DetailStat label="平均分" value={detail.avg_score ? Math.round(detail.avg_score) : null} />
-                  <DetailStat label="最高分" value={detail.max_score} />
+                  <DetailStat label="初试最低" value={detail.initial_score_min ?? detail.min_score} />
+                  <DetailStat label="初试最高" value={detail.initial_score_max ?? detail.max_score} />
+                  <DetailStat label="调剂最低" value={detail.adjustment_score_min} />
+                  <DetailStat label="调剂最高" value={detail.adjustment_score_max} />
+                  <DetailStat
+                    label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}最低`}
+                    value={detail.historical_adjustment?.min_score ?? detail.min_score}
+                  />
+                  <DetailStat
+                    label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}均值`}
+                    value={detail.historical_adjustment?.avg_score ? Math.round(detail.historical_adjustment.avg_score) : null}
+                  />
+                  <DetailStat
+                    label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}最高`}
+                    value={detail.historical_adjustment?.max_score ?? detail.max_score}
+                  />
+                  <DetailStat label="调剂人数" value={detail.vacancy_count} />
                 </div>
 
                 <DetailBlock title="调剂判断">
@@ -1391,6 +1468,10 @@ function AdjustmentDetailDrawer({
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <DetailRow label="历史样本" value={`${detail.historical_adjustment?.sample_count ?? 0}`} />
+                      <DetailRow
+                        label="国家线"
+                        value={formatNationalLineDetail(detail.historical_adjustment)}
+                      />
                       <DetailRow label="活跃度" value={detail.school_intelligence?.confidence_label || null} />
                       <DetailRow label="导师预警" value={detail.mentor_radar?.risk_label || "暂无明显预警"} />
                       <DetailRow label="发布时间规律" value={detail.release_timing?.signal_label || null} />
@@ -1546,7 +1627,7 @@ function DetailStat({ label, value }: { label: string; value: number | null | un
   );
 }
 
-function getAdjustmentProbability(score?: number, min?: number | null, avg?: number | null) {
+function getAdjustmentProbability(score?: number, min?: number | null, max?: number | null) {
   if (!score || min === null || min === undefined) {
     return {
       label: "等待评分",
@@ -1565,7 +1646,7 @@ function getAdjustmentProbability(score?: number, min?: number | null, avg?: num
       border: "border-red-400/20",
     };
   }
-  if (avg !== null && avg !== undefined && score >= avg) {
+  if (max !== null && max !== undefined && score >= max) {
     return {
       label: "极大概率",
       textClass: "text-emerald-300",
@@ -1575,12 +1656,41 @@ function getAdjustmentProbability(score?: number, min?: number | null, avg?: num
     };
   }
   return {
-    label: "冲刺有戏",
+    label: "过线可冲",
     textClass: "text-amber-300",
     iconClass: "text-amber-300",
     bg: "bg-amber-500/10",
     border: "border-amber-400/20",
   };
+}
+
+function formatScoreRange(min?: number | null, max?: number | null) {
+  if (min === null || min === undefined) {
+    return "--";
+  }
+  if (max === null || max === undefined || max === min) {
+    return `${min}`;
+  }
+  return `${min}-${max}`;
+}
+
+function formatNationalLineSummary(historicalAdjustment: SearchItem["historical_adjustment"]) {
+  if (!historicalAdjustment || historicalAdjustment.national_line_zone_a === null || historicalAdjustment.national_line_zone_a === undefined) {
+    return "--";
+  }
+  return `${historicalAdjustment.national_line_zone_a}/${historicalAdjustment.national_line_zone_b}`;
+}
+
+function formatNationalLineDetail(historicalAdjustment: SearchItem["historical_adjustment"]) {
+  if (!historicalAdjustment || historicalAdjustment.national_line_zone_a === null || historicalAdjustment.national_line_zone_a === undefined) {
+    return null;
+  }
+  const parts = [
+    historicalAdjustment.national_line_year ? `${historicalAdjustment.national_line_year}` : null,
+    historicalAdjustment.national_line_major_category || null,
+    `A/B ${historicalAdjustment.national_line_zone_a}/${historicalAdjustment.national_line_zone_b}`,
+  ].filter(Boolean);
+  return parts.join(" ");
 }
 
 function getTimingSignal(item: SearchItem) {
@@ -1737,6 +1847,8 @@ function buildEmptyResultMessage(
     schoolName: string;
     majorFilter: string;
     regionFilter: string;
+    cityFilter: string;
+    schoolTierFilter: string;
     yearFilter: string;
     candidateScoreFilter: string;
   },
@@ -1745,6 +1857,8 @@ function buildEmptyResultMessage(
   const schoolName = filters.schoolName.trim();
   const majorFilter = filters.majorFilter.trim();
   const regionFilter = filters.regionFilter.trim();
+  const cityFilter = filters.cityFilter.trim();
+  const schoolTierFilter = filters.schoolTierFilter.trim();
   const yearFilter = filters.yearFilter.trim();
   const schoolLikeKeyword = isSchoolLikeQuery(keyword);
   if (queryType === "adjustments") {
@@ -1753,6 +1867,9 @@ function buildEmptyResultMessage(
     }
     if (regionFilter && majorFilter) {
       return "当前地区和专业条件过窄，没有命中调剂结果，建议先放宽地区或专业。";
+    }
+    if (cityFilter && schoolTierFilter) {
+      return "当前城市和院校类别组合过窄，建议先去掉其中一个条件再试。";
     }
     if (yearFilter && schoolName) {
       return "当前年份和院校组合下没有命中调剂结果，建议切换年份，或先去掉年份看看该校其他年份机会。";
@@ -1840,14 +1957,14 @@ function isMajorCodeLikeQuery(value: string) {
   return /^\d{4,6}$/.test(compact);
 }
 
-function matchesSchoolTier(tier: SchoolTier, text: string) {
+function matchesSchoolTier(tier: SchoolTier, schoolTier: string | null, text: string) {
   const ruleMap: Record<SchoolTier, RegExp> = {
     "985/211": /(985|211)/i,
     双一流: /(双一流|一流大学|一流学科)/i,
     科研院所: /(研究所|科学院|研究院|科研院所)/i,
     普通本科: /(学院|大学)/i,
   };
-  return ruleMap[tier].test(text);
+  return ruleMap[tier].test([schoolTier || "", text].join(" "));
 }
 
 function matchesStudyMode(mode: StudyMode, text: string, structuredModes: string[] = []) {

@@ -276,7 +276,9 @@ export type SearchItem = {
   source_type: string;
   published_at: string | null;
   region: string | null;
+  city: string | null;
   major: string | null;
+  school_tier: string | null;
   adjustment_major_codes: string[];
   adjustment_study_modes: string[];
   adjustment_has_vacancy: boolean | null;
@@ -284,10 +286,23 @@ export type SearchItem = {
     sample_years: number[];
     source_types: string[];
     sample_count: number;
+    initial_score_min: number | null;
+    initial_score_max: number | null;
+    adjustment_score_min: number | null;
+    adjustment_score_max: number | null;
     min_score: number | null;
     avg_score: number | null;
     max_score: number | null;
     candidate_score: number | null;
+    delta_to_min: number | null;
+    delta_to_avg: number | null;
+    delta_to_max: number | null;
+    national_line_year: number | null;
+    national_line_major_category: string | null;
+    national_line_zone_a: number | null;
+    national_line_zone_b: number | null;
+    delta_to_zone_a: number | null;
+    delta_to_zone_b: number | null;
     outlook: "high" | "reach" | "cautious" | null;
     outlook_label: string | null;
     future_program_count: number | null;
@@ -355,6 +370,7 @@ export type AdjustmentSearchDetailResponse = {
   school_name: string | null;
   department_name: string | null;
   region: string | null;
+  city: string | null;
   major: string | null;
   major_code: string | null;
   school_code: string | null;
@@ -362,6 +378,10 @@ export type AdjustmentSearchDetailResponse = {
   study_mode: string | null;
   verification_status: string | null;
   vacancy_count: number | null;
+  initial_score_min: number | null;
+  initial_score_max: number | null;
+  adjustment_score_min: number | null;
+  adjustment_score_max: number | null;
   min_score: number | null;
   avg_score: number | null;
   max_score: number | null;
@@ -401,6 +421,8 @@ export type SearchBaseRequest = {
 export type AdjustmentSearchRequest = SearchBaseRequest & {
   major?: string;
   region?: string;
+  city?: string;
+  school_tier?: string;
   candidate_score?: number;
   year?: number;
 };

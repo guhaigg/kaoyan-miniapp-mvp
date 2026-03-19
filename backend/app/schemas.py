@@ -815,6 +815,8 @@ class AnnouncementSearchRequest(SearchBaseRequest):
 class AdjustmentSearchRequest(SearchBaseRequest):
     major: str | None = None
     region: str | None = None
+    city: str | None = None
+    school_tier: str | None = None
     candidate_score: int | None = Field(default=None, ge=0, le=500)
     year: int | None = Field(default=None, ge=2010, le=2100)
 
@@ -823,10 +825,23 @@ class HistoricalAdjustmentInsight(BaseModel):
     sample_years: list[int] = Field(default_factory=list)
     source_types: list[str] = Field(default_factory=list)
     sample_count: int = 0
+    initial_score_min: int | None = None
+    initial_score_max: int | None = None
+    adjustment_score_min: int | None = None
+    adjustment_score_max: int | None = None
     min_score: int | None = None
     avg_score: float | None = None
     max_score: int | None = None
     candidate_score: int | None = None
+    delta_to_min: int | None = None
+    delta_to_avg: int | None = None
+    delta_to_max: int | None = None
+    national_line_year: int | None = None
+    national_line_major_category: str | None = None
+    national_line_zone_a: int | None = None
+    national_line_zone_b: int | None = None
+    delta_to_zone_a: int | None = None
+    delta_to_zone_b: int | None = None
     outlook: Literal["high", "reach", "cautious"] | None = None
     outlook_label: str | None = None
     future_program_count: int | None = None
@@ -885,7 +900,9 @@ class SearchItem(BaseModel):
     source_type: str
     published_at: datetime | None
     region: str | None
+    city: str | None = None
     major: str | None
+    school_tier: str | None = None
     adjustment_major_codes: list[str] = Field(default_factory=list)
     adjustment_study_modes: list[str] = Field(default_factory=list)
     adjustment_has_vacancy: bool | None = None
@@ -929,6 +946,7 @@ class AdjustmentSearchDetailResponse(BaseModel):
     school_name: str | None = None
     department_name: str | None = None
     region: str | None = None
+    city: str | None = None
     major: str | None = None
     major_code: str | None = None
     school_code: str | None = None
@@ -936,6 +954,10 @@ class AdjustmentSearchDetailResponse(BaseModel):
     study_mode: str | None = None
     verification_status: str | None = None
     vacancy_count: int | None = None
+    initial_score_min: int | None = None
+    initial_score_max: int | None = None
+    adjustment_score_min: int | None = None
+    adjustment_score_max: int | None = None
     min_score: int | None = None
     avg_score: float | None = None
     max_score: int | None = None
