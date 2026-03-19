@@ -70,6 +70,12 @@ export default function SearchPage() {
       if (sampleDelta !== 0) return sampleDelta;
       const timingDelta = (right.release_timing?.sample_count || 0) - (left.release_timing?.sample_count || 0);
       if (timingDelta !== 0) return timingDelta;
+      const referenceDelta =
+        Number(Boolean(right.source_url || right.school_intelligence?.reference_urls?.length)) -
+        Number(Boolean(left.source_url || left.school_intelligence?.reference_urls?.length));
+      if (referenceDelta !== 0) return referenceDelta;
+      const warningDelta = (left.mentor_radar?.warning_count || 0) - (right.mentor_radar?.warning_count || 0);
+      if (warningDelta !== 0) return warningDelta;
       return new Date(right.published_at || right.updated_at).getTime() - new Date(left.published_at || left.updated_at).getTime();
     });
   }, [queryType, schoolTiers, searchResult, studyMode]);

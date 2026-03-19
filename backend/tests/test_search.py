@@ -309,6 +309,117 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
     ]
 
 
+def test_adjustment_search_sorts_by_intelligence_signal_before_recency(client):
+    older = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "甲大学电子信息调剂缺额公告",
+            "body": "电子信息方向可申请调剂，存在缺额。",
+            "school_name": "甲大学",
+            "major": "电子信息",
+            "region": "上海",
+            "source_type": "crawler",
+            "source_url": "https://example.com/a-adjustment",
+            "published_at": "2026-03-01T08:00:00Z",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert older.status_code == 200
+    newer = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "乙大学电子信息调剂通知",
+            "body": "电子信息方向调剂信息。",
+            "school_name": "乙大学",
+            "major": "电子信息",
+            "region": "上海",
+            "source_type": "crawler",
+            "source_url": "https://example.com/b-adjustment",
+            "published_at": "2026-03-10T08:00:00Z",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert newer.status_code == 200
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                HistoricalAdjustmentProfile(
+                    profile_key="rank-profile-1",
+                    year=2024,
+                    source_type="landing",
+                    source_dataset_key="adjustment_landing_2024_raw",
+                    school_name="甲大学",
+                    school_name_normalized="甲大学",
+                    school_code="10001",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode=None,
+                    sample_count=12,
+                    vacancy_count=None,
+                    min_score=315,
+                    avg_score=330.0,
+                    max_score=345,
+                    meta_json={"reference_urls": ["https://example.com/a-history"]},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="rank-profile-2",
+                    year=2025,
+                    source_type="future_program",
+                    source_dataset_key="admission_program_catalog_2026_raw",
+                    school_name="甲大学",
+                    school_name_normalized="甲大学",
+                    school_code="10001",
+                    region_name="上海",
+                    school_tier=None,
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode=None,
+                    sample_count=4,
+                    vacancy_count=4,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    meta_json={},
+                ),
+                HistoricalReleaseTimingProfile(
+                    profile_key="rank-timing-1",
+                    school_name="甲大学",
+                    school_name_normalized="甲大学",
+                    sample_count=4,
+                    peak_hour=20,
+                    peak_hour_bucket="晚间",
+                    window_start_md="04-09",
+                    window_end_md="04-12",
+                    consistency_ratio=0.75,
+                    meta_json={"sample_years": [2024, 2025]},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_search_rank_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"major": "电子信息", "region": "上海", "candidate_score": 340},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["items"][0]["school_name"] == "甲大学"
+    assert payload["items"][1]["school_name"] == "乙大学"
+
+
 def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):
     response = client.post(
         "/api/v1/content",

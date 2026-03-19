@@ -328,6 +328,7 @@ def replace_mentor_evaluations(db: Session, evaluations: list[dict[str, Any]]) -
         MentorEvaluation,
         evaluations,
         key_field="review_key",
+        batch_size=500,
     )
     return {"evaluations": count}
 

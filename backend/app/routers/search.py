@@ -42,6 +42,58 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
     return query
 
 
+def _adjustment_outlook_rank(value: str | None) -> int:
+    if value == "high":
+        return 3
+    if value == "reach":
+        return 2
+    if value == "cautious":
+        return 1
+    return 0
+
+
+def _school_confidence_rank(value: str | None) -> int:
+    if value == "连续活跃":
+        return 3
+    if value == "持续关注":
+        return 2
+    if value == "样本有限":
+        return 1
+    return 0
+
+
+def _is_adjustment_urgent(item: SearchItem) -> bool:
+    text = " ".join(
+        [
+            item.title or "",
+            item.summary or "",
+            item.major or "",
+            " ".join(item.tags or []),
+        ]
+    )
+    return bool(text) and any(marker in text for marker in ["紧急", "截止", "补录", "缺额"])
+
+
+def _adjustment_sort_key(item: SearchItem) -> tuple[int, int, int, int, int, int, int, float]:
+    has_reference_link = int(
+        bool(item.source_url)
+        or bool(item.school_intelligence and item.school_intelligence.reference_urls)
+    )
+    warning_penalty = -(item.mentor_radar.warning_count if item.mentor_radar is not None else 0)
+    published_at = item.published_at or item.updated_at
+    published_ts = published_at.timestamp() if published_at is not None else 0.0
+    return (
+        int(_is_adjustment_urgent(item)),
+        _adjustment_outlook_rank(item.historical_adjustment.outlook if item.historical_adjustment is not None else None),
+        _school_confidence_rank(item.school_intelligence.confidence_label if item.school_intelligence is not None else None),
+        item.historical_adjustment.sample_count if item.historical_adjustment is not None else 0,
+        item.release_timing.sample_count if item.release_timing is not None else 0,
+        has_reference_link,
+        warning_penalty,
+        published_ts,
+    )
+
+
 def _to_response(
     db: Session,
     payload: AnnouncementSearchRequest | AdjustmentSearchRequest,
@@ -124,6 +176,8 @@ def _to_response(
             )
         )
     last_updated = max((x.updated_at for x in items), default=None)
+    if isinstance(payload, AdjustmentSearchRequest):
+        serialized.sort(key=_adjustment_sort_key, reverse=True)
     return SearchResponse(
         request_id=request_id,
         mode="hybrid_refresh" if payload.refresh else "cache",
