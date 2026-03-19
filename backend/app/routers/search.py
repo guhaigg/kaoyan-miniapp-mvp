@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
+import re
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -27,14 +28,82 @@ from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
 ANONYMOUS_PREVIEW_LIMIT = 2
+SCHOOL_SUFFIXES = (
+    "大学",
+    "学院",
+    "研究院",
+    "研究所",
+    "师范大学",
+    "理工大学",
+    "工业大学",
+    "科技大学",
+    "农业大学",
+    "中医药大学",
+)
+
+
+def _dedupe_terms(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _build_school_search_terms(value: str) -> list[str]:
+    raw = value.strip()
+    compact = re.sub(r"\s+", "", raw)
+    terms = [raw, compact]
+    for suffix in SCHOOL_SUFFIXES:
+        if compact.endswith(suffix) and len(compact) > len(suffix) + 1:
+            terms.append(compact[: -len(suffix)])
+    return _dedupe_terms(terms)
+
+
+def _build_keyword_terms(value: str) -> list[str]:
+    raw = value.strip()
+    compact = re.sub(r"\s+", "", raw)
+    split_terms = [part.strip() for part in re.split(r"[\s,，、/|;；]+", raw) if part.strip()]
+    return _dedupe_terms([raw, compact, *split_terms])
+
+
+def _build_major_terms(value: str) -> list[str]:
+    raw = value.strip()
+    compact = re.sub(r"\s+", "", raw)
+    digits = re.sub(r"\D+", "", raw)
+    terms = [raw, compact]
+    if digits:
+        terms.append(digits)
+        if len(digits) > 4:
+            terms.append(digits[:4])
+    return _dedupe_terms(terms)
 
 
 def _apply_common_filters(query, payload: AnnouncementSearchRequest | AdjustmentSearchRequest):
+    if payload.school_name or payload.keywords:
+        query = query.join(School, isouter=True)
     if payload.school_name:
-        query = query.join(School, isouter=True).filter(School.name.ilike(f"%{payload.school_name.strip()}%"))
+        terms = _build_school_search_terms(payload.school_name.strip())
+        query = query.filter(or_(*[School.name.ilike(f"%{term}%") for term in terms]))
     if payload.keywords:
-        keyword = payload.keywords.strip()
-        query = query.filter((Content.title.ilike(f"%{keyword}%")) | (Content.body.ilike(f"%{keyword}%")))
+        keyword_terms = _build_keyword_terms(payload.keywords.strip())
+        query = query.filter(
+            and_(
+                *[
+                    or_(
+                        Content.title.ilike(f"%{term}%"),
+                        Content.body.ilike(f"%{term}%"),
+                        Content.major.ilike(f"%{term}%"),
+                        School.name.ilike(f"%{term}%"),
+                    )
+                    for term in keyword_terms
+                ]
+            )
+        )
     if payload.start_date:
         query = query.filter(Content.published_at >= payload.start_date)
     if payload.end_date:
@@ -325,7 +394,19 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     base_query = db.query(Content).filter(Content.category == "adjustment")
     base_query = _apply_common_filters(base_query, payload)
     if payload.major:
-        base_query = base_query.filter(Content.major.ilike(f"%{payload.major.strip()}%"))
+        major_terms = _build_major_terms(payload.major.strip())
+        base_query = base_query.filter(
+            or_(
+                *[
+                    or_(
+                        Content.major.ilike(f"%{term}%"),
+                        Content.title.ilike(f"%{term}%"),
+                        Content.body.ilike(f"%{term}%"),
+                    )
+                    for term in major_terms
+                ]
+            )
+        )
     if payload.region:
         base_query = base_query.filter(Content.region.ilike(f"%{payload.region.strip()}%"))
 

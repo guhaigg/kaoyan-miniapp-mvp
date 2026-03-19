@@ -120,6 +120,64 @@ def test_adjustment_search_exposes_structured_adjustment_meta(client):
     assert item["adjustment_has_vacancy"] is True
 
 
+def test_adjustment_search_keyword_matches_major_field_fuzzily(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "湖北大学外国语学院调剂通知",
+            "body": "现有缺额，欢迎调剂。",
+            "school_name": "湖北大学",
+            "major": "学科教学（英语）",
+            "region": "湖北",
+            "source_type": "crawler",
+            "source_url": "https://example.com/hubu-english-adjustment",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+
+    token = _register_and_login(client, "adjustment_search_english_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"keywords": "英语"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] >= 1
+    assert payload["items"][0]["school_name"] == "湖北大学"
+
+
+def test_adjustment_search_school_filter_supports_shorter_school_root(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "湖北大学电子信息调剂公告",
+            "body": "电子信息方向有调剂缺额。",
+            "school_name": "湖北大学",
+            "major": "电子信息",
+            "region": "湖北",
+            "source_type": "crawler",
+            "source_url": "https://example.com/hubu-adjustment",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+
+    token = _register_and_login(client, "adjustment_search_hubei_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "湖北"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] >= 1
+    assert payload["items"][0]["school_name"] == "湖北大学"
+
+
 def test_adjustment_search_exposes_historical_adjustment_insight(client):
     response = client.post(
         "/api/v1/content",

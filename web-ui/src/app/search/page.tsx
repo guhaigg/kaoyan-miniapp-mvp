@@ -135,7 +135,7 @@ export default function SearchPage() {
     queryType === "adjustments" ? adjustmentQueryIntent.keywords : keywords.trim();
   const primaryInputPlaceholder =
     queryType === "adjustments"
-      ? "输入学校名、专业名或专业代码；系统会自动识别..."
+      ? "输入学校名、专业名或专业代码；系统会自动做宽匹配..."
       : "输入院校代码、名称、学院或招生关键字...";
 
   const calculateMatch = () => {
@@ -326,7 +326,7 @@ export default function SearchPage() {
           </div>
           <div className="mt-2 text-xs text-slate-500">
               {queryType === "adjustments"
-                ? "调剂模式下，主搜索框会优先识别学校名、专业名和专业代码；只有你额外填写院校或专业字段时，主框才作为补充关键词。"
+                ? "调剂模式下，主搜索框会自动识别明确的学校名或专业代码；其他输入按学校名、专业名、标题和正文做宽匹配。"
                 : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-5">
@@ -1243,10 +1243,18 @@ function resolveAdjustmentQueryIntent(filters: {
     };
   }
 
+  if (isMajorCodeLikeQuery(keyword)) {
+    return {
+      keywords: "",
+      schoolName: "",
+      major: keyword,
+    };
+  }
+
   return {
-    keywords: "",
+    keywords: keyword,
     schoolName: "",
-    major: keyword,
+    major: "",
   };
 }
 
@@ -1339,6 +1347,11 @@ function buildEmptyStateDetail(
 function isSchoolLikeQuery(value: string) {
   if (!value) return false;
   return /(大学|学院|研究院|研究所|师范|医科|理工|科技大学|工业大学|农业大学|中医药大学)$/.test(value);
+}
+
+function isMajorCodeLikeQuery(value: string) {
+  const compact = value.replace(/\s+/g, "");
+  return /^\d{4,6}$/.test(compact);
 }
 
 function matchesSchoolTier(tier: SchoolTier, text: string) {
