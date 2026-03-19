@@ -34,6 +34,10 @@ export default function SearchPage() {
   const [candidateScoreFilter, setCandidateScoreFilter] = useState("");
   const [schoolTiers, setSchoolTiers] = useState<SchoolTier[]>([]);
   const [studyMode, setStudyMode] = useState<StudyMode>("all");
+  const [onlyHistoryBacked, setOnlyHistoryBacked] = useState(false);
+  const [onlyLongTrack, setOnlyLongTrack] = useState(false);
+  const [onlyWithReferenceLinks, setOnlyWithReferenceLinks] = useState(false);
+  const [hideMentorWarnings, setHideMentorWarnings] = useState(false);
   const [message, setMessage] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
 
@@ -54,7 +58,12 @@ export default function SearchPage() {
       const matchesTier =
         schoolTiers.length === 0 || schoolTiers.some((tier) => matchesSchoolTier(tier, text));
       const matchesMode = matchesStudyMode(studyMode, text, item.adjustment_study_modes);
-      return matchesTier && matchesMode;
+      const matchesHistory = !onlyHistoryBacked || (item.historical_adjustment?.sample_count || 0) > 0;
+      const matchesLongTrack = !onlyLongTrack || item.school_intelligence?.confidence_label === "连续活跃";
+      const matchesReference =
+        !onlyWithReferenceLinks || Boolean(item.source_url || item.school_intelligence?.reference_urls?.length);
+      const matchesMentorRisk = !hideMentorWarnings || (item.mentor_radar?.warning_count || 0) === 0;
+      return matchesTier && matchesMode && matchesHistory && matchesLongTrack && matchesReference && matchesMentorRisk;
     });
     if (queryType !== "adjustments") {
       return filtered;
@@ -78,11 +87,26 @@ export default function SearchPage() {
       if (warningDelta !== 0) return warningDelta;
       return new Date(right.published_at || right.updated_at).getTime() - new Date(left.published_at || left.updated_at).getTime();
     });
-  }, [queryType, schoolTiers, searchResult, studyMode]);
+  }, [
+    hideMentorWarnings,
+    onlyHistoryBacked,
+    onlyLongTrack,
+    onlyWithReferenceLinks,
+    queryType,
+    schoolTiers,
+    searchResult,
+    studyMode,
+  ]);
 
   const currentPage = searchResult?.page || 1;
   const totalPages = searchResult ? Math.max(1, Math.ceil(searchResult.total / searchResult.page_size)) : 1;
-  const hasLocalFilters = schoolTiers.length > 0 || studyMode !== "all";
+  const hasLocalFilters =
+    schoolTiers.length > 0 ||
+    studyMode !== "all" ||
+    onlyHistoryBacked ||
+    onlyLongTrack ||
+    onlyWithReferenceLinks ||
+    hideMentorWarnings;
   const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
   const adjustmentLocked = isAnonymous;
   const previewLimit = searchResult?.preview_limit ?? 2;
@@ -275,7 +299,7 @@ export default function SearchPage() {
               {isSearching ? "检索中..." : "检索"}
             </button>
           </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-5">
+              <div className="mt-3 grid gap-2 md:grid-cols-5">
             <input
               value={schoolName}
               onChange={(event) => setSchoolName(event.target.value)}
@@ -310,6 +334,10 @@ export default function SearchPage() {
                 setCandidateScoreFilter("");
                 setSchoolTiers([]);
                 setStudyMode("all");
+                setOnlyHistoryBacked(false);
+                setOnlyLongTrack(false);
+                setOnlyWithReferenceLinks(false);
+                setHideMentorWarnings(false);
                 setSearchResult(null);
                 setMessage("");
               }}
@@ -465,6 +493,34 @@ export default function SearchPage() {
                     description="当前先基于真实发布时间和历史样本覆盖做发榜信号，后续再叠加更细的生物钟统计。"
                     accent="violet"
                   />
+                </div>
+
+                <div className="border-t border-white/8 px-5 py-4 md:px-6">
+                  <div className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                    情报快筛
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <IntelFilterChip
+                      active={onlyHistoryBacked}
+                      onClick={() => setOnlyHistoryBacked((value) => !value)}
+                      label="只看有历史样本"
+                    />
+                    <IntelFilterChip
+                      active={onlyLongTrack}
+                      onClick={() => setOnlyLongTrack((value) => !value)}
+                      label="只看连续活跃"
+                    />
+                    <IntelFilterChip
+                      active={onlyWithReferenceLinks}
+                      onClick={() => setOnlyWithReferenceLinks((value) => !value)}
+                      label="只看带历史链接"
+                    />
+                    <IntelFilterChip
+                      active={hideMentorWarnings}
+                      onClick={() => setHideMentorWarnings((value) => !value)}
+                      label="排除导师预警"
+                    />
+                  </div>
                 </div>
               </section>
             ) : null}
@@ -784,6 +840,30 @@ function IntelSignalCard({
       </div>
       <p className="mt-2 text-sm leading-6 text-slate-300">{description}</p>
     </div>
+  );
+}
+
+function IntelFilterChip({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+        active
+          ? "border-cyan-400/40 bg-cyan-400/12 text-cyan-100"
+          : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
