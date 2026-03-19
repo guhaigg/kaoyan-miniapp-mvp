@@ -22,6 +22,7 @@ from ..services.historical_intelligence import (
     build_search_insight,
     build_mentor_radar_insight,
     build_release_timing_insight,
+    canonicalize_reference_url,
     load_mentor_review_excerpts,
     load_mentor_evaluations_for_search,
     load_school_intelligence_for_search,
@@ -221,7 +222,7 @@ def _should_full_scan_adjustment_query(payload: AdjustmentSearchRequest) -> bool
 
 
 def _append_unique_link(links: list[AdjustmentSearchLinkItem], *, label: str, url: str | None, link_type: str | None = None, source: str | None = None):
-    normalized = str(url or "").strip()
+    normalized = canonicalize_reference_url(url)
     if not normalized:
         return
     if any(item.url == normalized for item in links):
@@ -234,6 +235,26 @@ def _append_unique_link(links: list[AdjustmentSearchLinkItem], *, label: str, ur
             source=source,
         )
     )
+
+
+def _display_adjustment_vacancy_count(row: AdjustmentOpportunity) -> int | None:
+    if row.vacancy_count is None:
+        return None
+    if row.source_type in {"snapshot", "adjustment_notice", "balance", "future_program"}:
+        return row.vacancy_count
+    return None
+
+
+def _sanitize_adjustment_summary_text(row: AdjustmentOpportunity) -> str | None:
+    summary = str(row.summary or "").strip()
+    if not summary:
+        return None
+    if row.source_type in {"stats", "adjustment_stats", "landing"}:
+        summary = re.sub(r"(?:计划|调剂人数|样本)\s*\d+", "", summary)
+        summary = re.sub(r"\s*·\s*·\s*", " · ", summary)
+        summary = re.sub(r"(^\s*·\s*|\s*·\s*$)", "", summary)
+        summary = re.sub(r"\s{2,}", " ", summary).strip()
+    return summary or None
 
 
 def _build_mentor_scope_signals(
@@ -468,7 +489,7 @@ def _build_adjustment_detail_from_opportunity(
         school_tier=row.school_tier,
         study_mode=row.study_mode,
         verification_status=" / ".join(merged["verification_statuses"]) if merged["verification_statuses"] else row.verification_status,
-        vacancy_count=row.vacancy_count,
+        vacancy_count=_display_adjustment_vacancy_count(row),
         initial_score_min=merged["initial_score_min"],
         initial_score_max=merged["initial_score_max"],
         adjustment_score_min=merged["adjustment_score_min"],
@@ -626,6 +647,7 @@ def _to_response(
                 category=row.category,
                 adjustment_year=row.published_at.year if row.published_at is not None else None,
                 adjustment_vacancy_count=_parse_optional_int(adjustment_meta.get("vacancy_count")),
+                adjustment_merge_vacancy_count=_parse_optional_int(adjustment_meta.get("vacancy_count")),
                 school_name=school_name,
                 department_name=department_name,
                 title=row.title,
@@ -715,8 +737,9 @@ def _build_adjustment_opportunity_summary(row: AdjustmentOpportunity, insight) -
         parts.append(row.city_name)
     if row.verification_status:
         parts.append(row.verification_status)
-    if row.vacancy_count:
-        parts.append(f"计划 {row.vacancy_count}")
+    display_vacancy_count = _display_adjustment_vacancy_count(row)
+    if display_vacancy_count:
+        parts.append(f"人数 {display_vacancy_count}")
     if row.initial_score_min is not None:
         if row.initial_score_max is not None and row.initial_score_max != row.initial_score_min:
             parts.append(f"初试 {row.initial_score_min}-{row.initial_score_max}")
@@ -729,8 +752,9 @@ def _build_adjustment_opportunity_summary(row: AdjustmentOpportunity, insight) -
             parts.append(f"调剂 {row.adjustment_score_min}")
     if insight is not None and insight.outlook_label:
         parts.append(insight.outlook_label)
-    if row.summary:
-        parts.append(row.summary)
+    sanitized_summary = _sanitize_adjustment_summary_text(row)
+    if sanitized_summary:
+        parts.append(sanitized_summary)
     return " · ".join(parts)
 
 
@@ -893,7 +917,7 @@ def _merge_adjustment_opportunity_rows(rows: list[AdjustmentOpportunity]) -> lis
                 meta = dict(candidate_row.meta_json or {})
                 urls = [candidate_row.source_url, meta.get("source_url"), meta.get("top_source_url"), *(meta.get("reference_urls") or [])]
                 for candidate in urls:
-                    url = str(candidate or "").strip()
+                    url = canonicalize_reference_url(candidate)
                     if url and url not in seen_urls:
                         seen_urls.add(url)
                         reference_urls.append(url)
@@ -956,9 +980,9 @@ def _normalize_search_item_department_token(item: SearchItem) -> str:
 
 
 def _normalize_search_item_vacancy_token(item: SearchItem) -> str:
-    if item.adjustment_vacancy_count is None:
+    if item.adjustment_merge_vacancy_count is None:
         return ""
-    return str(item.adjustment_vacancy_count)
+    return str(item.adjustment_merge_vacancy_count)
 
 
 def _build_search_item_base_merge_key(item: SearchItem) -> str:
@@ -1187,7 +1211,8 @@ def _to_adjustment_opportunity_response(
                 item_kind="opportunity",
                 category="adjustment",
                 adjustment_year=row.year,
-                adjustment_vacancy_count=row.vacancy_count,
+                adjustment_vacancy_count=_display_adjustment_vacancy_count(row),
+                adjustment_merge_vacancy_count=row.vacancy_count,
                 school_name=school_name,
                 department_name=" / ".join(display_departments[:2]) if display_departments else row.department_name,
                 title=row.title,

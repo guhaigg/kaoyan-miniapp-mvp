@@ -1478,7 +1478,7 @@ function AdjustmentDetailDrawer({
                     <DetailRow label="专业代码" value={detail.major_code} />
                     <DetailRow label="学习形式" value={detail.study_mode} />
                     <DetailRow label="验证状态" value={detail.verification_status} />
-                    <DetailRow label="计划人数" value={detail.vacancy_count?.toString() || null} />
+                    <DetailRow label="调剂人数" value={detail.vacancy_count?.toString() || null} />
                   </DetailBlock>
                 </div>
 
@@ -1499,7 +1499,6 @@ function AdjustmentDetailDrawer({
                     label={`等效到${detail.historical_adjustment?.national_line_year ?? "当前"}最高`}
                     value={detail.historical_adjustment?.max_score ?? detail.max_score}
                   />
-                  <DetailStat label="调剂人数" value={detail.vacancy_count} />
                 </div>
 
                 <DetailBlock title="调剂判断">

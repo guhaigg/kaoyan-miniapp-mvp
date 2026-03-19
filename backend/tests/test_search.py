@@ -1503,6 +1503,8 @@ def test_adjustment_search_merges_cross_source_records_into_single_entity(client
     assert item["adjustment_year"] == 2025
     assert item["merged_count"] >= 2
     assert item["title"] == "湖北大学 材料与化工 调剂信息"
+    assert item["adjustment_vacancy_count"] is None
+    assert "计划 219" not in (item["summary"] or "")
 
 
 def test_adjustment_search_keeps_missing_department_item_separate_when_vacancy_count_differs(client):
@@ -2002,7 +2004,7 @@ def test_adjustment_detail_returns_structured_opportunity_payload():
                 title="山东大学 英语笔译 调剂信息",
                 summary="2025 年调剂快照 · 官网 · 计划 4",
                 source_url="https://example.com/sdu-adjustment",
-                meta_json={"reference_urls": ["https://example.com/sdu-reference"]},
+                meta_json={"reference_urls": ["https://example.com/sdu-reference", "https://example.com/sdu-reference/"]},
             )
         )
         db.add_all(
@@ -2084,6 +2086,8 @@ def test_adjustment_detail_returns_structured_opportunity_payload():
     assert payload["mentor_department_reviews"][0]["mentor_name"] == "李老师"
     assert "延毕风险" in payload["mentor_department_reviews"][0]["review_text"]
     assert "<br>" not in payload["mentor_department_reviews"][0]["review_text"]
+    urls = [entry["url"] for entry in payload["links"]]
+    assert urls.count("https://example.com/sdu-reference") == 1
 
 
 def test_adjustment_detail_returns_content_body(client):

@@ -72,7 +72,7 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         mentor_path,
         "Sheet1",
         ["学校", "学院", "姓名", "评价"],
-        [["XX大学", "信息学院", "张老师", "评价1：好老师；评价2：不强制延毕。"]],
+        [["XX大学", "XX大学信息学院（电子信息）", "张老师", "评价1：好老师；评价2：不强制延毕。"]],
     )
     _write_xlsx(
         snapshot25_path,
@@ -232,6 +232,7 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
     assert notice_reference["meta_json"]["top_source_url"] == "https://example.com/1"
     assert "https://example.com/1" in notice_reference["meta_json"]["reference_urls"]
     assert len(mentors) == 1
+    assert mentors[0]["department_name_normalized"] == "信息学院"
     assert mentors[0]["risk_level"] == "warning"
     assert "好老师" in mentors[0]["review_tags"]
     assert len(timings) == 1

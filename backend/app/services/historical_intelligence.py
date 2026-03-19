@@ -4,6 +4,7 @@ import base64
 import gzip
 import hashlib
 import re
+from urllib.parse import urlsplit, urlunsplit
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -265,6 +266,35 @@ def normalize_department_name(value: Any) -> str | None:
     text = _strip_text(value)
     text = re.sub(r"\s+", "", text)
     return text or None
+
+
+def normalize_mentor_department_name(value: Any, *, school_name: Any | None = None) -> str | None:
+    text = normalize_department_name(value)
+    if not text:
+        return None
+    normalized_school_name = normalize_school_name(school_name)
+    if normalized_school_name and text.startswith(normalized_school_name):
+        text = text[len(normalized_school_name):]
+    text = text.strip("（）()[]【】")
+    matched = re.search(r"([\u4e00-\u9fa5A-Za-z0-9·]+?(?:学院|研究院|研究所|中心))", text)
+    if matched:
+        text = matched.group(1)
+    text = re.sub(r"(学院|研究院|研究所|中心).*$", r"\1", text)
+    return text or None
+
+
+def canonicalize_reference_url(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = urlsplit(text)
+    except Exception:
+        return text.rstrip("/") or text
+    if not parsed.scheme or not parsed.netloc:
+        return text.rstrip("/") or text
+    path = parsed.path.rstrip("/") or "/"
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.query, ""))
 
 
 def normalize_study_mode(value: Any) -> str | None:
@@ -716,7 +746,7 @@ def _apply_department_scope(
     department_name: str | None,
     department_getter,
 ) -> list[Any]:
-    normalized_department_name = normalize_department_name(department_name)
+    normalized_department_name = normalize_mentor_department_name(department_name)
     if not normalized_department_name:
         return rows
     exact_rows = [
@@ -743,12 +773,15 @@ def _apply_mentor_department_scope(
     *,
     department_name: str | None,
 ) -> list[MentorEvaluation]:
-    normalized_department_name = normalize_department_name(department_name)
+    normalized_department_name = normalize_mentor_department_name(department_name)
     if normalized_department_name:
         return [
             row
             for row in rows
-            if normalize_department_name(row.department_name_normalized or row.department_name) == normalized_department_name
+            if normalize_mentor_department_name(
+                row.department_name_normalized or row.department_name,
+                school_name=row.school_name_normalized or row.school_name,
+            ) == normalized_department_name
         ]
     return [
         row
@@ -766,12 +799,15 @@ def _apply_exact_department_mentor_scope(
     *,
     department_name: str | None,
 ) -> list[MentorEvaluation]:
-    normalized_department_name = normalize_department_name(department_name)
+    normalized_department_name = normalize_mentor_department_name(department_name)
     if normalized_department_name:
         return [
             row
             for row in rows
-            if normalize_department_name(row.department_name_normalized or row.department_name) == normalized_department_name
+            if normalize_mentor_department_name(
+                row.department_name_normalized or row.department_name,
+                school_name=row.school_name_normalized or row.school_name,
+            ) == normalized_department_name
         ]
     return []
 
@@ -1246,7 +1282,10 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
         school_name_normalized = normalize_school_name(school_name)
         if not school_name_normalized:
             return
-        department_name_normalized = normalize_department_name(department_name)
+        department_name_normalized = normalize_mentor_department_name(
+            department_name,
+            school_name=school_name,
+        )
         major_name_normalized = normalize_major_name(major_name)
         opportunity_key = build_opportunity_key(
             source_dataset_key=source_dataset_key,
@@ -1884,7 +1923,10 @@ def build_mentor_evaluations_from_archives(db: Session) -> list[dict[str, Any]]:
         department_name = _strip_text(row.get("学院")) or None
         if department_name == "-":
             department_name = None
-        department_name_normalized = normalize_department_name(department_name)
+        department_name_normalized = normalize_mentor_department_name(
+            department_name,
+            school_name=school_name,
+        )
         mentor_name_normalized = normalize_person_name(mentor_name)
         review_tags, risk_level = _risk_tags_and_level(review_text)
         review_key = build_review_key(
@@ -2486,8 +2528,9 @@ def load_school_intelligence_for_search(
                 ]
             )
             for url in raw_urls:
-                if url and url not in reference_urls:
-                    reference_urls.append(url)
+                    canonical = canonicalize_reference_url(url)
+                    if canonical and canonical not in reference_urls:
+                        reference_urls.append(canonical)
         profile_count = len(profiles)
 
         if len(active_years) >= 3 or profile_count >= 40:
@@ -2614,7 +2657,10 @@ def load_mentor_review_excerpts(
             bool(
                 normalized_department_name
                 and row.department_name_normalized
-                and row.department_name_normalized == normalized_department_name
+                and normalize_mentor_department_name(
+                    row.department_name_normalized,
+                    school_name=row.school_name_normalized or row.school_name,
+                ) == normalized_department_name
             )
         )
         risk_rank = 2 if row.risk_level == "warning" else 1 if row.risk_level == "positive" else 0
