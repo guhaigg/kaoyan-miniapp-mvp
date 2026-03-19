@@ -64,6 +64,16 @@ def _dedupe_terms(values: list[str]) -> list[str]:
     return result
 
 
+def _parse_optional_int(value) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        return None
+
+
 def _build_school_search_terms(value: str) -> list[str]:
     raw = value.strip()
     compact = re.sub(r"\s+", "", raw)
@@ -552,6 +562,7 @@ def _to_response(
                 item_kind="content",
                 category=row.category,
                 adjustment_year=row.published_at.year if row.published_at is not None else None,
+                adjustment_vacancy_count=_parse_optional_int(adjustment_meta.get("vacancy_count")),
                 school_name=school_name,
                 department_name=department_name,
                 title=row.title,
@@ -879,6 +890,12 @@ def _normalize_search_item_department_token(item: SearchItem) -> str:
     return normalize_department_name(item.department_name) or ""
 
 
+def _normalize_search_item_vacancy_token(item: SearchItem) -> str:
+    if item.adjustment_vacancy_count is None:
+        return ""
+    return str(item.adjustment_vacancy_count)
+
+
 def _build_search_item_base_merge_key(item: SearchItem) -> str:
     return "|".join(
         [
@@ -928,27 +945,30 @@ def _split_search_items_by_department(items: list[SearchItem]) -> list[list[Sear
     if not explicit_groups:
         return [items]
     if len(explicit_groups) == 1:
-        return [next(iter(explicit_groups.values())) + missing_items]
-    groups = list(explicit_groups.values())
-    if missing_items:
-        groups.append(missing_items)
-    return groups
-
-
-def _drop_ambiguous_school_level_search_items(items: list[SearchItem]) -> list[SearchItem]:
-    if not items:
-        return []
-    explicit_groups: dict[str, list[SearchItem]] = defaultdict(list)
-    missing_items: list[SearchItem] = []
-    for item in items:
-        department_token = _normalize_search_item_department_token(item)
-        if department_token:
-            explicit_groups[department_token].append(item)
-        else:
-            missing_items.append(item)
-    if len(explicit_groups) <= 1 or not missing_items:
-        return items
-    return [item for group in explicit_groups.values() for item in group]
+        group = next(iter(explicit_groups.values()))
+        explicit_vacancy_tokens = {
+            _normalize_search_item_vacancy_token(item)
+            for item in group
+            if _normalize_search_item_vacancy_token(item)
+        }
+        attachable_missing: list[SearchItem] = []
+        unmatched_missing: list[SearchItem] = []
+        for item in missing_items:
+            vacancy_token = _normalize_search_item_vacancy_token(item)
+            if not explicit_vacancy_tokens:
+                if not vacancy_token:
+                    attachable_missing.append(item)
+                else:
+                    unmatched_missing.append(item)
+            elif len(explicit_vacancy_tokens) == 1 and vacancy_token in explicit_vacancy_tokens:
+                attachable_missing.append(item)
+            else:
+                unmatched_missing.append(item)
+        groups = [group + attachable_missing]
+        if unmatched_missing:
+            groups.append(unmatched_missing)
+        return groups
+    return list(explicit_groups.values())
 
 
 def _search_item_priority(item: SearchItem) -> tuple[int, int, int, float]:
@@ -993,8 +1013,7 @@ def _merge_search_items_by_business_key(items: list[SearchItem]) -> list[SearchI
     merged_items: list[SearchItem] = []
     for grouped_items in grouped.values():
         for study_mode_scoped_items in _split_search_items_by_study_mode(grouped_items):
-            scoped_candidates = _drop_ambiguous_school_level_search_items(study_mode_scoped_items)
-            for scoped_items in _split_search_items_by_department(scoped_candidates):
+            for scoped_items in _split_search_items_by_department(study_mode_scoped_items):
                 primary = _pick_primary_search_item(scoped_items)
                 merged_count = sum(max(1, int(item.merged_count or 1)) for item in scoped_items)
                 department_names = _dedupe_strings([item.department_name for item in scoped_items])
@@ -1103,6 +1122,7 @@ def _to_adjustment_opportunity_response(
                 item_kind="opportunity",
                 category="adjustment",
                 adjustment_year=row.year,
+                adjustment_vacancy_count=row.vacancy_count,
                 school_name=school_name,
                 department_name=" / ".join(display_departments[:2]) if display_departments else row.department_name,
                 title=row.title,

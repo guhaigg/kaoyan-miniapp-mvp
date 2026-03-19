@@ -1377,6 +1377,7 @@ def test_adjustment_search_merges_cross_source_records_into_single_entity(client
                 "adjustment_meta": {
                     "major_codes": ["085600"],
                     "study_modes": ["fulltime"],
+                    "vacancy_count": 1,
                 }
             },
         },
@@ -1435,6 +1436,75 @@ def test_adjustment_search_merges_cross_source_records_into_single_entity(client
     assert item["adjustment_year"] == 2025
     assert item["merged_count"] >= 2
     assert item["title"] == "湖北大学 材料与化工 调剂信息"
+
+
+def test_adjustment_search_keeps_missing_department_item_separate_when_vacancy_count_differs(client):
+    content_response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "福州大学 教育管理 调剂公告",
+            "body": "同校同专业但缺少院系，且人数未知。",
+            "school_name": "福州大学",
+            "major": "教育管理",
+            "region": "福建",
+            "source_type": "crawler",
+            "source_url": "https://example.com/fzu-edu-notice-no-count",
+            "published_at": "2025-04-07T09:34:00Z",
+            "extra": {
+                "adjustment_meta": {
+                    "major_codes": ["045101"],
+                    "study_modes": ["fulltime"],
+                }
+            },
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert content_response.status_code == 200
+
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="fzu-edu-stats-with-count",
+                source_dataset_key="adjustment_stats_2025_full_raw",
+                source_type="stats",
+                year=2025,
+                school_name="福州大学",
+                school_name_normalized="福州大学",
+                school_code="10386",
+                region_name="福建",
+                school_tier="211",
+                department_name="经济与管理学院",
+                department_name_normalized="经济与管理学院",
+                major_code="045101",
+                major_name="教育管理",
+                major_name_normalized="教育管理",
+                study_mode="fulltime",
+                vacancy_count=3,
+                min_score=351,
+                avg_score=360,
+                max_score=368,
+                verification_status="历史统计",
+                title="福州大学 教育管理 历史统计",
+                summary="2025 年历史调剂统计 · 样本 3",
+                source_url="https://example.com/fzu-edu-stats-with-count",
+                published_at=datetime.fromisoformat("2025-04-07T09:34:00+00:00"),
+                meta_json={},
+            )
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_source_merge_count_guard_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "福州大学", "year": 2025, "page_size": 20},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 2
+    department_names = {item["department_name"] for item in payload["items"]}
+    assert department_names == {None, "经济与管理学院"}
 
 
 def test_adjustment_search_sorts_by_intelligence_signal_before_recency(client):
