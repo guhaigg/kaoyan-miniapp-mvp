@@ -132,13 +132,19 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         mentors = build_mentor_evaluations_from_archives(db)
         timings = build_release_timing_profiles_from_archives(db)
 
-    assert len(profiles) == 4
+    assert len(profiles) == 5
     stats_row = next(row for row in profiles if row["source_type"] == "adjustment_stats")
     assert stats_row["major_code"] == "085400"
     assert stats_row["avg_score"] == 326.5
 
     landing_rows = [row for row in profiles if row["source_type"] == "landing"]
     assert {row["year"] for row in landing_rows} == {2024, 2025}
+    notice_reference = next(row for row in profiles if row["source_type"] == "notice_reference")
+    assert notice_reference["meta_json"]["top_source_url"] == "https://example.com/1"
+    assert notice_reference["meta_json"]["reference_urls"] == [
+        "https://example.com/1",
+        "https://example.com/2",
+    ]
     assert len(mentors) == 1
     assert mentors[0]["risk_level"] == "warning"
     assert "好老师" in mentors[0]["review_tags"]

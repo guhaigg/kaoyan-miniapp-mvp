@@ -64,6 +64,8 @@ export default function SearchPage() {
       if (urgencyDelta !== 0) return urgencyDelta;
       const outlookDelta = adjustmentOutlookRank(right.historical_adjustment?.outlook) - adjustmentOutlookRank(left.historical_adjustment?.outlook);
       if (outlookDelta !== 0) return outlookDelta;
+      const schoolDelta = schoolConfidenceRank(right.school_intelligence?.confidence_label) - schoolConfidenceRank(left.school_intelligence?.confidence_label);
+      if (schoolDelta !== 0) return schoolDelta;
       const sampleDelta = (right.historical_adjustment?.sample_count || 0) - (left.historical_adjustment?.sample_count || 0);
       if (sampleDelta !== 0) return sampleDelta;
       const timingDelta = (right.release_timing?.sample_count || 0) - (left.release_timing?.sample_count || 0);
@@ -185,6 +187,7 @@ export default function SearchPage() {
     const items = filteredItems;
     const withHistory = items.filter((item) => item.historical_adjustment?.sample_count);
     const withWarnings = items.filter((item) => (item.mentor_radar?.warning_count || 0) > 0);
+    const withLongTrack = items.filter((item) => item.school_intelligence?.confidence_label === "连续活跃");
     const nightReleases = items.filter((item) => {
       const value = item.published_at || item.updated_at;
       const hour = new Date(value).getHours();
@@ -194,6 +197,7 @@ export default function SearchPage() {
       hits: items.length,
       withHistory: withHistory.length,
       withWarnings: withWarnings.length,
+      withLongTrack: withLongTrack.length,
       nightReleases: nightReleases.length,
     };
   }, [filteredItems, queryType, searchResult]);
@@ -426,6 +430,7 @@ export default function SearchPage() {
                       <IntelStatCard label="命中情报" value={`${adjustmentSummary?.hits || 0}`} accent="cyan" />
                       <IntelStatCard label="历史样本" value={`${adjustmentSummary?.withHistory || 0}`} accent="emerald" />
                       <IntelStatCard label="导师预警" value={`${adjustmentSummary?.withWarnings || 0}`} accent="amber" />
+                      <IntelStatCard label="连续活跃" value={`${adjustmentSummary?.withLongTrack || 0}`} accent="emerald" />
                       <IntelStatCard label="晚间发布" value={`${adjustmentSummary?.nightReleases || 0}`} accent="violet" />
                     </div>
                   </div>
@@ -797,10 +802,12 @@ function AdjustmentIntelCard({
     item.historical_adjustment?.avg_score ?? null,
   );
   const timingSignal = getTimingSignal(item);
+  const schoolSignal = getSchoolSignal(item);
   const departmentLine = [item.major, item.adjustment_major_codes[0], item.region].filter(Boolean).join(" · ") || "调剂情报流";
   const tags = item.tags.length > 0 ? item.tags : [item.school_name || "院校待补充", item.major || "专业待补充"];
   const releaseTime = formatIntelTime(item.published_at || item.updated_at);
   const mentorWarning = (item.mentor_radar?.warning_count || 0) > 0;
+  const historicalReferenceUrl = item.school_intelligence?.reference_urls?.find((url) => url && url !== item.source_url) || null;
 
   async function handleBookmarkClick() {
     if (!bookmark) return;
@@ -844,9 +851,14 @@ function AdjustmentIntelCard({
               {tag}
             </span>
           ))}
+          {item.school_intelligence ? (
+            <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
+              {item.school_intelligence.confidence_label}
+            </span>
+          ) : null}
         </div>
 
-        <div className="grid gap-3 border-t border-white/8 pt-4 xl:grid-cols-3">
+        <div className="grid gap-3 border-t border-white/8 pt-4 xl:grid-cols-4">
           <div className={`rounded-2xl border p-4 ${probability.bg} ${probability.border}`}>
             <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
               <TrendingUp size={15} className={probability.iconClass} />
@@ -889,6 +901,17 @@ function AdjustmentIntelCard({
               <div>{timingSignal.detail}</div>
             </div>
           </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/70">
+              <Target size={15} className="text-cyan-300" />
+              院校活跃度
+            </div>
+            <div className="text-lg font-bold text-slate-100">{schoolSignal.title}</div>
+            <div className="mt-3 text-xs leading-5 text-slate-300">
+              <div>{schoolSignal.detail}</div>
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4">
@@ -920,6 +943,16 @@ function AdjustmentIntelCard({
                 className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-400"
               >
                 查看原文
+              </a>
+            ) : null}
+            {historicalReferenceUrl ? (
+              <a
+                href={historicalReferenceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/10"
+              >
+                历史来源
               </a>
             ) : null}
           </div>
@@ -993,6 +1026,22 @@ function getTimingSignal(item: SearchItem) {
   };
 }
 
+function getSchoolSignal(item: SearchItem) {
+  if (item.school_intelligence?.signal_detail) {
+    const years = item.school_intelligence.active_years.slice(0, 4).join(" / ");
+    return {
+      title: item.school_intelligence.confidence_label,
+      detail: years
+        ? `${item.school_intelligence.signal_detail}。活跃年份：${years}`
+        : item.school_intelligence.signal_detail,
+    };
+  }
+  return {
+    title: "待补历史画像",
+    detail: "当前学校还没有足够的历史样本，后续会继续补 24/25/26 数据。",
+  };
+}
+
 function formatIntelTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -1030,5 +1079,12 @@ function adjustmentOutlookRank(outlook: "high" | "reach" | "cautious" | null | u
   if (outlook === "high") return 3;
   if (outlook === "reach") return 2;
   if (outlook === "cautious") return 1;
+  return 0;
+}
+
+function schoolConfidenceRank(label: string | null | undefined) {
+  if (label === "连续活跃") return 3;
+  if (label === "持续关注") return 2;
+  if (label === "样本有限") return 1;
   return 0;
 }

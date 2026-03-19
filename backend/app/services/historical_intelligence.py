@@ -330,6 +330,8 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "adjustment_landing_2024_raw",
                     "adjustment_landing_2025_raw",
                     "admission_program_catalog_2026_raw",
+                    "adjustment_snapshot_2025_0409_raw",
+                    "adjustment_announcement_2025_raw",
                 ]
             )
         )
@@ -505,6 +507,76 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                 }
             )
 
+    for dataset_key, title in (
+        ("adjustment_snapshot_2025_0409_raw", "2025 调剂快照参考链接"),
+        ("adjustment_announcement_2025_raw", "2025 调剂公告参考链接"),
+    ):
+        archive = archives.get(dataset_key)
+        if archive is None:
+            continue
+        df = load_archive_dataframe(archive)
+        grouped_links: dict[str, dict[str, Any]] = {}
+        for row in df.to_dict(orient="records"):
+            school_name = _strip_text(row.get("学校") or row.get("大学") or row.get("院校名称"))
+            school_name_normalized = normalize_school_name(school_name)
+            if not school_name_normalized:
+                continue
+            current = grouped_links.setdefault(
+                school_name_normalized,
+                {
+                    "school_name": school_name,
+                    "region_name": parse_region_name(row.get("地区") or row.get("省份")),
+                    "urls": Counter(),
+                    "count": 0,
+                },
+            )
+            current["count"] += 1
+            url = _strip_text(row.get("原始网址") or row.get("链接") or row.get("网址") or row.get("原文链接"))
+            if url:
+                current["urls"][url] += 1
+        for school_name_normalized, payload in grouped_links.items():
+            reference_urls = [url for url, _count in payload["urls"].most_common(3)]
+            if not reference_urls:
+                continue
+            profile_key = build_profile_key(
+                year=2025,
+                source_type="notice_reference",
+                school_name_normalized=school_name_normalized,
+                major_code=None,
+                major_name_normalized=None,
+                study_mode=None,
+            )
+            profiles.append(
+                {
+                    "profile_key": profile_key,
+                    "year": 2025,
+                    "source_type": "notice_reference",
+                    "source_dataset_key": archive.dataset_key,
+                    "school_id": school_lookup.get(school_name_normalized),
+                    "school_name": payload["school_name"],
+                    "school_name_normalized": school_name_normalized,
+                    "school_code": None,
+                    "region_name": payload["region_name"],
+                    "school_tier": None,
+                    "department_name": None,
+                    "department_name_normalized": None,
+                    "major_code": None,
+                    "major_name": None,
+                    "major_name_normalized": None,
+                    "study_mode": None,
+                    "sample_count": int(payload["count"]),
+                    "vacancy_count": None,
+                    "min_score": None,
+                    "avg_score": None,
+                    "max_score": None,
+                    "meta_json": {
+                        "title": title,
+                        "top_source_url": reference_urls[0],
+                        "reference_urls": reference_urls,
+                    },
+                }
+            )
+
     deduped: dict[str, dict[str, Any]] = {}
     for row in profiles:
         deduped[row["profile_key"]] = row
@@ -597,6 +669,17 @@ class ReleaseTimingInsightResult:
     window_end_md: str | None
     signal_label: str | None
     signal_detail: str | None
+
+
+@dataclass
+class SchoolIntelligenceInsightResult:
+    profile_count: int
+    active_years: list[int]
+    source_types: list[str]
+    future_program_count: int
+    reference_urls: list[str]
+    confidence_label: str
+    signal_detail: str
 
 
 def _match_profile(
@@ -703,6 +786,74 @@ def load_profiles_for_search(db: Session, school_names: list[str]) -> dict[str, 
     for row in rows:
         grouped[row.school_name_normalized].append(row)
     return grouped
+
+
+def load_school_intelligence_for_search(
+    db: Session, school_names: list[str]
+) -> dict[str, SchoolIntelligenceInsightResult]:
+    normalized_names = sorted({normalize_school_name(name) for name in school_names if normalize_school_name(name)})
+    if not normalized_names:
+        return {}
+    rows = (
+        db.query(HistoricalAdjustmentProfile)
+        .filter(HistoricalAdjustmentProfile.school_name_normalized.in_(normalized_names))
+        .all()
+    )
+    grouped: dict[str, list[HistoricalAdjustmentProfile]] = defaultdict(list)
+    for row in rows:
+        grouped[row.school_name_normalized].append(row)
+
+    result: dict[str, SchoolIntelligenceInsightResult] = {}
+    for school_name_normalized, profiles in grouped.items():
+        active_years = sorted({int(row.year) for row in profiles if row.year})
+        source_types = sorted({str(row.source_type) for row in profiles if row.source_type})
+        future_program_count = sum(
+            max(0, int(row.vacancy_count or row.sample_count or 0))
+            for row in profiles
+            if row.source_type == "future_program"
+        )
+        reference_urls: list[str] = []
+        for row in profiles:
+            meta = row.meta_json or {}
+            raw_urls: list[str] = []
+            if isinstance(meta.get("reference_urls"), list):
+                raw_urls.extend([str(value or "").strip() for value in meta.get("reference_urls") or []])
+            raw_urls.extend(
+                [
+                    str(meta.get("top_source_url") or "").strip(),
+                    str(meta.get("source_url") or "").strip(),
+                ]
+            )
+            for url in raw_urls:
+                if url and url not in reference_urls:
+                    reference_urls.append(url)
+        profile_count = len(profiles)
+
+        if len(active_years) >= 3 or profile_count >= 40:
+            confidence_label = "连续活跃"
+        elif len(active_years) >= 2 or profile_count >= 15:
+            confidence_label = "持续关注"
+        else:
+            confidence_label = "样本有限"
+
+        year_text = " / ".join(str(value) for value in active_years[:4]) if active_years else "暂无年份"
+        source_text = " / ".join(source_types[:3]) if source_types else "暂无来源"
+        signal_detail = f"历史覆盖 {year_text}，累计 {profile_count} 组画像，来源 {source_text}"
+        if future_program_count > 0:
+            signal_detail += f"，2026 招生专业 {future_program_count} 个"
+        if reference_urls:
+            signal_detail += f"，可回溯链接 {len(reference_urls)} 条"
+
+        result[school_name_normalized] = SchoolIntelligenceInsightResult(
+            profile_count=profile_count,
+            active_years=active_years,
+            source_types=source_types,
+            future_program_count=future_program_count,
+            reference_urls=reference_urls[:3],
+            confidence_label=confidence_label,
+            signal_detail=signal_detail,
+        )
+    return result
 
 
 def load_mentor_radar_for_search(db: Session, school_names: list[str]) -> dict[str, MentorRadarInsightResult]:

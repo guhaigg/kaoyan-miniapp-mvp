@@ -207,7 +207,30 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
                     min_score=None,
                     avg_score=None,
                     max_score=None,
-                    meta_json={},
+                    meta_json={"source_url": "https://example.com/xx-2026-program"},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="profile-4",
+                    year=2025,
+                    source_type="notice_reference",
+                    source_dataset_key="adjustment_announcement_2025_raw",
+                    school_name="XX大学",
+                    school_name_normalized="XX大学",
+                    school_code=None,
+                    region_name="上海",
+                    school_tier=None,
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code=None,
+                    major_name=None,
+                    major_name_normalized=None,
+                    study_mode=None,
+                    sample_count=2,
+                    vacancy_count=None,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    meta_json={"reference_urls": ["https://example.com/xx-history-1", "https://example.com/xx-history-2"]},
                 ),
             ]
         )
@@ -277,6 +300,13 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
     assert item["release_timing"]["peak_hour"] == 20
     assert item["release_timing"]["peak_hour_bucket"] == "晚间"
     assert item["release_timing"]["signal_label"] == "晚间高发"
+    assert item["school_intelligence"]["confidence_label"] == "连续活跃"
+    assert item["school_intelligence"]["future_program_count"] == 3
+    assert item["school_intelligence"]["reference_urls"] == [
+        "https://example.com/xx-history-1",
+        "https://example.com/xx-history-2",
+        "https://example.com/xx-2026-program",
+    ]
 
 
 def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):

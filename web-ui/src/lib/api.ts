@@ -304,6 +304,15 @@ export type SearchItem = {
     signal_label: string | null;
     signal_detail: string | null;
   } | null;
+  school_intelligence: {
+    profile_count: number;
+    active_years: number[];
+    source_types: string[];
+    future_program_count: number;
+    reference_urls: string[];
+    confidence_label: string;
+    signal_detail: string;
+  } | null;
   updated_at: string;
 };
 

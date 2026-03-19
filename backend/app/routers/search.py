@@ -17,6 +17,7 @@ from ..schemas import (
 from ..services.historical_intelligence import (
     build_search_insight,
     build_release_timing_insight,
+    load_school_intelligence_for_search,
     load_mentor_radar_for_search,
     load_profiles_for_search,
     load_release_timing_for_search,
@@ -64,6 +65,7 @@ def _to_response(
     )
     mentor_radar = load_mentor_radar_for_search(db, [row.school.name if row.school else "" for row in items])
     release_timings = load_release_timing_for_search(db, [row.school.name if row.school else "" for row in items])
+    school_intelligence = load_school_intelligence_for_search(db, [row.school.name if row.school else "" for row in items])
     serialized = []
     for row in items:
         school_name = row.school.name if row.school else None
@@ -87,6 +89,7 @@ def _to_response(
             if school_name
             else None
         )
+        school_signal = school_intelligence.get(normalize_school_name(school_name)) if school_name else None
         serialized.append(
             SearchItem(
                 id=row.id,
@@ -97,7 +100,7 @@ def _to_response(
                 tags=[str(tag) for tag in (extra.get("tags") or []) if str(tag or "").strip()],
                 notice_kind=str((extra.get("notice_kind") or "")).strip() or None,
                 pdf_parse_status=str((extra.get("pdf_parse_status") or "")).strip() or None,
-                source_url=row.source_url,
+                source_url=row.source_url or (school_signal.reference_urls[0] if school_signal and school_signal.reference_urls else None),
                 source_type=row.source_type,
                 published_at=row.published_at,
                 region=row.region,
@@ -116,6 +119,7 @@ def _to_response(
                 historical_adjustment=historical_adjustment,
                 mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
                 release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
+                school_intelligence=school_signal.__dict__ if school_signal is not None else None,
                 updated_at=row.updated_at,
             )
         )

@@ -849,6 +849,16 @@ class ReleaseTimingInsight(BaseModel):
     signal_detail: str | None = None
 
 
+class SchoolIntelligenceInsight(BaseModel):
+    profile_count: int = 0
+    active_years: list[int] = Field(default_factory=list)
+    source_types: list[str] = Field(default_factory=list)
+    future_program_count: int = 0
+    reference_urls: list[str] = Field(default_factory=list)
+    confidence_label: str
+    signal_detail: str
+
+
 class SearchItem(BaseModel):
     id: str
     category: str
@@ -869,6 +879,7 @@ class SearchItem(BaseModel):
     historical_adjustment: HistoricalAdjustmentInsight | None = None
     mentor_radar: MentorRadarInsight | None = None
     release_timing: ReleaseTimingInsight | None = None
+    school_intelligence: SchoolIntelligenceInsight | None = None
     updated_at: datetime
 
 
