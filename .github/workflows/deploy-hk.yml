@@ -38,7 +38,18 @@ jobs:
           install -m 700 -d "$HOME/.ssh"
           printf "%s\n" "$HK_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 600 "$HOME/.ssh/id_ed25519"
-          ssh-keyscan -p "$PORT" "$HK_HOST" >> "$HOME/.ssh/known_hosts"
+          ok=0
+          for i in 1 2 3 4 5; do
+            if ssh-keyscan -T 10 -4 -p "$PORT" "$HK_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::Failed to fetch SSH host key from ${HK_HOST}:${PORT}"
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
