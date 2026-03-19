@@ -148,7 +148,17 @@ NATIONAL_LINES = {
 
 
 def _strip_text(value: Any) -> str:
-    return str(value or "").strip()
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    text = str(value).strip()
+    if text.lower() in {"nan", "none", "null"}:
+        return ""
+    return text
 
 
 def _clean_review_text(value: Any) -> str:
@@ -463,6 +473,7 @@ def build_profile_key(
     year: int,
     source_type: str,
     school_name_normalized: str,
+    department_name_normalized: str | None,
     major_code: str | None,
     major_name_normalized: str | None,
     study_mode: str | None,
@@ -472,6 +483,7 @@ def build_profile_key(
             str(year),
             source_type,
             school_name_normalized,
+            department_name_normalized or "",
             major_code or "",
             major_name_normalized or "",
             study_mode or "",
@@ -638,6 +650,60 @@ def replace_adjustment_opportunities(db: Session, rows: list[dict[str, Any]]) ->
     return {"opportunities": count}
 
 
+def _split_records_by_department_scope(
+    records: list[Any],
+    *,
+    department_getter,
+) -> list[list[Any]]:
+    if not records:
+        return []
+    explicit_groups: dict[str, list[Any]] = defaultdict(list)
+    missing_records: list[Any] = []
+    for record in records:
+        department_name_normalized = normalize_department_name(department_getter(record))
+        if department_name_normalized:
+            explicit_groups[department_name_normalized].append(record)
+        else:
+            missing_records.append(record)
+    if not explicit_groups:
+        return [records]
+    if len(explicit_groups) == 1:
+        only_group = next(iter(explicit_groups.values()))
+        return [only_group + missing_records]
+    scoped_groups = list(explicit_groups.values())
+    if missing_records:
+        scoped_groups.append(missing_records)
+    return scoped_groups
+
+
+def _apply_department_scope(
+    rows: list[Any],
+    *,
+    department_name: str | None,
+    department_getter,
+) -> list[Any]:
+    normalized_department_name = normalize_department_name(department_name)
+    if not normalized_department_name:
+        return rows
+    exact_rows = [
+        row
+        for row in rows
+        if normalize_department_name(department_getter(row)) == normalized_department_name
+    ]
+    if exact_rows:
+        school_level_rows = [
+            row
+            for row in rows
+            if not normalize_department_name(department_getter(row))
+        ]
+        return exact_rows + school_level_rows
+    return [
+        row
+        for row in rows
+        if not normalize_department_name(department_getter(row))
+    ]
+
+
 def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
     archives = {
         row.dataset_key: row
@@ -679,6 +745,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                 year=2025,
                 source_type="adjustment_stats",
                 school_name_normalized=school_name_normalized,
+                department_name_normalized=None,
                 major_code=major_code,
                 major_name_normalized=major_name,
                 study_mode=study_mode,
@@ -718,7 +785,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
     stats_2023_2025 = archives.get("adjustment_stats_2023_2025_raw")
     if stats_2023_2025 is not None:
         df = _normalize_legacy_adjustment_stats_frame(load_archive_dataframe(stats_2023_2025))
-        grouped: dict[tuple[int | None, str, str | None, str | None, str | None], dict[str, Any]] = {}
+        grouped: dict[tuple[int | None, str, str | None, str | None, str | None], list[dict[str, Any]]] = defaultdict(list)
         for row in df.to_dict(orient="records"):
             year = score_to_int(row.get("年份"))
             school_code, school_name = parse_school_code_name(row.get("学校"))
@@ -739,8 +806,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
             if initial_score is None and adjustment_score is None:
                 continue
             group_key = (year, school_name_normalized, major_code, major_name, study_mode)
-            current = grouped.setdefault(
-                group_key,
+            grouped[group_key].append(
                 {
                     "school_name": school_name,
                     "school_name_normalized": school_name_normalized,
@@ -754,56 +820,77 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "major_name": major_name,
                     "major_name_normalized": major_name,
                     "study_mode": study_mode,
-                    "initial_scores": [],
-                    "adjustment_scores": [],
-                },
-            )
-            if initial_score is not None:
-                current["initial_scores"].append(initial_score)
-            if adjustment_score is not None:
-                current["adjustment_scores"].append(adjustment_score)
-        for (year, _school_name_normalized, _major_code, _major_name, _study_mode), payload in grouped.items():
-            initial_scores = payload.pop("initial_scores")
-            adjustment_scores = payload.pop("adjustment_scores")
-            initial_min, initial_max = _score_bounds(initial_scores)
-            adjustment_min, adjustment_max = _score_bounds(adjustment_scores)
-            sample_count = max(len(initial_scores), len(adjustment_scores))
-            avg_score = round(sum(initial_scores) / sample_count, 2) if initial_scores and sample_count else None
-            profile_key = build_profile_key(
-                year=year or 0,
-                source_type="adjustment_stats",
-                school_name_normalized=payload["school_name_normalized"],
-                major_code=payload["major_code"],
-                major_name_normalized=payload["major_name_normalized"],
-                study_mode=payload["study_mode"],
-            )
-            profiles.append(
-                {
-                    "profile_key": profile_key,
-                    "year": year or 0,
-                    "source_type": "adjustment_stats",
-                    "source_dataset_key": stats_2023_2025.dataset_key,
-                    "school_id": school_lookup.get(payload["school_name_normalized"]),
-                    **payload,
-                    "sample_count": sample_count,
-                    "vacancy_count": sample_count,
-                    "initial_score_min": initial_min,
-                    "initial_score_max": initial_max,
-                    "adjustment_score_min": adjustment_min,
-                    "adjustment_score_max": adjustment_max,
-                    "min_score": initial_min,
-                    "avg_score": avg_score,
-                    "max_score": initial_max,
-                    "meta_json": {"title": "23-25 调剂统计数据"},
+                    "initial_score": initial_score,
+                    "adjustment_score": adjustment_score,
                 }
             )
+        for (year, _school_name_normalized, _major_code, _major_name, _study_mode), records in grouped.items():
+            for scoped_records in _split_records_by_department_scope(
+                records,
+                department_getter=lambda record: record.get("department_name_normalized"),
+            ):
+                payload = dict(scoped_records[0])
+                explicit_department = next(
+                    (
+                        record
+                        for record in scoped_records
+                        if record.get("department_name_normalized")
+                    ),
+                    None,
+                )
+                if explicit_department is not None:
+                    payload["department_name"] = explicit_department.get("department_name")
+                    payload["department_name_normalized"] = explicit_department.get("department_name_normalized")
+                initial_scores = [
+                    int(record["initial_score"])
+                    for record in scoped_records
+                    if record.get("initial_score") is not None
+                ]
+                adjustment_scores = [
+                    int(record["adjustment_score"])
+                    for record in scoped_records
+                    if record.get("adjustment_score") is not None
+                ]
+                initial_min, initial_max = _score_bounds(initial_scores)
+                adjustment_min, adjustment_max = _score_bounds(adjustment_scores)
+                sample_count = max(len(initial_scores), len(adjustment_scores))
+                avg_score = round(sum(initial_scores) / sample_count, 2) if initial_scores and sample_count else None
+                profile_key = build_profile_key(
+                    year=year or 0,
+                    source_type="adjustment_stats",
+                    school_name_normalized=payload["school_name_normalized"],
+                    department_name_normalized=payload.get("department_name_normalized"),
+                    major_code=payload["major_code"],
+                    major_name_normalized=payload["major_name_normalized"],
+                    study_mode=payload["study_mode"],
+                )
+                profiles.append(
+                    {
+                        "profile_key": profile_key,
+                        "year": year or 0,
+                        "source_type": "adjustment_stats",
+                        "source_dataset_key": stats_2023_2025.dataset_key,
+                        "school_id": school_lookup.get(payload["school_name_normalized"]),
+                        **payload,
+                        "sample_count": sample_count,
+                        "vacancy_count": sample_count,
+                        "initial_score_min": initial_min,
+                        "initial_score_max": initial_max,
+                        "adjustment_score_min": adjustment_min,
+                        "adjustment_score_max": adjustment_max,
+                        "min_score": initial_min,
+                        "avg_score": avg_score,
+                        "max_score": initial_max,
+                        "meta_json": {"title": "23-25 调剂统计数据"},
+                    }
+                )
 
     for year, dataset_key in ((2024, "adjustment_landing_2024_raw"), (2025, "adjustment_landing_2025_raw")):
         archive = archives.get(dataset_key)
         if archive is None:
             continue
         df = load_archive_dataframe(archive, sheet_name="总表")
-        grouped: dict[tuple[str, str | None, str | None, str | None], dict[str, Any]] = {}
+        grouped: dict[tuple[str, str | None, str | None, str | None], list[dict[str, Any]]] = defaultdict(list)
         for row in df.to_dict(orient="records"):
             school_code, school_name = parse_school_code_name(row.get("调剂学校") or row.get("学校"))
             school_name_normalized = normalize_school_name(school_name)
@@ -821,8 +908,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
             if initial_score is None and adjustment_score is None:
                 continue
             group_key = (school_name_normalized, major_code, major_name, study_mode)
-            current = grouped.setdefault(
-                group_key,
+            grouped[group_key].append(
                 {
                     "school_name": school_name,
                     "school_name_normalized": school_name_normalized,
@@ -836,49 +922,70 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "major_name": major_name,
                     "major_name_normalized": major_name,
                     "study_mode": study_mode,
-                    "initial_scores": [],
-                    "adjustment_scores": [],
-                },
-            )
-            if initial_score is not None:
-                current["initial_scores"].append(initial_score)
-            if adjustment_score is not None:
-                current["adjustment_scores"].append(adjustment_score)
-        for payload in grouped.values():
-            initial_scores = payload.pop("initial_scores")
-            adjustment_scores = payload.pop("adjustment_scores")
-            sample_count = max(len(initial_scores), len(adjustment_scores))
-            initial_min, initial_max = _score_bounds(initial_scores)
-            adjustment_min, adjustment_max = _score_bounds(adjustment_scores)
-            avg_score = round(sum(initial_scores) / sample_count, 2) if initial_scores and sample_count else None
-            profile_key = build_profile_key(
-                year=year,
-                source_type="landing",
-                school_name_normalized=payload["school_name_normalized"],
-                major_code=payload["major_code"],
-                major_name_normalized=payload["major_name_normalized"],
-                study_mode=payload["study_mode"],
-            )
-            profiles.append(
-                {
-                    "profile_key": profile_key,
-                    "year": year,
-                    "source_type": "landing",
-                    "source_dataset_key": archive.dataset_key,
-                    "school_id": school_lookup.get(payload["school_name_normalized"]),
-                    **payload,
-                    "sample_count": sample_count,
-                    "vacancy_count": None,
-                    "initial_score_min": initial_min,
-                    "initial_score_max": initial_max,
-                    "adjustment_score_min": adjustment_min,
-                    "adjustment_score_max": adjustment_max,
-                    "min_score": initial_min,
-                    "avg_score": avg_score,
-                    "max_score": initial_max,
-                    "meta_json": {"title": f"{year} 调剂上岸名单"},
+                    "initial_score": initial_score,
+                    "adjustment_score": adjustment_score,
                 }
             )
+        for records in grouped.values():
+            for scoped_records in _split_records_by_department_scope(
+                records,
+                department_getter=lambda record: record.get("department_name_normalized"),
+            ):
+                payload = dict(scoped_records[0])
+                explicit_department = next(
+                    (
+                        record
+                        for record in scoped_records
+                        if record.get("department_name_normalized")
+                    ),
+                    None,
+                )
+                if explicit_department is not None:
+                    payload["department_name"] = explicit_department.get("department_name")
+                    payload["department_name_normalized"] = explicit_department.get("department_name_normalized")
+                initial_scores = [
+                    int(record["initial_score"])
+                    for record in scoped_records
+                    if record.get("initial_score") is not None
+                ]
+                adjustment_scores = [
+                    int(record["adjustment_score"])
+                    for record in scoped_records
+                    if record.get("adjustment_score") is not None
+                ]
+                sample_count = max(len(initial_scores), len(adjustment_scores))
+                initial_min, initial_max = _score_bounds(initial_scores)
+                adjustment_min, adjustment_max = _score_bounds(adjustment_scores)
+                avg_score = round(sum(initial_scores) / sample_count, 2) if initial_scores and sample_count else None
+                profile_key = build_profile_key(
+                    year=year,
+                    source_type="landing",
+                    school_name_normalized=payload["school_name_normalized"],
+                    department_name_normalized=payload.get("department_name_normalized"),
+                    major_code=payload["major_code"],
+                    major_name_normalized=payload["major_name_normalized"],
+                    study_mode=payload["study_mode"],
+                )
+                profiles.append(
+                    {
+                        "profile_key": profile_key,
+                        "year": year,
+                        "source_type": "landing",
+                        "source_dataset_key": archive.dataset_key,
+                        "school_id": school_lookup.get(payload["school_name_normalized"]),
+                        **payload,
+                        "sample_count": sample_count,
+                        "vacancy_count": None,
+                        "initial_score_min": initial_min,
+                        "initial_score_max": initial_max,
+                        "adjustment_score_min": adjustment_min,
+                        "adjustment_score_max": adjustment_max,
+                        "min_score": initial_min,
+                        "avg_score": avg_score,
+                        "max_score": initial_max,
+                        "meta_json": {"title": f"{year} 调剂上岸名单"},
+                    }
+                )
 
     program2026 = archives.get("admission_program_catalog_2026_raw")
     if program2026 is not None:
@@ -888,6 +995,8 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
             school_name_normalized = normalize_school_name(school_name)
             if not school_name_normalized:
                 continue
+            department_name = _strip_text(row.get("学院")) or None
+            department_name_normalized = normalize_department_name(department_name)
             major_code = normalize_major_code(row.get("专业代码"))
             major_name = normalize_major_name(row.get("专业名称"))
             vacancy_count = _safe_int(row.get("名额"), default=0)
@@ -896,6 +1005,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                 year=2026,
                 source_type="future_program",
                 school_name_normalized=school_name_normalized,
+                department_name_normalized=department_name_normalized,
                 major_code=major_code,
                 major_name_normalized=major_name,
                 study_mode=None,
@@ -913,8 +1023,8 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                     "region_name": region_name,
                     "city_name": city_name,
                     "school_tier": None,
-                    "department_name": None,
-                    "department_name_normalized": None,
+                    "department_name": department_name,
+                    "department_name_normalized": department_name_normalized,
                     "major_code": major_code,
                     "major_name": major_name,
                     "major_name_normalized": major_name,
@@ -972,6 +1082,7 @@ def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]
                 year=2025,
                 source_type="notice_reference",
                 school_name_normalized=school_name_normalized,
+                department_name_normalized=None,
                 major_code=None,
                 major_name_normalized=None,
                 study_mode=None,
@@ -2057,6 +2168,7 @@ def build_search_insight(
     *,
     major_codes: list[str],
     major_name: str | None,
+    department_name: str | None,
     study_modes: list[str],
     candidate_score: int | None,
     reference_year: int | None = None,
@@ -2074,6 +2186,11 @@ def build_search_insight(
             study_modes=normalized_modes,
         )
     ]
+    matched = _apply_department_scope(
+        matched,
+        department_name=department_name,
+        department_getter=lambda row: row.department_name_normalized,
+    )
     if not matched:
         return None
     score_profiles = [row for row in matched if row.source_type in {"adjustment_stats", "landing"}]
@@ -2245,6 +2362,21 @@ def load_profiles_for_search(db: Session, school_names: list[str]) -> dict[str, 
     return grouped
 
 
+def load_mentor_evaluations_for_search(db: Session, school_names: list[str]) -> dict[str, list[MentorEvaluation]]:
+    normalized_names = sorted({normalize_school_name(name) for name in school_names if normalize_school_name(name)})
+    if not normalized_names:
+        return {}
+    rows = (
+        db.query(MentorEvaluation)
+        .filter(MentorEvaluation.school_name_normalized.in_(normalized_names))
+        .all()
+    )
+    grouped: dict[str, list[MentorEvaluation]] = defaultdict(list)
+    for row in rows:
+        grouped[row.school_name_normalized].append(row)
+    return grouped
+
+
 def load_school_intelligence_for_search(
     db: Session, school_names: list[str]
 ) -> dict[str, SchoolIntelligenceInsightResult]:
@@ -2313,49 +2445,55 @@ def load_school_intelligence_for_search(
     return result
 
 
-def load_mentor_radar_for_search(db: Session, school_names: list[str]) -> dict[str, MentorRadarInsightResult]:
-    normalized_names = sorted({normalize_school_name(name) for name in school_names if normalize_school_name(name)})
-    if not normalized_names:
-        return {}
-    rows = (
-        db.query(MentorEvaluation)
-        .filter(MentorEvaluation.school_name_normalized.in_(normalized_names))
-        .all()
+def build_mentor_radar_insight(
+    evaluations: list[MentorEvaluation],
+    *,
+    department_name: str | None = None,
+) -> MentorRadarInsightResult | None:
+    scoped_evaluations = _apply_department_scope(
+        evaluations,
+        department_name=department_name,
+        department_getter=lambda row: row.department_name_normalized,
     )
-    grouped: dict[str, list[MentorEvaluation]] = defaultdict(list)
-    for row in rows:
-        grouped[row.school_name_normalized].append(row)
+    if not scoped_evaluations:
+        return None
+    mentor_names = {
+        row.mentor_name_normalized
+        for row in scoped_evaluations
+        if row.mentor_name_normalized
+    }
+    warning_count = sum(1 for row in scoped_evaluations if row.risk_level == "warning")
+    positive_count = sum(1 for row in scoped_evaluations if row.risk_level == "positive")
+    tag_counter: Counter[str] = Counter()
+    for row in scoped_evaluations:
+        for tag in row.review_tags or []:
+            clean_tag = str(tag or "").strip()
+            if clean_tag:
+                tag_counter[clean_tag] += 1
+    risk_label = None
+    if warning_count >= 5:
+        risk_label = "导师预警较多"
+    elif warning_count > 0:
+        risk_label = "有导师预警"
+    elif positive_count > 0:
+        risk_label = "存在正向评价"
+    return MentorRadarInsightResult(
+        review_count=len(scoped_evaluations),
+        mentor_count=len(mentor_names),
+        warning_count=warning_count,
+        positive_count=positive_count,
+        top_tags=[label for label, _count in tag_counter.most_common(4)],
+        risk_label=risk_label,
+    )
 
+
+def load_mentor_radar_for_search(db: Session, school_names: list[str]) -> dict[str, MentorRadarInsightResult]:
+    grouped = load_mentor_evaluations_for_search(db, school_names)
     result: dict[str, MentorRadarInsightResult] = {}
     for school_name_normalized, evaluations in grouped.items():
-        mentor_names = {
-            row.mentor_name_normalized
-            for row in evaluations
-            if row.mentor_name_normalized
-        }
-        warning_count = sum(1 for row in evaluations if row.risk_level == "warning")
-        positive_count = sum(1 for row in evaluations if row.risk_level == "positive")
-        tag_counter: Counter[str] = Counter()
-        for row in evaluations:
-            for tag in row.review_tags or []:
-                clean_tag = str(tag or "").strip()
-                if clean_tag:
-                    tag_counter[clean_tag] += 1
-        risk_label = None
-        if warning_count >= 5:
-            risk_label = "导师预警较多"
-        elif warning_count > 0:
-            risk_label = "有导师预警"
-        elif positive_count > 0:
-            risk_label = "存在正向评价"
-        result[school_name_normalized] = MentorRadarInsightResult(
-            review_count=len(evaluations),
-            mentor_count=len(mentor_names),
-            warning_count=warning_count,
-            positive_count=positive_count,
-            top_tags=[label for label, _count in tag_counter.most_common(4)],
-            risk_label=risk_label,
-        )
+        insight = build_mentor_radar_insight(evaluations)
+        if insight is not None:
+            result[school_name_normalized] = insight
     return result
 
 
@@ -2375,7 +2513,12 @@ def load_mentor_review_excerpts(
         .filter(MentorEvaluation.school_name_normalized == normalized_school_name)
         .all()
     )
-    if not rows:
+    scoped_rows = _apply_department_scope(
+        rows,
+        department_name=department_name,
+        department_getter=lambda row: row.department_name_normalized,
+    )
+    if not scoped_rows:
         return []
 
     def sort_key(row: MentorEvaluation) -> tuple[int, int, int]:
@@ -2391,7 +2534,7 @@ def load_mentor_review_excerpts(
         return (department_exact, risk_rank, tag_rank)
 
     excerpts: list[MentorReviewExcerptResult] = []
-    for row in sorted(rows, key=sort_key, reverse=True)[:limit]:
+    for row in sorted(scoped_rows, key=sort_key, reverse=True)[:limit]:
         review_text = _clean_review_text(row.review_text)
         excerpts.append(
             MentorReviewExcerptResult(

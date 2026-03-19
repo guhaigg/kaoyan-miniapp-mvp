@@ -20,12 +20,14 @@ from ..schemas import (
 )
 from ..services.historical_intelligence import (
     build_search_insight,
+    build_mentor_radar_insight,
     build_release_timing_insight,
     load_mentor_review_excerpts,
+    load_mentor_evaluations_for_search,
     load_school_intelligence_for_search,
-    load_mentor_radar_for_search,
     load_profiles_for_search,
     load_release_timing_for_search,
+    normalize_department_name,
     normalize_school_name,
 )
 from ..services.search_cache import search_response_cache
@@ -207,9 +209,10 @@ def _build_adjustment_detail_from_content(
     school_name = row.school.name if row.school else None
     normalized_school_name = normalize_school_name(school_name) if school_name else ""
     extra = dict(row.extra or {})
+    department_name = str(extra.get("department_name") or "").strip() or None
     adjustment_meta = dict(extra.get("adjustment_meta") or {})
     historical_profiles = load_profiles_for_search(db, [school_name] if school_name else [])
-    mentor_radar = load_mentor_radar_for_search(db, [school_name] if school_name else [])
+    mentor_evaluations = load_mentor_evaluations_for_search(db, [school_name] if school_name else [])
     release_timings = load_release_timing_for_search(db, [school_name] if school_name else [])
     school_intelligence = load_school_intelligence_for_search(db, [school_name] if school_name else [])
 
@@ -219,16 +222,24 @@ def _build_adjustment_detail_from_content(
             historical_profiles.get(normalized_school_name, []),
             major_codes=[str(code) for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()],
             major_name=row.major,
+            department_name=department_name,
             study_modes=[str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()],
             candidate_score=None,
             reference_year=row.published_at.year if row.published_at is not None else None,
         )
 
-    mentor_signal = mentor_radar.get(normalized_school_name) if school_name else None
+    mentor_signal = (
+        build_mentor_radar_insight(
+            mentor_evaluations.get(normalized_school_name, []),
+            department_name=department_name,
+        )
+        if school_name
+        else None
+    )
     mentor_reviews = load_mentor_review_excerpts(
         db,
         school_name=school_name,
-        department_name=str(extra.get("department_name") or "").strip() or None,
+        department_name=department_name,
         limit=5,
     )
     release_signal = build_release_timing_insight(release_timings.get(normalized_school_name)) if school_name else None
@@ -264,7 +275,7 @@ def _build_adjustment_detail_from_content(
         source_type=row.source_type,
         title=row.title,
         school_name=school_name,
-        department_name=str(extra.get("department_name") or "").strip() or None,
+        department_name=department_name,
         region=row.region,
         city=None,
         major=row.major,
@@ -311,24 +322,29 @@ def _build_adjustment_detail_from_opportunity(
     merged = _merge_adjustment_opportunity_rows(merged_rows or [row])[0]
     row = merged["primary"]
     display_departments = _resolve_adjustment_departments(db, row, merged["department_names"])
+    resolved_department_name = display_departments[0] if len(display_departments) == 1 else row.department_name
     normalized_school_name = normalize_school_name(row.school_name)
     historical_profiles = load_profiles_for_search(db, [row.school_name])
-    mentor_radar = load_mentor_radar_for_search(db, [row.school_name])
+    mentor_evaluations = load_mentor_evaluations_for_search(db, [row.school_name])
     release_timings = load_release_timing_for_search(db, [row.school_name])
     school_intelligence = load_school_intelligence_for_search(db, [row.school_name])
     insight = build_search_insight(
         historical_profiles.get(normalized_school_name, []),
         major_codes=[row.major_code] if row.major_code else [],
         major_name=row.major_name,
+        department_name=resolved_department_name,
         study_modes=[row.study_mode] if row.study_mode else [],
         candidate_score=None,
         reference_year=row.year,
     )
-    mentor_signal = mentor_radar.get(normalized_school_name)
+    mentor_signal = build_mentor_radar_insight(
+        mentor_evaluations.get(normalized_school_name, []),
+        department_name=resolved_department_name,
+    )
     mentor_reviews = load_mentor_review_excerpts(
         db,
         school_name=row.school_name,
-        department_name=row.department_name,
+        department_name=resolved_department_name,
         limit=5,
     )
     release_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
@@ -469,13 +485,14 @@ def _to_response(
         if isinstance(payload, AdjustmentSearchRequest)
         else {}
     )
-    mentor_radar = load_mentor_radar_for_search(db, [row.school.name if row.school else "" for row in items])
+    mentor_evaluations = load_mentor_evaluations_for_search(db, [row.school.name if row.school else "" for row in items])
     release_timings = load_release_timing_for_search(db, [row.school.name if row.school else "" for row in items])
     school_intelligence = load_school_intelligence_for_search(db, [row.school.name if row.school else "" for row in items])
     serialized = []
     for row in items:
         school_name = row.school.name if row.school else None
         extra = dict(row.extra or {})
+        department_name = str(extra.get("department_name") or "").strip() or None
         adjustment_meta = dict(extra.get("adjustment_meta") or {})
         historical_adjustment = None
         if isinstance(payload, AdjustmentSearchRequest) and school_name:
@@ -484,13 +501,21 @@ def _to_response(
                 school_profiles,
                 major_codes=[str(code) for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()],
                 major_name=row.major,
+                department_name=department_name,
                 study_modes=[str(mode) for mode in (adjustment_meta.get("study_modes") or []) if str(mode or "").strip()],
                 candidate_score=payload.candidate_score,
                 reference_year=row.published_at.year if row.published_at is not None else None,
             )
             if insight is not None:
                 historical_adjustment = insight.__dict__
-        mentor_signal = mentor_radar.get(normalize_school_name(school_name)) if school_name else None
+        mentor_signal = (
+            build_mentor_radar_insight(
+                mentor_evaluations.get(normalize_school_name(school_name), []),
+                department_name=department_name,
+            )
+            if school_name
+            else None
+        )
         release_timing_signal = (
             build_release_timing_insight(release_timings.get(normalize_school_name(school_name)))
             if school_name
@@ -503,7 +528,7 @@ def _to_response(
                 item_kind="content",
                 category=row.category,
                 school_name=school_name,
-                department_name=str(extra.get("department_name") or "").strip() or None,
+                department_name=department_name,
                 title=row.title,
                 summary=row.summary,
                 tags=[str(tag) for tag in (extra.get("tags") or []) if str(tag or "").strip()],
@@ -602,7 +627,11 @@ def _normalize_merge_major_token(row: AdjustmentOpportunity) -> str:
     return (row.major_code or row.major_name_normalized or "").strip()
 
 
-def _build_adjustment_opportunity_merge_key(row: AdjustmentOpportunity) -> str:
+def _normalize_merge_department_token(row: AdjustmentOpportunity) -> str:
+    return normalize_department_name(row.department_name_normalized or row.department_name) or ""
+
+
+def _build_adjustment_opportunity_base_merge_key(row: AdjustmentOpportunity) -> str:
     return "|".join(
         [
             row.school_name_normalized or "",
@@ -611,6 +640,28 @@ def _build_adjustment_opportunity_merge_key(row: AdjustmentOpportunity) -> str:
             str(row.vacancy_count if row.vacancy_count is not None else ""),
         ]
     )
+
+
+def _split_adjustment_opportunity_rows_by_department(rows: list[AdjustmentOpportunity]) -> list[list[AdjustmentOpportunity]]:
+    if not rows:
+        return []
+    explicit_groups: dict[str, list[AdjustmentOpportunity]] = defaultdict(list)
+    missing_rows: list[AdjustmentOpportunity] = []
+    for row in rows:
+        department_token = _normalize_merge_department_token(row)
+        if department_token:
+            explicit_groups[department_token].append(row)
+        else:
+            missing_rows.append(row)
+    if not explicit_groups:
+        return [rows]
+    if len(explicit_groups) == 1:
+        only_group = next(iter(explicit_groups.values()))
+        return [only_group + missing_rows]
+    scoped_groups = list(explicit_groups.values())
+    if missing_rows:
+        scoped_groups.append(missing_rows)
+    return scoped_groups
 
 
 def _load_merged_adjustment_opportunity_rows(db: Session, row: AdjustmentOpportunity) -> list[AdjustmentOpportunity]:
@@ -645,7 +696,15 @@ def _load_merged_adjustment_opportunity_rows(db: Session, row: AdjustmentOpportu
         query = query.filter(AdjustmentOpportunity.vacancy_count == row.vacancy_count)
 
     rows = query.all()
-    return [candidate for candidate in rows if _build_adjustment_opportunity_merge_key(candidate) == _build_adjustment_opportunity_merge_key(row)]
+    base_rows = [
+        candidate
+        for candidate in rows
+        if _build_adjustment_opportunity_base_merge_key(candidate) == _build_adjustment_opportunity_base_merge_key(row)
+    ]
+    for scoped_rows in _split_adjustment_opportunity_rows_by_department(base_rows):
+        if any(candidate.id == row.id for candidate in scoped_rows):
+            return scoped_rows
+    return [row]
 
 
 def _resolve_adjustment_departments(
@@ -664,100 +723,109 @@ def _resolve_adjustment_departments(
         AdjustmentOpportunity.school_name_normalized == row.school_name_normalized,
         AdjustmentOpportunity.department_name.is_not(None),
     )
+    if row.year is None:
+        query = query.filter(AdjustmentOpportunity.year.is_(None))
+    else:
+        query = query.filter(AdjustmentOpportunity.year == row.year)
     if row.major_code:
         query = query.filter(AdjustmentOpportunity.major_code == row.major_code)
     elif row.major_name_normalized:
         query = query.filter(AdjustmentOpportunity.major_name_normalized == row.major_name_normalized)
+    if row.vacancy_count is None:
+        query = query.filter(AdjustmentOpportunity.vacancy_count.is_(None))
+    else:
+        query = query.filter(AdjustmentOpportunity.vacancy_count == row.vacancy_count)
     rows = query.limit(10).all()
     fallback = _dedupe_terms([value for (value,) in rows if str(value or "").strip()])
-    return fallback[:3]
+    return fallback[:1] if len(fallback) == 1 else []
 
 
 def _merge_adjustment_opportunity_rows(rows: list[AdjustmentOpportunity]) -> list[dict]:
     grouped: dict[str, list[AdjustmentOpportunity]] = defaultdict(list)
     for row in rows:
-        grouped[_build_adjustment_opportunity_merge_key(row)].append(row)
+        grouped[_build_adjustment_opportunity_base_merge_key(row)].append(row)
 
     merged_rows: list[dict] = []
     for grouped_rows in grouped.values():
-        ordered = sorted(
-            grouped_rows,
-            key=lambda row: (
-                int(bool((row.source_url or "").strip())),
-                row.published_at or datetime.min.replace(tzinfo=timezone.utc),
-                row.updated_at,
-            ),
-            reverse=True,
-        )
-        primary = ordered[0]
-        department_names = [row.department_name for row in ordered if str(row.department_name or "").strip()]
-        unique_departments: list[str] = []
-        seen_departments: set[str] = set()
-        for value in department_names:
-            text = str(value).strip()
-            if text and text not in seen_departments:
-                seen_departments.add(text)
-                unique_departments.append(text)
+        for scoped_rows in _split_adjustment_opportunity_rows_by_department(grouped_rows):
+            ordered = sorted(
+                scoped_rows,
+                key=lambda row: (
+                    int(bool((row.source_url or "").strip())),
+                    row.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                    row.updated_at,
+                ),
+                reverse=True,
+            )
+            primary = ordered[0]
+            department_names = [row.department_name for row in ordered if str(row.department_name or "").strip()]
+            unique_departments: list[str] = []
+            seen_departments: set[str] = set()
+            for value in department_names:
+                text = str(value).strip()
+                if text and text not in seen_departments:
+                    seen_departments.add(text)
+                    unique_departments.append(text)
 
-        verification_values = [row.verification_status for row in ordered if str(row.verification_status or "").strip()]
-        unique_verification: list[str] = []
-        seen_verification: set[str] = set()
-        for value in verification_values:
-            text = str(value).strip()
-            if text and text not in seen_verification:
-                seen_verification.add(text)
-                unique_verification.append(text)
+            verification_values = [row.verification_status for row in ordered if str(row.verification_status or "").strip()]
+            unique_verification: list[str] = []
+            seen_verification: set[str] = set()
+            for value in verification_values:
+                text = str(value).strip()
+                if text and text not in seen_verification:
+                    seen_verification.add(text)
+                    unique_verification.append(text)
 
-        reference_urls: list[str] = []
-        seen_urls: set[str] = set()
-        for row in ordered:
-            meta = dict(row.meta_json or {})
-            urls = [row.source_url, meta.get("source_url"), meta.get("top_source_url"), *(meta.get("reference_urls") or [])]
-            for candidate in urls:
-                url = str(candidate or "").strip()
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    reference_urls.append(url)
+            reference_urls: list[str] = []
+            seen_urls: set[str] = set()
+            for candidate_row in ordered:
+                meta = dict(candidate_row.meta_json or {})
+                urls = [candidate_row.source_url, meta.get("source_url"), meta.get("top_source_url"), *(meta.get("reference_urls") or [])]
+                for candidate in urls:
+                    url = str(candidate or "").strip()
+                    if url and url not in seen_urls:
+                        seen_urls.add(url)
+                        reference_urls.append(url)
 
-        dataset_keys = sorted({str(row.source_dataset_key) for row in ordered if str(row.source_dataset_key or "").strip()})
-        source_types = sorted({str(row.source_type) for row in ordered if str(row.source_type or "").strip()})
+            dataset_keys = sorted({str(candidate_row.source_dataset_key) for candidate_row in ordered if str(candidate_row.source_dataset_key or "").strip()})
+            source_types = sorted({str(candidate_row.source_type) for candidate_row in ordered if str(candidate_row.source_type or "").strip()})
 
-        min_scores = [row.min_score for row in ordered if row.min_score is not None]
-        avg_scores = [row.avg_score for row in ordered if row.avg_score is not None]
-        max_scores = [row.max_score for row in ordered if row.max_score is not None]
-        initial_min_scores = [row.initial_score_min for row in ordered if row.initial_score_min is not None]
-        initial_max_scores = [row.initial_score_max for row in ordered if row.initial_score_max is not None]
-        adjustment_min_scores = [row.adjustment_score_min for row in ordered if row.adjustment_score_min is not None]
-        adjustment_max_scores = [row.adjustment_score_max for row in ordered if row.adjustment_score_max is not None]
+            min_scores = [candidate_row.min_score for candidate_row in ordered if candidate_row.min_score is not None]
+            avg_scores = [candidate_row.avg_score for candidate_row in ordered if candidate_row.avg_score is not None]
+            max_scores = [candidate_row.max_score for candidate_row in ordered if candidate_row.max_score is not None]
+            initial_min_scores = [candidate_row.initial_score_min for candidate_row in ordered if candidate_row.initial_score_min is not None]
+            initial_max_scores = [candidate_row.initial_score_max for candidate_row in ordered if candidate_row.initial_score_max is not None]
+            adjustment_min_scores = [candidate_row.adjustment_score_min for candidate_row in ordered if candidate_row.adjustment_score_min is not None]
+            adjustment_max_scores = [candidate_row.adjustment_score_max for candidate_row in ordered if candidate_row.adjustment_score_max is not None]
 
-        merged_meta = dict(primary.meta_json or {})
-        merged_meta["reference_urls"] = reference_urls
-        merged_meta["source_dataset_keys"] = dataset_keys
-        merged_meta["source_types"] = source_types
-        merged_meta["merged_row_ids"] = [row.id for row in ordered]
-        merged_meta["merged_departments"] = unique_departments
-        merged_meta["merged_verification_statuses"] = unique_verification
+            merged_meta = dict(primary.meta_json or {})
+            merged_meta["reference_urls"] = reference_urls
+            merged_meta["source_dataset_keys"] = dataset_keys
+            merged_meta["source_types"] = source_types
+            merged_meta["merged_row_ids"] = [candidate_row.id for candidate_row in ordered]
+            merged_meta["merged_departments"] = unique_departments
+            merged_meta["merged_verification_statuses"] = unique_verification
 
-        merged_rows.append(
-            {
-                "primary": primary,
-                "rows": ordered,
-                "department_names": unique_departments,
-                "verification_statuses": unique_verification,
-                "reference_urls": reference_urls,
-                "dataset_keys": dataset_keys,
-                "source_types": source_types,
-                "initial_score_min": min(initial_min_scores) if initial_min_scores else None,
-                "initial_score_max": max(initial_max_scores) if initial_max_scores else None,
-                "adjustment_score_min": min(adjustment_min_scores) if adjustment_min_scores else None,
-                "adjustment_score_max": max(adjustment_max_scores) if adjustment_max_scores else None,
-                "min_score": min(min_scores) if min_scores else None,
-                "avg_score": (sum(avg_scores) / len(avg_scores)) if avg_scores else None,
-                "max_score": max(max_scores) if max_scores else None,
-                "merged_count": len(ordered),
-                "meta_json": merged_meta,
-            }
-        )
+            merged_rows.append(
+                {
+                    "primary": primary,
+                    "rows": ordered,
+                    "department_names": unique_departments,
+                    "verification_statuses": unique_verification,
+                    "reference_urls": reference_urls,
+                    "dataset_keys": dataset_keys,
+                    "source_types": source_types,
+                    "initial_score_min": min(initial_min_scores) if initial_min_scores else None,
+                    "initial_score_max": max(initial_max_scores) if initial_max_scores else None,
+                    "adjustment_score_min": min(adjustment_min_scores) if adjustment_min_scores else None,
+                    "adjustment_score_max": max(adjustment_max_scores) if adjustment_max_scores else None,
+                    "min_score": min(min_scores) if min_scores else None,
+                    "avg_score": (sum(avg_scores) / len(avg_scores)) if avg_scores else None,
+                    "max_score": max(max_scores) if max_scores else None,
+                    "merged_count": len(ordered),
+                    "meta_json": merged_meta,
+                }
+            )
     return merged_rows
 
 
@@ -774,7 +842,7 @@ def _to_adjustment_opportunity_response(
 ) -> SearchResponse:
     school_names = [row.school_name for row in rows if row.school_name]
     historical_profiles = load_profiles_for_search(db, school_names)
-    mentor_radar = load_mentor_radar_for_search(db, school_names)
+    mentor_evaluations = load_mentor_evaluations_for_search(db, school_names)
     release_timings = load_release_timing_for_search(db, school_names)
     school_intelligence = load_school_intelligence_for_search(db, school_names)
     merged_rows = _merge_adjustment_opportunity_rows(rows)
@@ -782,6 +850,7 @@ def _to_adjustment_opportunity_response(
     for merged in merged_rows:
         row = merged["primary"]
         display_departments = _resolve_adjustment_departments(db, row, merged["department_names"])
+        resolved_department_name = display_departments[0] if len(display_departments) == 1 else row.department_name
         school_name = row.school_name
         normalized_school_name = normalize_school_name(school_name)
         school_profiles = historical_profiles.get(normalized_school_name, [])
@@ -789,11 +858,15 @@ def _to_adjustment_opportunity_response(
             school_profiles,
             major_codes=[row.major_code] if row.major_code else [],
             major_name=row.major_name,
+            department_name=resolved_department_name,
             study_modes=[row.study_mode] if row.study_mode else [],
             candidate_score=payload.candidate_score,
             reference_year=row.year,
         )
-        mentor_signal = mentor_radar.get(normalized_school_name)
+        mentor_signal = build_mentor_radar_insight(
+            mentor_evaluations.get(normalized_school_name, []),
+            department_name=resolved_department_name,
+        )
         release_timing_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
         school_signal = school_intelligence.get(normalized_school_name)
         meta = dict(merged["meta_json"] or {})

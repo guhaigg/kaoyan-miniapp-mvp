@@ -56,7 +56,11 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         landing25_path,
         "总表",
         ["学校", "地区", "院校类别", "所属学院", "专业", "学习形式", "初试总分", "调剂成绩"],
-        [["(10001)XX大学", "(31)上海市", "211", "信息学院", "(085400)电子信息", "非全日制", 335, 82]],
+        [
+            ["(10001)XX大学", "(31)上海市", "211", "信息学院", "(085400)电子信息", "非全日制", 335, 82],
+            ["(10001)XX大学", "(31)上海市", "211", None, "(085400)电子信息", "非全日制", 338, 81],
+            ["(10001)XX大学", "(31)上海市", "211", "人工智能学院", "(085400)电子信息", "全日制", 342, 80],
+        ],
     )
     _write_xlsx(
         program_path,
@@ -177,7 +181,7 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         mentors = build_mentor_evaluations_from_archives(db)
         timings = build_release_timing_profiles_from_archives(db)
 
-    assert len(opportunities) == 10
+    assert len(opportunities) == 12
     snapshot_row = next(row for row in opportunities if row["source_type"] == "snapshot" and row["year"] == 2025)
     assert snapshot_row["source_url"] == "https://example.com/1"
     assert snapshot_row["vacancy_count"] == 4
@@ -194,7 +198,7 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
     stats2325_opportunity = next(row for row in opportunities if row["source_dataset_key"] == "adjustment_stats_2023_2025_raw")
     assert stats2325_opportunity["year"] == 2023
     assert stats2325_opportunity["avg_score"] == 330
-    assert len(profiles) == 6
+    assert len(profiles) == 7
     stats_row = next(row for row in profiles if row["source_type"] == "adjustment_stats")
     assert stats_row["major_code"] == "085400"
     assert stats_row["avg_score"] == 326.5
@@ -205,6 +209,21 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
     assert all(row["city_name"] == "上海" for row in landing_rows)
     assert all(row["initial_score_min"] is not None for row in landing_rows)
     assert all(row["adjustment_score_min"] is not None for row in landing_rows)
+    landing_2025_info = next(
+        row
+        for row in landing_rows
+        if row["year"] == 2025 and row["department_name_normalized"] == "信息学院"
+    )
+    assert landing_2025_info["sample_count"] == 2
+    assert landing_2025_info["initial_score_min"] == 335
+    assert landing_2025_info["initial_score_max"] == 338
+    landing_2025_ai = next(
+        row
+        for row in landing_rows
+        if row["year"] == 2025 and row["department_name_normalized"] == "人工智能学院"
+    )
+    assert landing_2025_ai["sample_count"] == 1
+    assert landing_2025_ai["initial_score_min"] == 342
     legacy_stats_row = next(row for row in profiles if row["source_dataset_key"] == "adjustment_stats_2023_2025_raw")
     assert legacy_stats_row["year"] == 2023
     assert legacy_stats_row["initial_score_min"] == 330

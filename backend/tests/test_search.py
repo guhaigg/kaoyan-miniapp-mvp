@@ -3,6 +3,7 @@ from app.db import SessionLocal
 from app.models import AdjustmentOpportunity, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
+from app.routers.search import _build_adjustment_detail_from_opportunity
 
 
 def _register_and_login(client, username: str) -> str:
@@ -225,7 +226,7 @@ def test_adjustment_search_falls_back_to_structured_opportunities(client):
     assert payload["items"][0]["source_url"] == "https://example.com/sdu-adjustment"
 
 
-def test_adjustment_search_merges_same_school_year_major_and_vacancy_rows(client):
+def test_adjustment_search_keeps_same_school_major_rows_separate_when_departments_differ(client):
     with SessionLocal() as db:
         db.add_all(
             [
@@ -293,26 +294,109 @@ def test_adjustment_search_merges_same_school_year_major_and_vacancy_rows(client
     )
     assert search.status_code == 200
     payload = search.json()
-    assert payload["total"] == 1
-    item = payload["items"][0]
-    assert item["item_kind"] == "opportunity"
-    assert item["school_name"] == "湖北大学"
-    assert item["major"] == "电子信息"
-    assert item["merged_count"] == 2
-    assert "计算机与信息工程学院" in item["department_name"]
-    assert "人工智能学院" in item["department_name"]
+    assert payload["total"] == 2
+    items_by_department = {
+        item["department_name"]: item
+        for item in payload["items"]
+    }
+    assert items_by_department["计算机与信息工程学院"]["merged_count"] == 1
+    assert items_by_department["人工智能学院"]["merged_count"] == 1
 
     detail = client.get(
-        f"/api/v1/search/adjustments/items/{item['id']}?item_kind={item['item_kind']}",
+        f"/api/v1/search/adjustments/items/{items_by_department['人工智能学院']['id']}?item_kind=opportunity",
         headers={"X-User-Token": token},
     )
     assert detail.status_code == 200
     detail_payload = detail.json()
-    assert "计算机与信息工程学院" in (detail_payload["department_name"] or "")
-    assert "人工智能学院" in (detail_payload["department_name"] or "")
+    assert detail_payload["department_name"] == "人工智能学院"
     urls = [entry["url"] for entry in detail_payload["links"]]
-    assert "https://example.com/hubu-merge-1" in urls
     assert "https://example.com/hubu-merge-2" in urls
+    assert "https://example.com/hubu-merge-1" not in urls
+
+
+def test_adjustment_search_merges_missing_department_into_unique_department_group(client):
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                AdjustmentOpportunity(
+                    opportunity_key="merge-opp-unique-1",
+                    source_dataset_key="adjustment_snapshot_2025_0409_raw",
+                    source_type="snapshot",
+                    year=2025,
+                    school_name="福州大学",
+                    school_name_normalized="福州大学",
+                    school_code="10386",
+                    region_name="福建",
+                    school_tier=None,
+                    department_name="经济与管理学院",
+                    department_name_normalized="经济与管理学院",
+                    major_code="045101",
+                    major_name="教育管理",
+                    major_name_normalized="教育管理",
+                    study_mode="fulltime",
+                    vacancy_count=3,
+                    min_score=351,
+                    avg_score=360,
+                    max_score=368,
+                    verification_status="官网",
+                    title="福州大学教育管理调剂快照",
+                    summary="快照来源",
+                    source_url="https://example.com/fzu-merge-1",
+                    meta_json={"reference_urls": ["https://example.com/fzu-ref-1"]},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="merge-opp-unique-2",
+                    source_dataset_key="adjustment_announcement_2025_raw",
+                    source_type="adjustment_notice",
+                    year=2025,
+                    school_name="福州大学",
+                    school_name_normalized="福州大学",
+                    school_code="10386",
+                    region_name="福建",
+                    school_tier=None,
+                    department_name=None,
+                    department_name_normalized=None,
+                    major_code="045101",
+                    major_name="教育管理",
+                    major_name_normalized="教育管理",
+                    study_mode="fulltime",
+                    vacancy_count=3,
+                    min_score=352,
+                    avg_score=361,
+                    max_score=369,
+                    verification_status="已核验",
+                    title="福州大学教育管理调剂公告",
+                    summary="公告来源",
+                    source_url="https://example.com/fzu-merge-2",
+                    meta_json={"reference_urls": ["https://example.com/fzu-ref-2"]},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_merge_unique_department_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"keywords": "福州大学"},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["department_name"] == "经济与管理学院"
+    assert item["merged_count"] == 2
+
+    detail = client.get(
+        f"/api/v1/search/adjustments/items/{item['id']}?item_kind=opportunity",
+        headers={"X-User-Token": token},
+    )
+    assert detail.status_code == 200
+    detail_payload = detail.json()
+    urls = [entry["url"] for entry in detail_payload["links"]]
+    assert detail_payload["department_name"] == "经济与管理学院"
+    assert "https://example.com/fzu-merge-1" in urls
+    assert "https://example.com/fzu-merge-2" in urls
 
 
 def test_adjustment_search_infers_department_from_title_when_missing(client):
@@ -1271,23 +1355,53 @@ def test_content_ingest_requires_admin_token(client):
     assert allowed.status_code == 200
 
 
-def test_adjustment_detail_returns_structured_opportunity_payload(client):
+def test_adjustment_detail_returns_structured_opportunity_payload():
     with SessionLocal() as db:
-        db.add(
-            MentorEvaluation(
-                review_key="mentor-detail-1",
-                source_dataset_key="mentor_reviews_raw",
-                school_name="山东大学",
-                school_name_normalized="山东大学",
-                department_name="外国语学院",
-                department_name_normalized="外国语学院",
-                mentor_name="李老师",
-                mentor_name_normalized="李老师",
-                review_text="公开评价显示该导师存在强制加班<br><br>和延毕风险，请谨慎选择。",
-                review_tags=["延毕风险", "强制加班"],
-                risk_level="warning",
-                meta_json={},
-            )
+        db.add_all(
+            [
+                MentorEvaluation(
+                    review_key="mentor-detail-1",
+                    source_dataset_key="mentor_reviews_raw",
+                    school_name="山东大学",
+                    school_name_normalized="山东大学",
+                    department_name="外国语学院",
+                    department_name_normalized="外国语学院",
+                    mentor_name="李老师",
+                    mentor_name_normalized="李老师",
+                    review_text="公开评价显示该导师存在强制加班<br><br>和延毕风险，请谨慎选择。",
+                    review_tags=["延毕风险", "强制加班"],
+                    risk_level="warning",
+                    meta_json={},
+                ),
+                MentorEvaluation(
+                    review_key="mentor-detail-2",
+                    source_dataset_key="mentor_reviews_raw",
+                    school_name="山东大学",
+                    school_name_normalized="山东大学",
+                    department_name="文学院",
+                    department_name_normalized="文学院",
+                    mentor_name="王老师",
+                    mentor_name_normalized="王老师",
+                    review_text="文学院导师评价。",
+                    review_tags=["管理严格"],
+                    risk_level="warning",
+                    meta_json={},
+                ),
+                MentorEvaluation(
+                    review_key="mentor-detail-3",
+                    source_dataset_key="mentor_reviews_raw",
+                    school_name="山东大学",
+                    school_name_normalized="山东大学",
+                    department_name=None,
+                    department_name_normalized=None,
+                    mentor_name="周老师",
+                    mentor_name_normalized="周老师",
+                    review_text="校级混合评价，整体口碑尚可。",
+                    review_tags=["口碑尚可"],
+                    risk_level="positive",
+                    meta_json={},
+                ),
+            ]
         )
         db.add(
             AdjustmentOpportunity(
@@ -1317,23 +1431,79 @@ def test_adjustment_detail_returns_structured_opportunity_payload(client):
                 meta_json={"reference_urls": ["https://example.com/sdu-reference"]},
             )
         )
-        db.commit()
-        opportunity_id = (
-            db.query(AdjustmentOpportunity.id)
-            .filter(AdjustmentOpportunity.opportunity_key == "opp-detail-1")
-            .scalar()
+        db.add_all(
+            [
+                HistoricalAdjustmentProfile(
+                    profile_key="profile-detail-1",
+                    year=2025,
+                    source_type="landing",
+                    source_dataset_key="adjustment_landing_2025_raw",
+                    school_name="山东大学",
+                    school_name_normalized="山东大学",
+                    school_code="10422",
+                    region_name="山东",
+                    school_tier="985",
+                    department_name="外国语学院",
+                    department_name_normalized="外国语学院",
+                    major_code="055101",
+                    major_name="英语笔译",
+                    major_name_normalized="英语笔译",
+                    study_mode="fulltime",
+                    sample_count=3,
+                    vacancy_count=None,
+                    initial_score_min=360,
+                    initial_score_max=389,
+                    adjustment_score_min=78,
+                    adjustment_score_max=85,
+                    min_score=360,
+                    avg_score=374.5,
+                    max_score=389,
+                    meta_json={},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="profile-detail-2",
+                    year=2025,
+                    source_type="landing",
+                    source_dataset_key="adjustment_landing_2025_raw",
+                    school_name="山东大学",
+                    school_name_normalized="山东大学",
+                    school_code="10422",
+                    region_name="山东",
+                    school_tier="985",
+                    department_name="文学院",
+                    department_name_normalized="文学院",
+                    major_code="055101",
+                    major_name="英语笔译",
+                    major_name_normalized="英语笔译",
+                    study_mode="fulltime",
+                    sample_count=2,
+                    vacancy_count=None,
+                    initial_score_min=330,
+                    initial_score_max=340,
+                    adjustment_score_min=70,
+                    adjustment_score_max=74,
+                    min_score=330,
+                    avg_score=335,
+                    max_score=340,
+                    meta_json={},
+                ),
+            ]
         )
-
-    token = _register_and_login(client, "adjustment_detail_opportunity_user")
-    response = client.get(
-        f"/api/v1/search/adjustments/items/{opportunity_id}?item_kind=opportunity",
-        headers={"X-User-Token": token},
-    )
-    assert response.status_code == 200
-    payload = response.json()
+        db.commit()
+        opportunity = (
+            db.query(AdjustmentOpportunity)
+            .filter(AdjustmentOpportunity.opportunity_key == "opp-detail-1")
+            .one()
+        )
+        payload = _build_adjustment_detail_from_opportunity(db, opportunity).model_dump()
     assert payload["item_kind"] == "opportunity"
     assert payload["school_name"] == "山东大学"
     assert payload["links"][0]["url"] == "https://example.com/sdu-adjustment"
+    assert payload["historical_adjustment"]["initial_score_min"] == 360
+    assert payload["historical_adjustment"]["initial_score_max"] == 389
+    assert payload["mentor_radar"]["review_count"] == 2
+    assert payload["mentor_radar"]["warning_count"] == 1
+    assert {review["mentor_name"] for review in payload["mentor_reviews"]} == {"李老师", "周老师"}
     assert payload["mentor_reviews"][0]["mentor_name"] == "李老师"
     assert "延毕风险" in payload["mentor_reviews"][0]["review_text"]
     assert "<br>" not in payload["mentor_reviews"][0]["review_text"]
