@@ -120,13 +120,22 @@ export default function SearchPage() {
     return map;
   }, [subscriptionsQuery.data?.items]);
 
+  const adjustmentQueryIntent = resolveAdjustmentQueryIntent({
+    keywords,
+    schoolName,
+    majorFilter,
+  });
   const resolvedSchoolName =
-    schoolName.trim() || (queryType === "adjustments" && isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : "");
+    queryType === "adjustments"
+      ? adjustmentQueryIntent.schoolName
+      : schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : "");
+  const resolvedMajorFilter =
+    queryType === "adjustments" ? adjustmentQueryIntent.major : majorFilter.trim();
   const resolvedKeywords =
-    queryType === "adjustments" && !schoolName.trim() && isSchoolLikeQuery(keywords.trim()) ? "" : keywords.trim();
+    queryType === "adjustments" ? adjustmentQueryIntent.keywords : keywords.trim();
   const primaryInputPlaceholder =
     queryType === "adjustments"
-      ? "输入学校名、专业名或专业代码；学校名会自动识别..."
+      ? "输入学校名、专业名或专业代码；系统会自动识别..."
       : "输入院校代码、名称、学院或招生关键字...";
 
   const calculateMatch = () => {
@@ -165,7 +174,7 @@ export default function SearchPage() {
           : await adjustmentMutation.mutateAsync({
               keywords: resolvedKeywords || undefined,
               school_name: resolvedSchoolName || undefined,
-              major: majorFilter.trim() || undefined,
+              major: resolvedMajorFilter || undefined,
               region: regionFilter.trim() || undefined,
               candidate_score: candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined,
               page,
@@ -174,9 +183,9 @@ export default function SearchPage() {
       setSearchResult(payload);
       if (payload.total === 0) {
         setMessage(buildEmptyResultMessage(queryType, {
-          keywords,
-          schoolName,
-          majorFilter,
+          keywords: resolvedKeywords,
+          schoolName: resolvedSchoolName,
+          majorFilter: resolvedMajorFilter,
           regionFilter,
           candidateScoreFilter,
         }));
@@ -316,9 +325,9 @@ export default function SearchPage() {
             </button>
           </div>
           <div className="mt-2 text-xs text-slate-500">
-            {queryType === "adjustments"
-              ? "调剂模式下，主搜索框直接输入学校名会自动按院校条件处理。"
-              : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
+              {queryType === "adjustments"
+                ? "调剂模式下，主搜索框会优先识别学校名、专业名和专业代码；只有你额外填写院校或专业字段时，主框才作为补充关键词。"
+                : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-5">
             <input
@@ -332,7 +341,7 @@ export default function SearchPage() {
               value={majorFilter}
               onChange={(event) => setMajorFilter(event.target.value)}
               onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-              placeholder="专业（调剂模式可选）"
+              placeholder={queryType === "adjustments" ? "专业（主框已填专业可留空）" : "专业（调剂模式可选）"}
               className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
             />
             <input
@@ -1199,6 +1208,46 @@ function formatIntelTime(value: string) {
   const hour = String(date.getHours()).padStart(2, "0");
   const minute = String(date.getMinutes()).padStart(2, "0");
   return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function resolveAdjustmentQueryIntent(filters: {
+  keywords: string;
+  schoolName: string;
+  majorFilter: string;
+}) {
+  const keyword = filters.keywords.trim();
+  const schoolName = filters.schoolName.trim();
+  const major = filters.majorFilter.trim();
+
+  if (!keyword) {
+    return {
+      keywords: "",
+      schoolName,
+      major,
+    };
+  }
+
+  if (schoolName || major) {
+    return {
+      keywords: keyword,
+      schoolName,
+      major,
+    };
+  }
+
+  if (isSchoolLikeQuery(keyword)) {
+    return {
+      keywords: "",
+      schoolName: keyword,
+      major: "",
+    };
+  }
+
+  return {
+    keywords: "",
+    schoolName: "",
+    major: keyword,
+  };
 }
 
 function buildEmptyResultMessage(
