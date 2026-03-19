@@ -610,7 +610,11 @@ def _replace_rows_by_unique_key(
                 "id": new_id(),
                 "created_at": timestamp,
                 "updated_at": timestamp,
-                **row,
+                **{
+                    key: value
+                    for key, value in row.items()
+                    if key in physical_columns
+                },
             }
             for row in rows[start : start + batch_size]
         ]
