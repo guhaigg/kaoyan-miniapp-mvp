@@ -137,8 +137,12 @@ jobs:
           fi
 
           if systemctl list-unit-files | grep -q "^nginx\.service"; then
-            nginx -t
-            systemctl reload nginx
+            if systemctl is-active --quiet nginx; then
+              nginx -t
+              systemctl reload nginx
+            else
+              echo "nginx.service is installed but inactive; skipping reload"
+            fi
           fi
 
           if command -v curl >/dev/null 2>&1; then
