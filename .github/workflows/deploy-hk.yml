@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate required secrets
         env:
@@ -134,9 +136,17 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git stash push -u -m "pre-deploy $(date '+%Y-%m-%dT%H:%M:%S')"
           fi
-          git fetch origin main
-          git checkout main
-          git pull --ff-only origin main
+          if ! git fetch origin main; then
+            repair_dir="/root/backups/repo-git-repair/${pre_ts}"
+            mkdir -p "$repair_dir"
+            if [ -d .git ]; then
+              mv .git "$repair_dir/git-dir-corrupt"
+            fi
+            git init
+            git remote add origin "$REPO_BUNDLE"
+            git fetch origin main
+          fi
+          git checkout -f -B main origin/main
 
           install -d "$WEB_ROOT"
           find "$WEB_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
