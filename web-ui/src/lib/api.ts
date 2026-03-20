@@ -766,15 +766,24 @@ export type ContentFileRetryParseResponse = {
   parse_status: string;
 };
 
-export type SubscriptionType = "school" | "major" | "keyword" | "region";
+export type SubscriptionType = "school" | "major" | "keyword" | "region" | "radar";
 export type SubscriptionCategory = "all" | "announcement" | "adjustment";
 
 export type SubscriptionItem = {
   id: string;
   subscription_type: SubscriptionType;
   value: string;
+  display_label?: string | null;
   category: SubscriptionCategory;
   status: string;
+  source_record_id?: string | null;
+  source_item_kind?: "content" | "opportunity" | null;
+  source_title?: string | null;
+  source_url?: string | null;
+  target_university?: string | null;
+  target_department_name?: string | null;
+  target_major_code?: string | null;
+  target_major_name?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -792,7 +801,10 @@ export type NotificationPayload = {
   summary?: string;
   tags?: string[];
   school_name?: string;
+  department_name?: string;
   major?: string;
+  major_name?: string;
+  major_code?: string;
   region?: string;
   source_url?: string;
   published_at?: string | null;

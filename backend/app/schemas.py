@@ -231,17 +231,34 @@ class BarkNotificationSettingsResponse(BaseModel):
 
 
 class SubscriptionCreateRequest(BaseModel):
-    subscription_type: Literal["school", "major", "keyword", "region"] = "school"
-    value: str = Field(min_length=1, max_length=255)
+    subscription_type: Literal["school", "major", "keyword", "region", "radar"] = "school"
+    value: str | None = Field(default=None, max_length=255)
     category: Literal["all", "announcement", "adjustment"] = "all"
+    source_record_id: str | None = Field(default=None, max_length=64)
+    source_item_kind: Literal["content", "opportunity"] | None = None
+    source_title: str | None = Field(default=None, max_length=255)
+    source_url: str | None = Field(default=None, max_length=1024)
+    target_university: str | None = Field(default=None, max_length=255)
+    target_department_name: str | None = Field(default=None, max_length=255)
+    target_major_code: str | None = Field(default=None, max_length=32)
+    target_major_name: str | None = Field(default=None, max_length=255)
 
 
 class SubscriptionItem(BaseModel):
     id: str
     subscription_type: str
     value: str
+    display_label: str | None = None
     category: str
     status: str
+    source_record_id: str | None = None
+    source_item_kind: str | None = None
+    source_title: str | None = None
+    source_url: str | None = None
+    target_university: str | None = None
+    target_department_name: str | None = None
+    target_major_code: str | None = None
+    target_major_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

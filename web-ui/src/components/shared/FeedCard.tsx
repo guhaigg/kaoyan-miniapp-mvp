@@ -147,7 +147,7 @@ export default function FeedCard({ item }: { item: FeedItem }) {
                 : "border-white/10 bg-white/10 text-slate-200"
             }`}
           >
-            {bookmarkFlash === "saved" ? "已收藏" : "已取消收藏"}
+            {bookmarkFlash === "saved" ? "雷达已启动" : "已停止追踪"}
           </motion.div>
         ) : null}
       </AnimatePresence>

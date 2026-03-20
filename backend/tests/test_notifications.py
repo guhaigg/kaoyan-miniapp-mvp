@@ -75,6 +75,73 @@ def test_outbox_to_delivery_flow(client):
     assert pending_again.json()["total"] == 0
 
 
+def test_radar_subscription_matches_same_school_and_major_code_only(client):
+    token = _access_token(client, username="radar_notify_user")
+    user_headers = {"X-User-Token": token}
+    admin_headers = {"X-Admin-Token": "test-admin-token"}
+
+    create_sub = client.post(
+        "/api/v1/subscriptions",
+        json={
+            "subscription_type": "radar",
+            "category": "adjustment",
+            "source_record_id": "seed-radar-1",
+            "target_university": "湖北大学",
+            "target_major_code": "085600",
+            "target_major_name": "材料与化工",
+        },
+        headers=user_headers,
+    )
+    assert create_sub.status_code == 200
+
+    first_ingest = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "湖北大学085600材料与化工调剂通知",
+            "body": "现释放 2 个缺额。",
+            "summary": "材料与化工开放调剂系统",
+            "school_name": "湖北大学",
+            "major": "材料与化工",
+            "source_url": "https://example.com/hubu-radar-match",
+        },
+        headers=admin_headers,
+    )
+    assert first_ingest.status_code == 200
+
+    processed = notification_engine.process_outbox_batch()
+    assert processed == 1
+
+    pending_resp = client.get("/api/v1/notifications/pending", headers=user_headers)
+    assert pending_resp.status_code == 200
+    payload = pending_resp.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["payload"]["school_name"] == "湖北大学"
+    assert payload["items"][0]["payload"]["major_code"] == "085600"
+
+    second_ingest = client.post(
+        "/api/v1/content",
+        json={
+            "category": "adjustment",
+            "title": "湖北大学085400电子信息调剂通知",
+            "body": "电子信息方向开放调剂。",
+            "summary": "不应命中材料与化工雷达",
+            "school_name": "湖北大学",
+            "major": "电子信息",
+            "source_url": "https://example.com/hubu-radar-nomatch",
+        },
+        headers=admin_headers,
+    )
+    assert second_ingest.status_code == 200
+
+    processed = notification_engine.process_outbox_batch()
+    assert processed == 1
+
+    pending_again = client.get("/api/v1/notifications/pending", headers=user_headers)
+    assert pending_again.status_code == 200
+    assert pending_again.json()["total"] == 0
+
+
 def test_bark_delivery_flow(client, monkeypatch):
     token = _access_token(client, username="bark_user", premium=True)
     user_headers = {"X-User-Token": token}

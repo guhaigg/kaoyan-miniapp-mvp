@@ -158,6 +158,10 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
 
     evaluate_content_for_premium_monitoring(db, content, trigger_status=status)
 
+    adjustment_meta = dict((content.extra or {}).get("adjustment_meta") or {})
+    major_code = next((str(code).strip() for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()), None)
+    department_name = str((content.extra or {}).get("department_name") or "").strip() or None
+
     outbox = NotificationOutbox(
         content_id=content.id,
         event_type="content.upsert",
@@ -168,7 +172,10 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
             "body": content.body,
             "summary": content.summary,
             "school_name": school.name if school else None,
+            "department_name": department_name,
             "major": content.major,
+            "major_name": content.major,
+            "major_code": major_code,
             "region": content.region,
             "tags": list((content.extra or {}).get("tags") or []),
             "source_url": content.source_url,

@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from app.db import SessionLocal
-from app.models import PortalUser
+from app.models import PortalUser, PortalUserSubscription
 from app.models import utcnow
 from app.services.account_access import ENTITLEMENT_SOURCE_ADMIN_GRANT, upsert_premium_entitlement
 
@@ -95,6 +95,60 @@ def test_premium_user_school_subscription_crud_flow(client):
     assert list_after_delete.status_code == 200
     payload_after_delete = list_after_delete.json()
     assert payload_after_delete["total"] == 0
+
+
+def test_logged_in_user_can_create_radar_subscription_with_snapshot(client):
+    _user_id, token = _register_and_login(client, username="watch_radar")
+    headers = {"X-User-Token": token}
+
+    create_response = client.post(
+        "/api/v1/subscriptions",
+        json={
+            "subscription_type": "radar",
+            "category": "adjustment",
+            "source_record_id": "record-1",
+            "source_item_kind": "content",
+            "source_title": "湖北大学材料与化工调剂公告",
+            "source_url": "https://example.com/hubu-materials",
+            "target_university": "湖北大学",
+            "target_department_name": "材料科学与工程学院",
+            "target_major_code": "085600",
+            "target_major_name": "材料与化工",
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created["subscription_type"] == "radar"
+    assert created["category"] == "adjustment"
+    assert created["target_university"] == "湖北大学"
+    assert created["target_major_code"] == "085600"
+    assert created["target_major_name"] == "材料与化工"
+    assert created["display_label"] == "湖北大学 · 材料科学与工程学院 · 材料与化工 · 085600"
+
+    duplicate_response = client.post(
+        "/api/v1/subscriptions",
+        json={
+            "subscription_type": "radar",
+            "category": "adjustment",
+            "source_record_id": "record-2",
+            "source_item_kind": "opportunity",
+            "source_title": "湖北大学材料与化工调剂缺额",
+            "target_university": "湖北大学",
+            "target_major_code": "85600",
+            "target_major_name": "材料与化工",
+        },
+        headers=headers,
+    )
+    assert duplicate_response.status_code == 200
+    assert duplicate_response.json()["id"] == created["id"]
+
+    with SessionLocal() as db:
+        item = db.query(PortalUserSubscription).filter(PortalUserSubscription.id == created["id"]).one()
+        assert item.source_record_id == "record-2"
+        assert item.source_item_kind == "opportunity"
+        assert item.target_school_name == "湖北大学"
+        assert item.target_major_code == "085600"
 
 
 def test_expired_premium_user_is_auto_recycled_and_cannot_subscribe_school(client):

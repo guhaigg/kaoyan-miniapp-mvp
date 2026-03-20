@@ -10,12 +10,14 @@ import { useAppStore } from "@/lib/store";
 
 function buildToastContent(item: NotificationEventItem) {
   const school = item.payload.school_name || "目标院校";
+  const major = item.payload.major_name || item.payload.major || item.payload.major_code || "";
   const title = item.payload.title || "有新的信息变更";
   const tags = (item.payload.tags || []).join(" ");
   const isUrgent = /紧急|截止|补录|缺额|复试|调剂/i.test(`${title} ${item.payload.summary || ""} ${tags}`);
+  const targetLabel = [school, major].filter(Boolean).join(" · ");
   return {
-    toastTitle: isUrgent ? "紧急调剂提醒" : "数据源更新提醒",
-    toastMessage: `${school}：${title}`,
+    toastTitle: isUrgent ? "雷达异动预警" : "雷达追踪更新",
+    toastMessage: targetLabel ? `${targetLabel}：${title}` : `${school}：${title}`,
     toastType: isUrgent ? ("urgent" as const) : ("info" as const),
   };
 }

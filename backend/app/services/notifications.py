@@ -12,6 +12,7 @@ from ..config import get_settings
 from ..db import SessionLocal
 from ..models import NotificationDelivery, NotificationOutbox, PortalUser, PortalUserSubscription, utcnow
 from .account_access import get_active_admin_user_ids, resolve_portal_access
+from .historical_intelligence import normalize_major_code, normalize_major_name, normalize_school_name
 from .nlp import keyword_matches_content, normalize_tag
 
 with suppress(Exception):
@@ -26,6 +27,7 @@ class NotificationMatcher:
         self._school_rules: list[tuple[str, str, str]] = []
         self._major_rules: list[tuple[str, str, str]] = []
         self._region_rules: list[tuple[str, str, str]] = []
+        self._radar_rules: list[tuple[str, str, str | None, str | None, str]] = []
         self._keyword_rules: list[tuple[str, str, str]] = []
         self._keyword_rule_map: dict[str, list[tuple[str, str, str]]] = {}
         self._keyword_automaton = None
@@ -70,6 +72,7 @@ class NotificationMatcher:
         school_rules: list[tuple[str, str, str]] = []
         major_rules: list[tuple[str, str, str]] = []
         region_rules: list[tuple[str, str, str]] = []
+        radar_rules: list[tuple[str, str, str | None, str | None, str]] = []
         keyword_rules: list[tuple[str, str, str]] = []
         keyword_rule_map: dict[str, list[tuple[str, str, str]]] = {}
 
@@ -83,6 +86,13 @@ class NotificationMatcher:
                 if row.user_id not in school_allowed_user_ids:
                     continue
                 school_rules.append(rule)
+            elif row.subscription_type == "radar":
+                school_name_normalized = normalize_school_name(row.target_school_name or row.value)
+                major_code = normalize_major_code(row.target_major_code)
+                major_name = normalize_major_name(row.target_major_name)
+                if not school_name_normalized or (not major_code and not major_name):
+                    continue
+                radar_rules.append((row.user_id, school_name_normalized, major_code, major_name, category))
             elif row.subscription_type == "major":
                 major_rules.append(rule)
             elif row.subscription_type == "region":
@@ -102,6 +112,7 @@ class NotificationMatcher:
             self._school_rules = school_rules
             self._major_rules = major_rules
             self._region_rules = region_rules
+            self._radar_rules = radar_rules
             self._keyword_rules = keyword_rules
             self._keyword_rule_map = keyword_rule_map
             self._keyword_automaton = keyword_automaton
@@ -114,14 +125,18 @@ class NotificationMatcher:
             self._school_rules = []
             self._major_rules = []
             self._region_rules = []
+            self._radar_rules = []
             self._keyword_rules = []
             self._keyword_rule_map = {}
             self._keyword_automaton = None
 
     def match_user_ids(self, payload: dict[str, Any]) -> set[str]:
         category = str(payload.get("category") or "").strip().lower()
-        school_name = str(payload.get("school_name") or "").strip().lower()
-        major = str(payload.get("major") or "").strip().lower()
+        school_name = str(payload.get("school_name") or "").strip()
+        normalized_school_name = normalize_school_name(school_name) if school_name else ""
+        major = str(payload.get("major") or payload.get("major_name") or "").strip()
+        normalized_major_name = normalize_major_name(major) or ""
+        normalized_major_code = normalize_major_code(payload.get("major_code")) or ""
         region = str(payload.get("region") or "").strip().lower()
         tags = [normalize_tag(tag) for tag in (payload.get("tags") or [])]
         tags = [tag for tag in tags if tag]
@@ -131,8 +146,10 @@ class NotificationMatcher:
                 str(payload.get("title") or "").strip().lower(),
                 str(payload.get("summary") or "").strip().lower(),
                 str(payload.get("body") or "").strip().lower(),
-                school_name,
-                major,
+                school_name.lower(),
+                major.lower(),
+                normalized_major_code,
+                str(payload.get("department_name") or "").strip().lower(),
                 region,
             ]
             if x
@@ -142,21 +159,35 @@ class NotificationMatcher:
             school_rules = list(self._school_rules)
             major_rules = list(self._major_rules)
             region_rules = list(self._region_rules)
+            radar_rules = list(self._radar_rules)
             keyword_rules = list(self._keyword_rules)
             keyword_rule_map = dict(self._keyword_rule_map)
             keyword_automaton = self._keyword_automaton
 
         matched_user_ids: set[str] = set()
         for user_id, value, rule_category in school_rules:
-            if value in school_name and self._category_match(category, rule_category):
+            if value in school_name.lower() and self._category_match(category, rule_category):
                 matched_user_ids.add(user_id)
 
         for user_id, value, rule_category in major_rules:
-            if value in major and self._category_match(category, rule_category):
+            if not self._category_match(category, rule_category):
+                continue
+            if value in major.lower() or (normalized_major_code and value in normalized_major_code.lower()):
                 matched_user_ids.add(user_id)
 
         for user_id, value, rule_category in region_rules:
             if value in region and self._category_match(category, rule_category):
+                matched_user_ids.add(user_id)
+
+        for user_id, school_value, major_code, major_name, rule_category in radar_rules:
+            if not self._category_match(category, rule_category):
+                continue
+            if school_value != normalized_school_name:
+                continue
+            if major_code and major_code == normalized_major_code:
+                matched_user_ids.add(user_id)
+                continue
+            if major_name and normalized_major_name and major_name == normalized_major_name:
                 matched_user_ids.add(user_id)
 
         if keyword_automaton is not None:

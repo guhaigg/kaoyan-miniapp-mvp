@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
@@ -22,15 +23,24 @@ import SearchCommandCenter, {
 } from "@/components/search/SearchCommandCenter";
 import FeedCard, { FeedCardSkeleton, type FeedItem } from "@/components/shared/FeedCard";
 import FeedRow, { FeedRowSkeleton } from "@/components/shared/FeedRow";
-import { AdjustmentSearchDetailResponse, ApiError, SearchItem, SearchResponse } from "@/lib/api";
+import {
+  AdjustmentSearchDetailResponse,
+  ApiError,
+  SearchItem,
+  SearchResponse,
+  SubscriptionItem,
+  SubscriptionListResponse,
+} from "@/lib/api";
 import { fetchAdjustmentDetail } from "@/api/search";
 import { useAdjustmentSearchMutation, useAnnouncementSearchMutation } from "@/hooks/useSearch";
 import { useAddSubscriptionMutation, useDeleteSubscriptionMutation, useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
+import { watchlistNoticeQueryKey } from "@/lib/notice-cache";
 
 export default function SearchPage() {
   const router = useRouter();
-  const { portalAuth } = useAppStore();
+  const queryClient = useQueryClient();
+  const { portalAuth, showToast } = useAppStore();
   const isAnonymous = !portalAuth;
   const [queryType, setQueryType] = useState<"announcements" | "adjustments">(portalAuth ? "adjustments" : "announcements");
   const [keywords, setKeywords] = useState("");
@@ -130,11 +140,11 @@ export default function SearchPage() {
   const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
   const adjustmentLocked = isAnonymous;
   const previewLimit = searchResult?.preview_limit ?? 2;
-  const schoolSubscriptions = useMemo(() => {
-    const map = new Map<string, string>();
+  const radarSubscriptions = useMemo(() => {
+    const map = new Map<string, SubscriptionItem>();
     for (const item of subscriptionsQuery.data?.items || []) {
-      if (item.subscription_type === "school" && item.status === "active") {
-        map.set(item.value, item.id);
+      if (item.subscription_type === "radar" && item.status === "active") {
+        map.set(item.value, item);
       }
     }
     return map;
@@ -292,36 +302,86 @@ export default function SearchPage() {
     }
   }
 
-  async function handleSchoolBookmark(schoolName: string) {
+  async function handleRadarBookmark(payload: RadarBookmarkPayload) {
     if (!portalAuth) {
-      setMessage("登录后才能收藏院校并建立监控。");
+      showToast("请先登录", "登录后才能启动调剂雷达追踪。", "info");
       router.push("/login");
       return;
     }
-    if (!portalAuth.isAdmin && !portalAuth.isPremium) {
-      setMessage("院校收藏需要高级会员或管理员权限。");
-      router.push("/account/billing");
+
+    const radarValue = buildRadarSubscriptionValue(payload);
+    if (!radarValue) {
+      showToast("信息不完整", "当前卡片缺少学校或专业维度，暂时无法建立雷达。", "urgent");
       return;
     }
 
-    const existingId = schoolSubscriptions.get(schoolName);
+    const existing = radarSubscriptions.get(radarValue);
+    const subscriptionQueryKey = ["portal", "subscriptions", portalAuth.userId] as const;
+    const noticeQueryKey = watchlistNoticeQueryKey(portalAuth.userId);
+    const previous = queryClient.getQueryData<SubscriptionListResponse>(subscriptionQueryKey);
+    const optimisticTimestamp = new Date().toISOString();
+    const optimisticItem: SubscriptionItem = {
+      id: existing?.id || `optimistic:${radarValue}`,
+      subscription_type: "radar",
+      value: radarValue,
+      display_label: buildRadarDisplayLabel(payload),
+      category: "adjustment",
+      status: "active",
+      source_record_id: payload.sourceRecordId,
+      source_item_kind: payload.sourceItemKind,
+      source_title: payload.sourceTitle,
+      source_url: payload.sourceUrl || null,
+      target_university: payload.targetUniversity,
+      target_department_name: payload.targetDepartmentName || null,
+      target_major_code: payload.targetMajorCode || null,
+      target_major_name: payload.targetMajorName || null,
+      created_at: existing?.created_at || optimisticTimestamp,
+      updated_at: optimisticTimestamp,
+    };
+
+    queryClient.setQueryData<SubscriptionListResponse>(subscriptionQueryKey, (current) => {
+      const base = current || { total: 0, items: [] };
+      if (existing) {
+        const nextItems = base.items.filter((item) => item.id !== existing.id);
+        return { ...base, total: nextItems.length, items: nextItems };
+      }
+      const nextItems = [optimisticItem, ...base.items.filter((item) => item.id !== optimisticItem.id)];
+      return { ...base, total: nextItems.length, items: nextItems };
+    });
+
     try {
-      if (existingId) {
-        await deleteSubscriptionMutation.mutateAsync(existingId);
-        setMessage(`已取消收藏 ${schoolName}`);
+      if (existing) {
+        await deleteSubscriptionMutation.mutateAsync(existing.id);
+        showToast("已停止追踪", `[${buildRadarDisplayLabel(payload)}] 已从你的雷达中移除。`, "info");
       } else {
         await addSubscriptionMutation.mutateAsync({
-          subscription_type: "school",
-          value: schoolName,
-          category: "all",
+          subscription_type: "radar",
+          category: "adjustment",
+          source_record_id: payload.sourceRecordId,
+          source_item_kind: payload.sourceItemKind,
+          source_title: payload.sourceTitle,
+          source_url: payload.sourceUrl ?? undefined,
+          target_university: payload.targetUniversity,
+          target_department_name: payload.targetDepartmentName ?? undefined,
+          target_major_code: payload.targetMajorCode ?? undefined,
+          target_major_name: payload.targetMajorName ?? undefined,
         });
-        setMessage(`已收藏 ${schoolName}`);
+        showToast(
+          "追踪启动",
+          `后续 [${buildRadarDisplayLabel(payload)}] 任何名额异动都将第一时间向你预警。`,
+          "info",
+        );
       }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: subscriptionQueryKey }),
+        queryClient.invalidateQueries({ queryKey: noticeQueryKey }),
+      ]);
     } catch (error) {
+      queryClient.setQueryData(subscriptionQueryKey, previous);
       if (error instanceof ApiError) {
-        setMessage(`收藏失败：${error.message}`);
+        showToast("雷达追踪建立失败", error.message, "urgent");
       } else {
-        setMessage("收藏失败，请稍后重试。");
+        showToast("雷达追踪建立失败", "网络异常，请稍后重试。", "urgent");
       }
     }
   }
@@ -513,13 +573,11 @@ export default function SearchPage() {
               queryType === "adjustments" ? (
                 <div className="space-y-3">
                   {filteredItems.map((item) => {
-                    const bookmark = buildSchoolBookmark(
-                      item.school_name,
-                      schoolSubscriptions,
+                    const bookmark = buildRadarBookmark(
+                      item,
+                      radarSubscriptions,
                       isAnonymous,
-                      portalAuth?.isAdmin,
-                      portalAuth?.isPremium,
-                      handleSchoolBookmark,
+                      handleRadarBookmark,
                     );
                     const rowItem = buildAdjustmentFeedItem(item, bookmark);
 
@@ -545,13 +603,11 @@ export default function SearchPage() {
                   {filteredItems.map((item) => {
                     const feedItem = buildAnnouncementFeedItem(
                       item,
-                      buildSchoolBookmark(
-                        item.school_name,
-                        schoolSubscriptions,
+                      buildRadarBookmark(
+                        item,
+                        radarSubscriptions,
                         isAnonymous,
-                        portalAuth?.isAdmin,
-                        portalAuth?.isPremium,
-                        handleSchoolBookmark,
+                        handleRadarBookmark,
                       ),
                     );
 
@@ -1358,26 +1414,97 @@ function formatHistoricalSourceTypes(sourceTypes: string[] | null | undefined) {
   return Array.from(new Set(labels)).join(" / ");
 }
 
-function buildSchoolBookmark(
-  schoolName: string | null,
-  schoolSubscriptions: Map<string, string>,
-  isAnonymous: boolean,
-  isAdmin: boolean | undefined,
-  isPremium: boolean | undefined,
-  handleSchoolBookmark: (schoolName: string) => Promise<void>,
-): FeedItem["bookmark"] {
-  if (!schoolName) {
-    return undefined;
+type RadarBookmarkPayload = {
+  sourceRecordId: string;
+  sourceItemKind: "content" | "opportunity";
+  sourceTitle: string;
+  sourceUrl?: string | null;
+  targetUniversity: string;
+  targetDepartmentName?: string | null;
+  targetMajorCode?: string | null;
+  targetMajorName?: string | null;
+};
+
+function normalizeRadarSchoolName(value: string | null | undefined) {
+  return String(value || "").trim().replace(/\s+/g, "");
+}
+
+function normalizeRadarMajorCode(value: string | null | undefined) {
+  const digits = String(value || "").trim().replace(/\D+/g, "");
+  if (!digits) return null;
+  return digits.length < 6 ? digits.padStart(6, "0") : digits;
+}
+
+function normalizeRadarMajorName(value: string | null | undefined) {
+  const text = String(value || "").trim().replace(/^\((\d+)\)/, "").replace(/\s+/g, "");
+  return text || null;
+}
+
+function buildRadarSubscriptionValue(payload: RadarBookmarkPayload) {
+  const schoolName = normalizeRadarSchoolName(payload.targetUniversity);
+  const majorCode = normalizeRadarMajorCode(payload.targetMajorCode);
+  const majorName = normalizeRadarMajorName(payload.targetMajorName);
+  if (!schoolName || (!majorCode && !majorName)) {
+    return null;
+  }
+  return `radar::${schoolName}::${majorCode || majorName}`;
+}
+
+function buildRadarDisplayLabel(payload: RadarBookmarkPayload) {
+  const parts = [
+    payload.targetUniversity,
+    payload.targetDepartmentName,
+    payload.targetMajorName,
+    normalizeRadarMajorCode(payload.targetMajorCode),
+  ].filter(Boolean) as string[];
+  return parts.join(" · ");
+}
+
+function buildRadarBookmarkPayload(item: SearchItem): RadarBookmarkPayload | null {
+  if (!item.school_name) {
+    return null;
+  }
+  const majorCode = item.adjustment_major_codes[0] || null;
+  const majorName = item.major || null;
+  if (!majorCode && !majorName) {
+    return null;
   }
   return {
-    active: schoolSubscriptions.has(schoolName),
-    available: !isAnonymous && (Boolean(isAdmin) || Boolean(isPremium)),
+    sourceRecordId: item.id,
+    sourceItemKind: item.item_kind,
+    sourceTitle: item.title,
+    sourceUrl: item.source_url,
+    targetUniversity: item.school_name,
+    targetDepartmentName: item.department_name,
+    targetMajorCode: majorCode,
+    targetMajorName: majorName,
+  };
+}
+
+function buildRadarBookmark(
+  item: SearchItem,
+  radarSubscriptions: Map<string, SubscriptionItem>,
+  isAnonymous: boolean,
+  handleRadarBookmark: (payload: RadarBookmarkPayload) => Promise<void>,
+): FeedItem["bookmark"] {
+  const payload = buildRadarBookmarkPayload(item);
+  if (!payload) {
+    return undefined;
+  }
+  const radarValue = buildRadarSubscriptionValue(payload);
+  if (!radarValue) {
+    return undefined;
+  }
+  const active = radarSubscriptions.has(radarValue);
+  return {
+    active,
+    available: !isAnonymous,
     label: isAnonymous
-      ? "登录后可收藏院校"
-      : isAdmin || isPremium
-        ? `${schoolSubscriptions.has(schoolName) ? "取消收藏" : "收藏院校"}：${schoolName}`
-        : "院校收藏需要高级会员",
-    onToggle: () => handleSchoolBookmark(schoolName),
+      ? "登录后可启动调剂雷达"
+      : active
+        ? `停止追踪：${buildRadarDisplayLabel(payload)}`
+        : `启动雷达追踪：${buildRadarDisplayLabel(payload)}`,
+    onToggle: () => handleRadarBookmark(payload),
   };
 }
 

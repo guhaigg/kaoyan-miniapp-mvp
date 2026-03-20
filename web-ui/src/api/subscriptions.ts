@@ -2,8 +2,16 @@ import { api, type SubscriptionItem, type SubscriptionListResponse, type Subscri
 
 type CreateSubscriptionPayload = {
   subscription_type: SubscriptionType;
-  value: string;
+  value?: string;
   category?: "all" | "announcement" | "adjustment";
+  source_record_id?: string;
+  source_item_kind?: "content" | "opportunity";
+  source_title?: string;
+  source_url?: string;
+  target_university?: string;
+  target_department_name?: string;
+  target_major_code?: string;
+  target_major_name?: string;
 };
 
 export const fetchSubscriptions = () =>

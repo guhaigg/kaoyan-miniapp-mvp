@@ -403,7 +403,7 @@ export default function Modals() {
                               移除
                             </button>
                           </div>
-                          <div className="mb-2 text-sm font-medium text-white">{item.value}</div>
+                          <div className="mb-2 text-sm font-medium text-white">{item.display_label || item.value}</div>
                           <div className="text-xs text-slate-400">
                             类别：{item.category} · 创建于{" "}
                             {new Date(item.created_at).toLocaleString("zh-CN", { hour12: false })}
@@ -458,6 +458,7 @@ export default function Modals() {
 
 function watchTypeLabel(type: string) {
   if (type === "school") return "院校";
+  if (type === "radar") return "雷达";
   if (type === "major") return "专业";
   if (type === "keyword") return "关键词";
   if (type === "region") return "地区";
@@ -467,13 +468,15 @@ function watchTypeLabel(type: string) {
 
 function formatNoticeTitle(item: NotificationEventItem) {
   const school = item.payload.school_name || "未知院校";
-  const category = item.payload.category === "adjustment" ? "调剂更新" : "公告更新";
-  return `${school} · ${category}`;
+  const major = item.payload.major_name || item.payload.major || item.payload.major_code;
+  const category = item.payload.category === "adjustment" ? "雷达异动" : "公告更新";
+  return [school, major, category].filter(Boolean).join(" · ");
 }
 
 function formatNoticeSubline(item: NotificationEventItem) {
   const title = item.payload.title || "无标题";
-  const major = item.payload.major ? ` · ${item.payload.major}` : "";
+  const majorValue = item.payload.major_name || item.payload.major || item.payload.major_code;
+  const major = majorValue ? ` · ${majorValue}` : "";
   const time = new Date(item.created_at).toLocaleString("zh-CN", { hour12: false });
   return `${title}${major} · ${time}`;
 }
