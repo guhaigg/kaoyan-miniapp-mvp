@@ -343,18 +343,21 @@ export default function SearchPage() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.4 }}
-      className="mx-auto max-w-6xl px-4 pb-20 pt-10"
+      className="mx-auto max-w-6xl px-4 pb-20 pt-6"
     >
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-3xl font-bold text-white">数据库全局检索</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            当前记录 <span className="text-cyan-300">{searchResult?.total ?? "点击检索后显示"}</span>
-          </p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-200">
+            {queryType === "adjustments" ? "调剂检索" : "公告检索"}
+          </span>
+          <span>数据库全局检索</span>
+        </div>
+        <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-slate-300">
+          当前记录 <span className="font-semibold text-cyan-300">{searchResult?.total ?? "--"}</span>
         </div>
       </div>
 
-      <div className="mb-5">
+      <div className="mb-4">
         <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur-xl transition-colors hover:border-cyan-500/50">
           <div className="mb-3 grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-black/20 p-1 text-sm">
             <button
@@ -426,13 +429,14 @@ export default function SearchPage() {
               {isSearching ? "检索中..." : "检索"}
             </button>
           </div>
-          <div className="mt-2 text-xs text-slate-400">
+          <div className="mt-2 text-xs text-slate-300">
             {queryType === "adjustments"
               ? `当前识别：${adjustmentIntent.label}。${adjustmentIntent.description}`
               : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
           </div>
           {hasAnyDrawerFilters ? (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">已启用</span>
               {schoolName.trim() ? <FilterPill label={`院校 ${schoolName.trim()}`} /> : null}
               {majorFilter.trim() ? <FilterPill label={`专业 ${majorFilter.trim()}`} /> : null}
               {regionFilter.trim() ? <FilterPill label={`地区 ${regionFilter.trim()}`} /> : null}
@@ -498,55 +502,45 @@ export default function SearchPage() {
       />
 
       {showUpgradePanel ? (
-        <div className="mb-8 overflow-hidden rounded-3xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.38),rgba(20,24,36,0.9))] p-6 shadow-2xl">
-          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <div className="max-w-2xl">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-amber-300">Premium Access</div>
-              <h3 className="text-2xl font-bold text-white">院校收藏和定时监控没有入口，不是你没找到，是我们埋得太深了。</h3>
-              <p className="mt-2 text-sm leading-7 text-amber-50/85">
-                现在普通账号想用院校收藏、实时提示和定时巡检，需要先开通高级会员。入口已经前置到这里，打开后可以直接创建会员订单。
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs text-amber-100/90">
-                <span className="rounded-full border border-amber-300/20 bg-black/20 px-3 py-1">院校收藏</span>
-                <span className="rounded-full border border-amber-300/20 bg-black/20 px-3 py-1">定时查询</span>
-                <span className="rounded-full border border-amber-300/20 bg-black/20 px-3 py-1">新信息直推</span>
-              </div>
+        <div className="mb-4 rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.25),rgba(20,24,36,0.86))] px-4 py-3 shadow-lg">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-amber-50/90">
+              <span className="rounded-full border border-amber-300/20 bg-black/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200">
+                高级会员
+              </span>
+              <span>院校收藏、定时监控和新信息提醒需要高级会员。</span>
             </div>
-            <div className="flex shrink-0 flex-col gap-3">
-              <Link
-                href="/account/billing"
-                className="rounded-2xl bg-amber-400 px-6 py-3 text-center text-sm font-bold text-black transition-colors hover:bg-amber-300"
-              >
-                立即开通高级会员
-              </Link>
-              <div className="text-center text-xs text-amber-100/70">订单创建后由后台确认支付并发放权益</div>
-            </div>
+            <Link
+              href="/account/billing"
+              className="rounded-xl bg-amber-400 px-4 py-2 text-center text-sm font-bold text-black transition-colors hover:bg-amber-300"
+            >
+              开通会员
+            </Link>
           </div>
         </div>
       ) : null}
 
       {isAnonymous ? (
-        <div className="mb-8 overflow-hidden rounded-3xl border border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,25,40,0.95),rgba(5,10,19,0.96))] p-6 shadow-2xl">
-          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <div className="max-w-2xl">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">Visitor Preview</div>
-              <h3 className="text-2xl font-bold text-white">未登录只开放公告预览，且最多显示前两条。</h3>
-              <p className="mt-2 text-sm leading-7 text-slate-300">
-                登录后才开放完整分页、院校收藏、调剂检索、调剂测算和后续定时监控。匿名态只保留最轻的预览入口。
-              </p>
+        <div className="mb-4 rounded-2xl border border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,25,40,0.9),rgba(5,10,19,0.92))] px-4 py-3 shadow-lg">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-200">
+              <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
+                游客预览
+              </span>
+              <span>未登录仅开放公告预览，且最多显示前 {previewLimit} 条。</span>
             </div>
-            <div className="flex shrink-0 flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
               <Link
                 href="/login"
-                className="rounded-2xl bg-cyan-500 px-6 py-3 text-center text-sm font-bold text-white transition-colors hover:bg-cyan-400"
+                className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-cyan-400"
               >
-                登录查看完整结果
+                登录
               </Link>
               <Link
                 href="/register"
-                className="rounded-2xl border border-white/15 bg-white/5 px-6 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-white/10"
+                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10"
               >
-                注册新账号
+                注册
               </Link>
             </div>
           </div>
@@ -554,7 +548,7 @@ export default function SearchPage() {
       ) : null}
 
       {message ? (
-        <div className="mb-8 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-slate-300">
+        <div className="mb-4 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-slate-300">
           {message}
         </div>
       ) : null}
