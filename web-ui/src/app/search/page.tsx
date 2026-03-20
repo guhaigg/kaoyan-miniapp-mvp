@@ -807,7 +807,7 @@ export default function SearchPage() {
 
             {filteredItems.length > 0 ? (
               queryType === "adjustments" ? (
-                <div className="space-y-4">
+                <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
                   {filteredItems.map((item) => (
                     <AdjustmentIntelCard
                       key={item.id}
@@ -1228,40 +1228,41 @@ function AdjustmentIntelCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ type: "spring", stiffness: 260, damping: 28 }}
-      className={`relative overflow-hidden rounded-[26px] border bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(6,10,18,0.94))] shadow-[0_24px_80px_rgba(0,0,0,0.34)] ${isUrgent ? "border-cyan-400/25" : "border-white/10"}`}
+      className={`relative overflow-hidden rounded-[22px] border bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(6,10,18,0.94))] shadow-[0_20px_64px_rgba(0,0,0,0.3)] ${isUrgent ? "border-cyan-400/25" : "border-white/10"}`}
     >
       {isUrgent ? <div className="absolute inset-y-0 left-0 w-1 bg-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.75)]" /> : null}
-      <div className="absolute -right-10 top-0 h-28 w-28 rounded-full bg-cyan-500/10 blur-3xl" />
-      <div className="relative space-y-4 p-4 md:p-5">
-        <div className="flex items-start justify-between gap-4">
+      <div className="absolute -right-10 top-0 h-24 w-24 rounded-full bg-cyan-500/10 blur-3xl" />
+      <div className="relative space-y-3 p-3.5">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
               <span>{item.adjustment_year || "年份待补充"}</span>
               <span className="text-slate-600">•</span>
               <span>{item.region || "地区待补充"}</span>
-              <span className="text-slate-600">•</span>
-              <span>{tierLabel}</span>
-              <span className="text-slate-600">•</span>
-              <span>{studyModeLabel}</span>
             </div>
-            <h3 className="text-[30px] font-black tracking-tight text-white">{item.school_name || "未知院校"}</h3>
-            <p className="mt-1 text-sm font-medium leading-6 text-slate-300">
+            <h3 className="text-[24px] font-black leading-none tracking-tight text-white md:text-[26px]">{item.school_name || "未知院校"}</h3>
+            <p className="mt-1 text-[13px] font-medium leading-5 text-slate-300">
               {[item.department_name, item.major, item.adjustment_major_codes[0]].filter(Boolean).join(" · ") || "学院与专业待补充"}
             </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <CompactIntelTag label={tierLabel} />
+              <CompactIntelTag label={studyModeLabel} />
+              {item.city ? <CompactIntelTag label={item.city} /> : null}
+            </div>
           </div>
           <div className="shrink-0 text-right">
-            <div className="flex items-center justify-end gap-1 text-[11px] font-mono text-slate-500">
+            <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-slate-500">
               <Clock3 size={13} />
               {releaseTime}
             </div>
-            <div className="mt-2 flex flex-wrap justify-end gap-2">
+            <div className="mt-2 flex flex-wrap justify-end gap-1.5">
               {isUrgent ? (
-                <span className="inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200">
+                <span className="inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200">
                   最新
                 </span>
               ) : null}
               {mentorWarning ? (
-                <span className="inline-flex rounded-full border border-red-400/25 bg-red-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-red-200">
+                <span className="inline-flex rounded-full border border-red-400/25 bg-red-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-red-200">
                   导师预警
                 </span>
               ) : null}
@@ -1269,21 +1270,19 @@ function AdjustmentIntelCard({
           </div>
         </div>
 
-        <div className="grid gap-2 md:grid-cols-5">
+        <div className="grid grid-cols-3 gap-2">
           <CompactIntelFact label="初试分数" value={initialScore} />
           <CompactIntelFact label="调剂分数" value={adjustmentScore} />
           <CompactIntelFact label="调剂人数" value={vacancyLabel} />
-          <CompactIntelFact label="院校层级" value={tierLabel} />
-          <CompactIntelFact label="学习方式" value={studyModeLabel} />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-black/20 px-3 py-3">
-          <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${probability.bg} ${probability.border} ${probability.textClass}`}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${probability.bg} ${probability.border} ${probability.textClass}`}>
             <TrendingUp size={14} className={probability.iconClass} />
             {decisionSummary}
           </div>
           <div
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${
               mentorWarning
                 ? "border-red-400/20 bg-red-500/10 text-red-200"
                 : "border-white/10 bg-white/[0.04] text-slate-200"
@@ -1292,23 +1291,15 @@ function AdjustmentIntelCard({
             {mentorWarning ? <ShieldAlert size={14} className="text-red-300" /> : <CheckCircle2 size={14} className="text-emerald-300" />}
             {mentorSummary}
           </div>
-          {item.city ? (
-            <div className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300">
-              {item.city}
-            </div>
-          ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-3">
-          <div className="text-xs text-slate-500">
-            发布时间、导师原文、历史样本和来源链接都收进完整信息页。
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/8 pt-2.5">
           <div className="flex flex-wrap gap-2">
             {bookmark ? (
               <button
                 type="button"
                 onClick={handleBookmarkClick}
-                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                className={`rounded-xl border px-3 py-1.5 text-[13px] font-semibold transition-colors ${
                   bookmark.active
                     ? "border-yellow-400/25 bg-yellow-500/10 text-yellow-200"
                     : bookmark.available
@@ -1325,7 +1316,7 @@ function AdjustmentIntelCard({
                 href={item.source_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-400"
+                className="rounded-xl bg-cyan-500 px-3 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-cyan-400"
               >
                 查看原文
               </a>
@@ -1333,7 +1324,7 @@ function AdjustmentIntelCard({
             <button
               type="button"
               onClick={onOpenDetail}
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/10"
+              className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-[13px] font-semibold text-slate-100 transition-colors hover:bg-white/10"
             >
               查看完整信息
             </button>
@@ -1692,10 +1683,18 @@ function DetailStat({ label, value }: { label: string; value: number | null | un
 
 function CompactIntelFact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
-      <div className="mt-1.5 text-lg font-bold text-white">{value}</div>
+      <div className="mt-1 text-sm font-bold text-white md:text-[15px]">{value}</div>
     </div>
+  );
+}
+
+function CompactIntelTag({ label }: { label: string }) {
+  return (
+    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300">
+      {label}
+    </span>
   );
 }
 
