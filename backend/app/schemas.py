@@ -842,6 +842,33 @@ class AdjustmentSearchRequest(SearchBaseRequest):
     exclude_mentor_warnings: bool = False
 
 
+class RadarPredictRequest(BaseModel):
+    score: int = Field(ge=0, le=500)
+    category: str = Field(min_length=1, max_length=120)
+    area: Literal["A", "B"] = "A"
+
+
+class RadarPredictResponse(BaseModel):
+    category_key: str
+    category_label: str
+    area: Literal["A", "B"]
+    win_rate: int = Field(ge=0, le=100)
+    level: Literal["danger", "warning", "info", "success"]
+    national_line_year: int
+    national_line_a: int
+    national_line_b: int
+    comparison_line: int
+    national_line_reference_avg: float
+    national_line_reference_years: list[int] = Field(default_factory=list)
+    historical_sample_count: int = 0
+    historical_group_count: int = 0
+    historical_benchmark_score: float | None = None
+    historical_p25_score: float | None = None
+    historical_p75_score: float | None = None
+    delta_to_comparison_line: int
+    advice: str
+
+
 class HistoricalAdjustmentInsight(BaseModel):
     sample_years: list[int] = Field(default_factory=list)
     source_types: list[str] = Field(default_factory=list)

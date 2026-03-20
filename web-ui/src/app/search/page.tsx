@@ -12,7 +12,6 @@ import {
   Clock3,
   ShieldAlert,
   Star,
-  Target,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -65,10 +64,6 @@ export default function SearchPage() {
   const [adjustmentDetail, setAdjustmentDetail] = useState<AdjustmentSearchDetailResponse | null>(null);
   const [adjustmentDetailLoading, setAdjustmentDetailLoading] = useState(false);
   const [adjustmentDetailError, setAdjustmentDetailError] = useState("");
-
-  const [score, setScore] = useState("");
-  const [major, setMajor] = useState("");
-  const [result, setResult] = useState<{ percent: number; text: string } | null>(null);
   const searchRequestIdRef = useRef(0);
 
   const announcementMutation = useAnnouncementSearchMutation();
@@ -164,23 +159,6 @@ export default function SearchPage() {
     queryType === "adjustments" ? adjustmentQueryIntent.major : filters.major.trim();
   const resolvedKeywords =
     queryType === "adjustments" ? adjustmentQueryIntent.keywords : keywords.trim();
-  const calculateMatch = () => {
-    if (isAnonymous) {
-      setMessage("调剂测算属于登录后的深度功能，请先登录。");
-      return;
-    }
-    if (!score || !major) return;
-    const diff = parseInt(score, 10) - (major === "工科" ? 273 : major === "理学" ? 279 : 346);
-    setResult({
-      percent: diff < 0 ? 5 : diff < 20 ? 45 : diff < 50 ? 75 : 95,
-      text:
-        diff < 0
-          ? "低于国家A区线，建议重点关注B区偏远院校。"
-          : diff < 50
-            ? "初筛通过率较高，建议全力准备专业课复试。"
-            : "高分段优势极大！可冲击优质调剂名额！",
-    });
-  };
 
   function resetAllFilters() {
     setKeywords("");
@@ -696,9 +674,9 @@ export default function SearchPage() {
               </div>
             </div>
           </>
-        ) : queryType === "adjustments" ? (
+        ) : (
           <SearchEmptyState setKeyword={setKeywords} />
-        ) : null}
+        )}
       </div>
 
       <AdjustmentDetailDrawer
@@ -708,77 +686,6 @@ export default function SearchPage() {
         error={adjustmentDetailError}
         onClose={closeAdjustmentDetail}
       />
-
-      <div className={`relative overflow-hidden rounded-3xl border p-8 shadow-2xl backdrop-blur-xl ${isAnonymous ? "border-white/10 bg-white/[0.04]" : "border-cyan-500/20 bg-cyan-950/10"}`}>
-        <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 -translate-y-1/2 translate-x-1/2 rounded-full bg-cyan-500/10 blur-3xl" />
-        <div className="relative z-10 flex flex-col items-center gap-8 md:flex-row">
-          <div className="text-white md:w-1/3">
-            <h3 className="mb-2 flex items-center gap-2 text-2xl font-bold">
-              <Target className="text-cyan-400" /> 调剂雷达测算
-            </h3>
-            <p className="text-sm leading-relaxed text-slate-400">
-              {isAnonymous ? "登录后开放调剂测算、调剂检索和更多深度能力。" : "系统将比对往年国家线及院系均分，测算你的初筛通过率。"}
-            </p>
-          </div>
-          <div className="flex w-full flex-col gap-4 sm:flex-row md:w-2/3">
-            <input
-              type="number"
-              placeholder="初试总分"
-              value={score}
-              onChange={(event) => setScore(event.target.value)}
-              disabled={isAnonymous}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-5 py-4 text-white outline-none transition-colors focus:border-cyan-400 sm:w-32"
-            />
-            <select
-              value={major}
-              onChange={(event) => setMajor(event.target.value)}
-              disabled={isAnonymous}
-              className="flex-1 appearance-none rounded-xl border border-white/10 bg-black/40 px-5 py-4 text-white outline-none transition-colors focus:border-cyan-400"
-            >
-              <option value="" disabled>
-                选择门类
-              </option>
-              <option value="工科">工科(不含照顾) - 历年均线约 273</option>
-              <option value="理学">理学 - 历年均线约 279</option>
-            </select>
-            <button
-              type="button"
-              onClick={calculateMatch}
-              disabled={isAnonymous}
-              className="whitespace-nowrap rounded-xl bg-cyan-500 px-8 py-4 font-bold text-white shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all hover:bg-cyan-400 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isAnonymous ? "登录后开放" : "测算胜率"}
-            </button>
-          </div>
-        </div>
-
-        <AnimatePresence>
-          {result ? (
-            <motion.div
-              initial={{ height: 0, opacity: 0, marginTop: 0 }}
-              animate={{ height: "auto", opacity: 1, marginTop: 32 }}
-              exit={{ height: 0, opacity: 0, marginTop: 0 }}
-              className="overflow-hidden rounded-2xl border border-white/5 bg-black/40 p-6"
-            >
-              <div className="mb-3 flex items-end justify-between">
-                <span className="text-sm text-slate-300">历史大数据预估通过率：</span>
-                <span className="font-mono text-4xl font-bold text-cyan-400">
-                  {result.percent}%
-                </span>
-              </div>
-              <div className="h-4 w-full overflow-hidden rounded-full border border-white/5 bg-white/5 p-0.5">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${result.percent}%` }}
-                  transition={{ duration: 1.2, ease: "easeOut" }}
-                  className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.5)]"
-                />
-              </div>
-              <p className="mt-4 font-mono text-sm text-slate-400">{result.text}</p>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-      </div>
     </motion.div>
   );
 }

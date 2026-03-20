@@ -451,6 +451,33 @@ export type AdjustmentSearchRequest = SearchBaseRequest & {
   exclude_mentor_warnings?: boolean;
 };
 
+export type RadarPredictRequest = {
+  score: number;
+  category: string;
+  area?: "A" | "B";
+};
+
+export type RadarPredictResponse = {
+  category_key: string;
+  category_label: string;
+  area: "A" | "B";
+  win_rate: number;
+  level: "danger" | "warning" | "info" | "success";
+  national_line_year: number;
+  national_line_a: number;
+  national_line_b: number;
+  comparison_line: number;
+  national_line_reference_avg: number;
+  national_line_reference_years: number[];
+  historical_sample_count: number;
+  historical_group_count: number;
+  historical_benchmark_score: number | null;
+  historical_p25_score: number | null;
+  historical_p75_score: number | null;
+  delta_to_comparison_line: number;
+  advice: string;
+};
+
 export type SchoolBulkImportResponse = {
   total_rows: number;
   created_schools: number;
