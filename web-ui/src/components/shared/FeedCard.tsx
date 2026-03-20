@@ -19,6 +19,7 @@ export interface FeedItem {
   metricSecondary?: string | null;
   warningLabel?: string | null;
   href?: string | null;
+  onOpen?: () => void;
   bookmark?: {
     active: boolean;
     available: boolean;

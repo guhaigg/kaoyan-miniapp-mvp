@@ -511,139 +511,49 @@ export default function SearchPage() {
 
             {filteredItems.length > 0 ? (
               queryType === "adjustments" ? (
-                <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-                  {filteredItems.map((item) => (
-                    <AdjustmentIntelCard
-                      key={item.id}
-                      item={item}
-                      candidateScore={filters.score.trim() ? Number(filters.score.trim()) : undefined}
-                      onOpenDetail={() => openAdjustmentDetail(item)}
-                      bookmark={
-                        item.school_name
-                          ? {
-                              active: schoolSubscriptions.has(item.school_name),
-                              available: !isAnonymous && (portalAuth?.isAdmin || portalAuth?.isPremium),
-                              label: isAnonymous
-                                ? "登录后可收藏院校"
-                                : portalAuth?.isAdmin || portalAuth?.isPremium
-                                  ? `${schoolSubscriptions.has(item.school_name) ? "取消收藏" : "收藏院校"}：${item.school_name}`
-                                  : "院校收藏需要高级会员",
-                              onToggle: () => handleSchoolBookmark(item.school_name as string),
-                            }
-                          : undefined
-                      }
-                    />
-                  ))}
+                <div className="space-y-3">
+                  {filteredItems.map((item) => {
+                    const bookmark = buildSchoolBookmark(
+                      item.school_name,
+                      schoolSubscriptions,
+                      isAnonymous,
+                      portalAuth?.isAdmin,
+                      portalAuth?.isPremium,
+                      handleSchoolBookmark,
+                    );
+                    const rowItem = buildAdjustmentFeedItem(item, bookmark);
+
+                    return (
+                      <div key={item.id}>
+                        <div className="md:hidden">
+                          <AdjustmentIntelCard
+                            item={item}
+                            candidateScore={filters.score.trim() ? Number(filters.score.trim()) : undefined}
+                            onOpenDetail={() => openAdjustmentDetail(item)}
+                            bookmark={bookmark}
+                          />
+                        </div>
+                        <div className="hidden md:block">
+                          <FeedRow item={{ ...rowItem, onOpen: () => openAdjustmentDetail(item) }} />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="space-y-3">
                   {filteredItems.map((item) => {
-                    const feedItem: FeedItem = {
-                      id: item.id,
-                      type: item.category === "adjustment" ? "adjustment" : "announcement",
-                      title: item.title,
-                      subtitle:
-                        [item.department_name, item.school_name].filter(Boolean).join(" · ") ||
-                        item.summary ||
-                        "来源院校与学院待补充",
-                      content:
-                        item.category === "adjustment" && item.historical_adjustment
-                          ? [
-                              item.summary || "系统已命中调剂历史样本。",
-                              item.historical_adjustment.initial_score_min !== null
-                                ? `初试 ${item.historical_adjustment.initial_score_min}-${item.historical_adjustment.initial_score_max ?? item.historical_adjustment.initial_score_min}`
-                                : null,
-                              item.historical_adjustment.adjustment_score_min !== null
-                                ? `调剂 ${item.historical_adjustment.adjustment_score_min}-${item.historical_adjustment.adjustment_score_max ?? item.historical_adjustment.adjustment_score_min}`
-                                : null,
-                              item.historical_adjustment.national_line_zone_a !== null
-                                ? `A/B线 ${item.historical_adjustment.national_line_zone_a}/${item.historical_adjustment.national_line_zone_b}`
-                                : null,
-                              item.historical_adjustment.sample_count > 0
-                                ? `样本 ${item.historical_adjustment.sample_count}`
-                                : null,
-                              getPrimaryMentorLabel(item),
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : item.summary || "暂无摘要，点击查看源站原文。",
-                      badges: [
-                        ...(item.notice_kind === "link_notice" ? [{ label: "链接型公告", tone: "sky" as const }] : []),
-                        ...(item.pdf_parse_status === "needs_ocr"
-                          ? [{ label: "扫描件待查看", tone: "amber" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.adjustment_has_vacancy
-                          ? [{ label: "有缺额信号", tone: "amber" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.adjustment_study_modes.includes("fulltime")
-                          ? [{ label: "全日制", tone: "sky" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.adjustment_study_modes.includes("parttime")
-                          ? [{ label: "非全日制", tone: "sky" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.adjustment_major_codes.length > 0
-                          ? [{ label: `专业代码 ${item.adjustment_major_codes[0]}`, tone: "sky" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.historical_adjustment?.outlook_label
-                          ? [{ label: item.historical_adjustment.outlook_label, tone: "amber" as const }]
-                          : []),
-                        ...(item.category === "adjustment" && item.historical_adjustment?.min_score !== null
-                          ? [{ label: `历史最低 ${item.historical_adjustment?.min_score}`, tone: "sky" as const }]
-                          : []),
-                        ...(getMentorWarningCount(item) > 0
-                          ? [{ label: `本学校预警 ${getMentorWarningCount(item)}`, tone: "amber" as const }]
-                          : []),
-                        ...(getMentorWarningCount(item) === 0
-                          ? getMentorPresenceLabels(item).map((label) => ({ label, tone: "sky" as const }))
-                          : []),
-                      ],
-                      publishTime: item.published_at || item.updated_at,
-                      href: item.source_url,
-                      isUrgent: /紧急|截止|补录|缺额/i.test(
-                        `${item.title} ${item.summary || ""} ${item.major || ""}`,
+                    const feedItem = buildAnnouncementFeedItem(
+                      item,
+                      buildSchoolBookmark(
+                        item.school_name,
+                        schoolSubscriptions,
+                        isAnonymous,
+                        portalAuth?.isAdmin,
+                        portalAuth?.isPremium,
+                        handleSchoolBookmark,
                       ),
-                      tags:
-                        item.tags && item.tags.length > 0
-                          ? item.tags
-                          : [
-                              item.category === "adjustment" ? "调剂动态" : "最新公告",
-                              item.school_name || "未知院校",
-                              item.region || "区域待补充",
-                              item.major || "专业待补充",
-                            ],
-                      metricLabel:
-                        item.category === "adjustment" && item.historical_adjustment
-                          ? "调剂线 / 初试区间"
-                          : "院校 / 专业",
-                      metricPrimary:
-                        item.category === "adjustment" && item.historical_adjustment
-                          ? formatScoreRange(
-                              item.historical_adjustment.adjustment_score_min,
-                              item.historical_adjustment.adjustment_score_max,
-                            )
-                          : item.school_name || "—",
-                      metricSecondary:
-                        item.category === "adjustment" && item.historical_adjustment
-                          ? formatScoreRange(
-                              item.historical_adjustment.initial_score_min,
-                              item.historical_adjustment.initial_score_max,
-                            )
-                          : item.major || item.region || null,
-                      warningLabel:
-                        getMentorWarningCount(item) > 0 ? `导师预警 ${getMentorWarningCount(item)}` : null,
-                      bookmark: item.school_name
-                        ? {
-                            active: schoolSubscriptions.has(item.school_name),
-                            available: !isAnonymous && (portalAuth?.isAdmin || portalAuth?.isPremium),
-                            label: isAnonymous
-                              ? "登录后可收藏院校"
-                              : portalAuth?.isAdmin || portalAuth?.isPremium
-                                ? `${schoolSubscriptions.has(item.school_name) ? "取消收藏" : "收藏院校"}：${item.school_name}`
-                                : "院校收藏需要高级会员",
-                            onToggle: () => handleSchoolBookmark(item.school_name as string),
-                          }
-                        : undefined,
-                    };
+                    );
 
                     return (
                       <div key={item.id}>
@@ -1446,6 +1356,177 @@ function formatHistoricalSourceTypes(sourceTypes: string[] | null | undefined) {
     }
   });
   return Array.from(new Set(labels)).join(" / ");
+}
+
+function buildSchoolBookmark(
+  schoolName: string | null,
+  schoolSubscriptions: Map<string, string>,
+  isAnonymous: boolean,
+  isAdmin: boolean | undefined,
+  isPremium: boolean | undefined,
+  handleSchoolBookmark: (schoolName: string) => Promise<void>,
+): FeedItem["bookmark"] {
+  if (!schoolName) {
+    return undefined;
+  }
+  return {
+    active: schoolSubscriptions.has(schoolName),
+    available: !isAnonymous && (Boolean(isAdmin) || Boolean(isPremium)),
+    label: isAnonymous
+      ? "登录后可收藏院校"
+      : isAdmin || isPremium
+        ? `${schoolSubscriptions.has(schoolName) ? "取消收藏" : "收藏院校"}：${schoolName}`
+        : "院校收藏需要高级会员",
+    onToggle: () => handleSchoolBookmark(schoolName),
+  };
+}
+
+function buildAnnouncementFeedItem(
+  item: SearchItem,
+  bookmark: FeedItem["bookmark"],
+): FeedItem {
+  return {
+    id: item.id,
+    type: item.category === "adjustment" ? "adjustment" : "announcement",
+    title: item.title,
+    subtitle:
+      [item.department_name, item.school_name].filter(Boolean).join(" · ") ||
+      item.summary ||
+      "来源院校与学院待补充",
+    content:
+      item.category === "adjustment" && item.historical_adjustment
+        ? [
+            item.summary || "系统已命中调剂历史样本。",
+            item.historical_adjustment.initial_score_min !== null
+              ? `初试 ${item.historical_adjustment.initial_score_min}-${item.historical_adjustment.initial_score_max ?? item.historical_adjustment.initial_score_min}`
+              : null,
+            item.historical_adjustment.adjustment_score_min !== null
+              ? `调剂 ${item.historical_adjustment.adjustment_score_min}-${item.historical_adjustment.adjustment_score_max ?? item.historical_adjustment.adjustment_score_min}`
+              : null,
+            item.historical_adjustment.national_line_zone_a !== null
+              ? `A/B线 ${item.historical_adjustment.national_line_zone_a}/${item.historical_adjustment.national_line_zone_b}`
+              : null,
+            item.historical_adjustment.sample_count > 0
+              ? `样本 ${item.historical_adjustment.sample_count}`
+              : null,
+            getPrimaryMentorLabel(item),
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : item.summary || "暂无摘要，点击查看源站原文。",
+    badges: [
+      ...(item.notice_kind === "link_notice" ? [{ label: "链接型公告", tone: "sky" as const }] : []),
+      ...(item.pdf_parse_status === "needs_ocr"
+        ? [{ label: "扫描件待查看", tone: "amber" as const }]
+        : []),
+      ...(item.category === "adjustment" && item.adjustment_has_vacancy
+        ? [{ label: "有缺额信号", tone: "amber" as const }]
+        : []),
+      ...(item.category === "adjustment" && item.adjustment_study_modes.includes("fulltime")
+        ? [{ label: "全日制", tone: "sky" as const }]
+        : []),
+      ...(item.category === "adjustment" && item.adjustment_study_modes.includes("parttime")
+        ? [{ label: "非全日制", tone: "sky" as const }]
+        : []),
+      ...(item.category === "adjustment" && item.adjustment_major_codes.length > 0
+        ? [{ label: `专业代码 ${item.adjustment_major_codes[0]}`, tone: "sky" as const }]
+        : []),
+      ...(item.category === "adjustment" && item.historical_adjustment?.outlook_label
+        ? [{ label: item.historical_adjustment.outlook_label, tone: "amber" as const }]
+        : []),
+      ...(item.category === "adjustment" && item.historical_adjustment?.min_score !== null
+        ? [{ label: `历史最低 ${item.historical_adjustment?.min_score}`, tone: "sky" as const }]
+        : []),
+      ...(getMentorWarningCount(item) > 0
+        ? [{ label: `本学校预警 ${getMentorWarningCount(item)}`, tone: "amber" as const }]
+        : []),
+      ...(getMentorWarningCount(item) === 0
+        ? getMentorPresenceLabels(item).map((label) => ({ label, tone: "sky" as const }))
+        : []),
+    ],
+    publishTime: item.published_at || item.updated_at,
+    href: item.source_url,
+    isUrgent: /紧急|截止|补录|缺额/i.test(
+      `${item.title} ${item.summary || ""} ${item.major || ""}`,
+    ),
+    tags:
+      item.tags && item.tags.length > 0
+        ? item.tags
+        : [
+            item.category === "adjustment" ? "调剂动态" : "最新公告",
+            item.school_name || "未知院校",
+            item.region || "区域待补充",
+            item.major || "专业待补充",
+          ],
+    metricLabel:
+      item.category === "adjustment" && item.historical_adjustment
+        ? "调剂线 / 初试区间"
+        : "院校 / 专业",
+    metricPrimary:
+      item.category === "adjustment" && item.historical_adjustment
+        ? formatScoreRange(
+            item.historical_adjustment.adjustment_score_min,
+            item.historical_adjustment.adjustment_score_max,
+          )
+        : item.school_name || "—",
+    metricSecondary:
+      item.category === "adjustment" && item.historical_adjustment
+        ? formatScoreRange(
+            item.historical_adjustment.initial_score_min,
+            item.historical_adjustment.initial_score_max,
+          )
+        : item.major || item.region || null,
+    warningLabel:
+      getMentorWarningCount(item) > 0 ? `导师预警 ${getMentorWarningCount(item)}` : null,
+    bookmark,
+  };
+}
+
+function buildAdjustmentFeedItem(
+  item: SearchItem,
+  bookmark: FeedItem["bookmark"],
+): FeedItem {
+  const adjustmentScore = formatScoreRange(
+    item.historical_adjustment?.adjustment_score_min,
+    item.historical_adjustment?.adjustment_score_max,
+  );
+  const initialScore = formatScoreRange(
+    item.historical_adjustment?.initial_score_min ?? item.historical_adjustment?.min_score,
+    item.historical_adjustment?.initial_score_max ?? item.historical_adjustment?.max_score,
+  );
+  const metricPrimary = adjustmentScore === "--" ? "—" : adjustmentScore;
+  const metricSecondary = initialScore === "--" ? null : initialScore;
+  const tags = [
+    item.school_tier,
+    formatStudyModeLabel(null, item.adjustment_study_modes),
+    item.region || item.city,
+  ].filter((value): value is string => Boolean(value) && value !== "待补充");
+
+  return {
+    id: item.id,
+    type: "adjustment",
+    title: [item.major, item.adjustment_major_codes[0]].filter(Boolean).join(" · ") || item.school_name || "调剂项目待补充",
+    subtitle: [item.department_name, item.school_name].filter(Boolean).join(" · ") || "学院与院校待补充",
+    content:
+      [
+        item.summary,
+        item.historical_adjustment?.national_line_zone_a !== null
+          ? `A/B线 ${item.historical_adjustment?.national_line_zone_a}/${item.historical_adjustment?.national_line_zone_b}`
+          : null,
+        item.release_timing?.signal_label || null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || "点击查看完整分析",
+    publishTime: item.published_at || item.updated_at,
+    isUrgent: /紧急|截止|补录|缺额/i.test(`${item.title} ${item.summary || ""} ${item.major || ""}`),
+    tags: tags.length > 0 ? tags : ["调剂动态"],
+    metricLabel: "调剂线 / 初试区间",
+    metricPrimary,
+    metricSecondary,
+    warningLabel:
+      getMentorWarningCount(item) > 0 ? `导师预警 ${getMentorWarningCount(item)}` : null,
+    bookmark,
+  };
 }
 
 function getMentorScopeSignals(source: {

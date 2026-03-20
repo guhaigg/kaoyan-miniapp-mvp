@@ -125,6 +125,21 @@ export default function FeedRow({ item }: { item: FeedItem }) {
         <a href={item.href} target="_blank" rel="noopener noreferrer" className="block">
           {rowBody}
         </a>
+      ) : item.onOpen ? (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={item.onOpen}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              item.onOpen?.();
+            }
+          }}
+          className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+        >
+          {rowBody}
+        </div>
       ) : (
         rowBody
       )}
