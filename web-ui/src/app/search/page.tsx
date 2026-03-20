@@ -1194,6 +1194,8 @@ function AdjustmentIntelCard({
   const releaseTime = formatIntelTime(item.published_at || item.updated_at);
   const mentorSignals = getMentorScopeSignals(item);
   const mentorWarning = getMentorWarningCount(item) > 0;
+  const departmentReviewCount = mentorSignals.department?.review_count ?? 0;
+  const schoolReviewCount = mentorSignals.school?.review_count ?? 0;
   const initialScore = formatScoreRange(
     item.historical_adjustment?.initial_score_min ?? item.historical_adjustment?.min_score,
     item.historical_adjustment?.initial_score_max ?? item.historical_adjustment?.max_score,
@@ -1202,16 +1204,17 @@ function AdjustmentIntelCard({
     item.historical_adjustment?.adjustment_score_min,
     item.historical_adjustment?.adjustment_score_max,
   );
-  const primaryFacts = [
-    { label: "学院", value: item.department_name || "待补充" },
-    { label: "专业", value: item.major || "待补充" },
-    { label: "代码", value: item.adjustment_major_codes[0] || "待补充" },
-    { label: "初试分数", value: initialScore },
-    { label: "调剂分数", value: adjustmentScore },
-    { label: "调剂人数", value: item.adjustment_vacancy_count ? `${item.adjustment_vacancy_count}` : "待补充" },
-    { label: "院校层级", value: item.school_tier || "待补充" },
-    { label: "学习方式", value: formatStudyModeLabel(null, item.adjustment_study_modes) },
-  ];
+  const vacancyLabel = item.adjustment_vacancy_count ? `${item.adjustment_vacancy_count}` : "待补充";
+  const tierLabel = item.school_tier || "待补充";
+  const studyModeLabel = formatStudyModeLabel(null, item.adjustment_study_modes);
+  const decisionSummary = candidateScore
+    ? `你的分数 ${candidateScore} · ${probability.label}`
+    : `历史判断 · ${probability.label}`;
+  const mentorSummary = mentorWarning
+    ? `导师预警 · 本学校 ${schoolReviewCount}${item.department_name ? ` · 本学院 ${departmentReviewCount}` : ""}`
+    : schoolReviewCount > 0 || departmentReviewCount > 0
+      ? `${item.department_name ? `本学院 ${departmentReviewCount} · ` : ""}本学校 ${schoolReviewCount} 条评价`
+      : "导师评价待补充";
 
   async function handleBookmarkClick() {
     if (!bookmark) return;
@@ -1228,20 +1231,26 @@ function AdjustmentIntelCard({
       className={`relative overflow-hidden rounded-[26px] border bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(6,10,18,0.94))] shadow-[0_24px_80px_rgba(0,0,0,0.34)] ${isUrgent ? "border-cyan-400/25" : "border-white/10"}`}
     >
       {isUrgent ? <div className="absolute inset-y-0 left-0 w-1 bg-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.75)]" /> : null}
-      <div className="absolute -right-12 top-0 h-32 w-32 rounded-full bg-cyan-500/10 blur-3xl" />
-      <div className="relative space-y-5 p-5 md:p-6">
+      <div className="absolute -right-10 top-0 h-28 w-28 rounded-full bg-cyan-500/10 blur-3xl" />
+      <div className="relative space-y-4 p-4 md:p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
-              {item.adjustment_year || "年份待补充"} · {item.region || "地区待补充"}
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
+              <span>{item.adjustment_year || "年份待补充"}</span>
+              <span className="text-slate-600">•</span>
+              <span>{item.region || "地区待补充"}</span>
+              <span className="text-slate-600">•</span>
+              <span>{tierLabel}</span>
+              <span className="text-slate-600">•</span>
+              <span>{studyModeLabel}</span>
             </div>
-            <h3 className="text-2xl font-black tracking-tight text-white">{item.school_name || "未知院校"}</h3>
-            <p className="mt-2 text-sm font-medium leading-6 text-slate-300">
+            <h3 className="text-[30px] font-black tracking-tight text-white">{item.school_name || "未知院校"}</h3>
+            <p className="mt-1 text-sm font-medium leading-6 text-slate-300">
               {[item.department_name, item.major, item.adjustment_major_codes[0]].filter(Boolean).join(" · ") || "学院与专业待补充"}
             </p>
           </div>
           <div className="shrink-0 text-right">
-            <div className="flex items-center justify-end gap-1 text-xs font-mono text-slate-500">
+            <div className="flex items-center justify-end gap-1 text-[11px] font-mono text-slate-500">
               <Clock3 size={13} />
               {releaseTime}
             </div>
@@ -1260,35 +1269,39 @@ function AdjustmentIntelCard({
           </div>
         </div>
 
-        <div className="grid gap-3 border-t border-white/8 pt-4 sm:grid-cols-2 xl:grid-cols-5">
-          {primaryFacts.map((fact) => (
-            <div key={fact.label} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{fact.label}</div>
-              <div className="mt-2 text-base font-semibold text-white">{fact.value}</div>
-            </div>
-          ))}
-          <div className={`rounded-2xl border px-4 py-3 ${probability.bg} ${probability.border}`}>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">胜率判断</div>
-            <div className={`mt-2 flex items-center gap-2 text-lg font-black ${probability.textClass}`}>
-              <TrendingUp size={16} className={probability.iconClass} />
-              {probability.label}
-            </div>
-          </div>
-          <div className={`rounded-2xl border px-4 py-3 ${mentorWarning ? "border-red-400/20 bg-red-500/10" : "border-white/10 bg-white/[0.04]"}`}>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">导师情况</div>
-            <div className="mt-2 flex items-center gap-2 text-base font-semibold text-white">
-              {mentorWarning ? <ShieldAlert size={16} className="text-red-300" /> : <CheckCircle2 size={16} className="text-emerald-300" />}
-              {mentorWarning ? "有预警" : "可进一步看"}
-            </div>
-            <div className="mt-2 text-xs text-slate-300">
-              {item.department_name ? `本学院 ${mentorSignals.department?.review_count ?? 0}` : "本学院 --"} / 本学校 {mentorSignals.school?.review_count ?? 0}
-            </div>
-          </div>
+        <div className="grid gap-2 md:grid-cols-5">
+          <CompactIntelFact label="初试分数" value={initialScore} />
+          <CompactIntelFact label="调剂分数" value={adjustmentScore} />
+          <CompactIntelFact label="调剂人数" value={vacancyLabel} />
+          <CompactIntelFact label="院校层级" value={tierLabel} />
+          <CompactIntelFact label="学习方式" value={studyModeLabel} />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4">
-          <div className="text-xs text-slate-400">
-            导师评价、发布时间、历史样本和来源链接都放在完整信息页里。
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-black/20 px-3 py-3">
+          <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${probability.bg} ${probability.border} ${probability.textClass}`}>
+            <TrendingUp size={14} className={probability.iconClass} />
+            {decisionSummary}
+          </div>
+          <div
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              mentorWarning
+                ? "border-red-400/20 bg-red-500/10 text-red-200"
+                : "border-white/10 bg-white/[0.04] text-slate-200"
+            }`}
+          >
+            {mentorWarning ? <ShieldAlert size={14} className="text-red-300" /> : <CheckCircle2 size={14} className="text-emerald-300" />}
+            {mentorSummary}
+          </div>
+          {item.city ? (
+            <div className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300">
+              {item.city}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-3">
+          <div className="text-xs text-slate-500">
+            发布时间、导师原文、历史样本和来源链接都收进完整信息页。
           </div>
           <div className="flex flex-wrap gap-2">
             {bookmark ? (
@@ -1673,6 +1686,15 @@ function DetailStat({ label, value }: { label: string; value: number | null | un
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
       <div className="mt-2 text-2xl font-black text-white">{value ?? "--"}</div>
+    </div>
+  );
+}
+
+function CompactIntelFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="mt-1.5 text-lg font-bold text-white">{value}</div>
     </div>
   );
 }
