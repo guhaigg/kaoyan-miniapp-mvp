@@ -2,14 +2,7 @@
 
 import { type MouseEvent, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  AlertTriangle,
-  ChevronRight,
-  FileText,
-  Share2,
-  Star,
-  Target,
-} from "lucide-react";
+import { AlertCircle, ArrowUpRight, Info, Share2, Star, TrendingUp } from "lucide-react";
 
 export interface FeedItem {
   id: string;
@@ -29,44 +22,30 @@ export interface FeedItem {
   };
 }
 
+const toneMap = {
+  calm: {
+    card: "bg-[#0a0f1a]/82 border-white/6 hover:border-cyan-500/35",
+    glow: "bg-cyan-500/10",
+    accent: "text-cyan-300",
+  },
+  urgent: {
+    card: "bg-orange-950/12 border-orange-500/20 hover:border-orange-500/45",
+    glow: "bg-orange-500/10",
+    accent: "text-orange-300",
+  },
+};
+
 export default function FeedCard({ item }: { item: FeedItem }) {
   const [copied, setCopied] = useState(false);
   const [bookmarkBusy, setBookmarkBusy] = useState(false);
   const [bookmarkFlash, setBookmarkFlash] = useState<"saved" | "removed" | null>(null);
 
-  const isAdjustment = item.type === "adjustment";
   const isUrgent = Boolean(item.isUrgent);
-  const themeColor = isUrgent ? "orange" : isAdjustment ? "purple" : "cyan";
-
-  const colorMap = {
-    cyan: {
-      bg: "bg-white/5",
-      border: "border-white/10 hover:border-cyan-400/50",
-      glow: "bg-cyan-500/10",
-      text: "text-cyan-400",
-      badgeBg: "bg-[#2c3e50]",
-    },
-    orange: {
-      bg: "bg-orange-950/20",
-      border: "border-orange-500/30 hover:border-orange-500",
-      glow: "bg-orange-500/10",
-      text: "text-orange-400",
-      badgeBg: "bg-orange-500/20",
-    },
-    purple: {
-      bg: "bg-purple-950/10",
-      border: "border-purple-500/20 hover:border-purple-400/50",
-      glow: "bg-purple-500/10",
-      text: "text-purple-400",
-      badgeBg: "bg-purple-500/20",
-    },
-  };
-
-  const style = colorMap[themeColor];
-  const timeAgo = formatDistanceToNowZh(item.publishTime);
-
-  const tags = item.tags.length > 0 ? item.tags : ["待补充"];
+  const tone = isUrgent ? toneMap.urgent : toneMap.calm;
+  const tags = item.tags.slice(0, 4);
   const badges = item.badges || [];
+  const timeAgo = formatDistanceToNowZh(item.publishTime);
+  const statusLabel = isUrgent ? "紧急缺额" : item.type === "adjustment" ? "调剂动态" : "最新公告";
 
   async function handleShare(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -101,75 +80,62 @@ export default function FeedCard({ item }: { item: FeedItem }) {
     }
   }
 
+  const cardContent = (
+    <CardBody
+      item={item}
+      copied={copied}
+      bookmarkBusy={bookmarkBusy}
+      onShare={handleShare}
+      onBookmark={handleBookmark}
+      statusLabel={statusLabel}
+      timeAgo={timeAgo}
+      tags={tags}
+      badges={badges}
+      tone={tone}
+    />
+  );
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
+    <motion.article
+      initial={{ opacity: 0, y: 15 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-50px" }}
-      whileHover={{ y: -4 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
-      className={`group relative overflow-hidden rounded-3xl border p-6 shadow-xl transition-all ${style.border} ${style.bg}`}
+      whileHover={{ y: -2 }}
+      viewport={{ once: true, margin: "-48px" }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
+      className={`group relative overflow-hidden rounded-2xl border p-4 shadow-lg backdrop-blur-xl transition-all md:p-5 ${tone.card}`}
     >
-      <div
-        className={`absolute right-0 top-0 h-32 w-32 translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl transition-transform duration-500 group-hover:scale-150 ${style.glow}`}
-      />
+      <div className={`absolute right-0 top-0 h-24 w-24 translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl opacity-50 transition-transform duration-500 group-hover:scale-125 ${tone.glow}`} />
 
       {item.href ? (
         <a
           href={item.href}
           target="_blank"
           rel="noopener noreferrer"
-          className="relative z-10 flex h-full flex-col justify-between"
+          className="relative z-10 flex h-full flex-col"
         >
-          <CardBody
-            bookmarkBusy={bookmarkBusy}
-            copied={copied}
-            handleBookmark={handleBookmark}
-            handleShare={handleShare}
-            isAdjustment={isAdjustment}
-            isUrgent={isUrgent}
-            item={item}
-            style={style}
-            badges={badges}
-            tags={tags}
-            timeAgo={timeAgo}
-          />
+          {cardContent}
         </a>
       ) : (
-        <div className="relative z-10 flex h-full flex-col justify-between">
-          <CardBody
-            bookmarkBusy={bookmarkBusy}
-            copied={copied}
-            handleBookmark={handleBookmark}
-            handleShare={handleShare}
-            isAdjustment={isAdjustment}
-            isUrgent={isUrgent}
-            item={item}
-            style={style}
-            badges={badges}
-            tags={tags}
-            timeAgo={timeAgo}
-          />
-        </div>
+        <div className="relative z-10 flex h-full flex-col">{cardContent}</div>
       )}
 
       <AnimatePresence>
         {copied ? (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="absolute bottom-4 right-4 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300"
+            exit={{ opacity: 0, y: 8 }}
+            className="absolute bottom-3 right-3 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-[10px] text-cyan-200"
           >
-            已复制分享链接
+            已复制
           </motion.div>
         ) : null}
         {bookmarkFlash ? (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className={`absolute bottom-4 left-4 rounded-full border px-3 py-1 text-xs ${
+            exit={{ opacity: 0, y: 8 }}
+            className={`absolute bottom-3 left-3 rounded-full border px-2.5 py-1 text-[10px] ${
               bookmarkFlash === "saved"
                 ? "border-yellow-400/20 bg-yellow-500/10 text-yellow-200"
                 : "border-white/10 bg-white/10 text-slate-200"
@@ -179,133 +145,130 @@ export default function FeedCard({ item }: { item: FeedItem }) {
           </motion.div>
         ) : null}
       </AnimatePresence>
-    </motion.div>
+    </motion.article>
   );
 }
 
 function CardBody({
-  bookmarkBusy,
-  copied,
-  handleBookmark,
-  handleShare,
-  isAdjustment,
-  isUrgent,
   item,
-  style,
-  badges,
-  tags,
+  copied,
+  bookmarkBusy,
+  onShare,
+  onBookmark,
+  statusLabel,
   timeAgo,
+  tags,
+  badges,
+  tone,
 }: {
-  bookmarkBusy: boolean;
-  copied: boolean;
-  handleBookmark: (event: MouseEvent<HTMLButtonElement>) => Promise<void>;
-  handleShare: (event: MouseEvent<HTMLButtonElement>) => Promise<void>;
-  isAdjustment: boolean;
-  isUrgent: boolean;
   item: FeedItem;
-  style: {
-    bg: string;
-    border: string;
-    glow: string;
-    text: string;
-    badgeBg: string;
-  };
-  badges: Array<{ label: string; tone: "sky" | "amber" }>;
-  tags: string[];
+  copied: boolean;
+  bookmarkBusy: boolean;
+  onShare: (event: MouseEvent<HTMLButtonElement>) => Promise<void>;
+  onBookmark: (event: MouseEvent<HTMLButtonElement>) => Promise<void>;
+  statusLabel: string;
   timeAgo: string;
+  tags: string[];
+  badges: Array<{ label: string; tone: "sky" | "amber" }>;
+  tone: {
+    card: string;
+    glow: string;
+    accent: string;
+  };
 }) {
   return (
     <>
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <div className={`flex items-center gap-1.5 text-xs font-mono ${style.text}`}>
-            {isUrgent ? (
-              <span className="h-2 w-2 rounded-full bg-orange-500 shadow-[0_0_8px_#f97316] animate-pulse" />
-            ) : null}
-            {isUrgent ? (
-              <AlertTriangle size={14} />
-            ) : isAdjustment ? (
-              <Target size={14} />
-            ) : (
-              <FileText size={14} />
-            )}
-            {isUrgent ? "紧急缺额" : isAdjustment ? "调剂动态" : "最新公告"}
-            <span className="ml-2 text-slate-500">· {timeAgo}</span>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className={`mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${tone.accent}`}>
+            {item.isUrgent ? <AlertCircle size={12} /> : <Info size={12} />}
+            <span>{statusLabel}</span>
           </div>
-
-          <div className="flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-            <button
-              type="button"
-              onClick={handleShare}
-              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <Share2 size={16} />
-            </button>
-            {item.bookmark ? (
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.8 }}
-                disabled={bookmarkBusy}
-                title={item.bookmark.label}
-                onClick={handleBookmark}
-                className={`rounded-lg p-1.5 transition-colors ${
-                  item.bookmark.active
-                    ? "text-yellow-400 hover:bg-yellow-400/10"
-                    : item.bookmark.available
-                      ? "text-slate-400 hover:bg-white/10 hover:text-white"
-                      : "text-slate-500 hover:bg-white/10 hover:text-slate-300"
-                } ${bookmarkBusy ? "cursor-not-allowed opacity-60" : ""}`}
-              >
-                <Star
-                  size={16}
-                  fill={item.bookmark.active ? "currentColor" : "none"}
-                  className={item.bookmark.active ? "drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]" : undefined}
-                />
-              </motion.button>
-            ) : null}
-          </div>
+          <h3 className="line-clamp-2 text-lg font-bold leading-tight text-white transition-colors group-hover:text-cyan-50 md:text-[1.1rem]">
+            {item.title}
+          </h3>
+          <p className="mt-1 text-xs text-slate-400">{timeAgo}</p>
         </div>
 
-        <h3 className="mb-2 text-xl font-bold leading-snug text-white transition-colors group-hover:text-cyan-50">
-          {item.title}
-        </h3>
-        {badges.length > 0 ? (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {badges.map((badge) => (
-              <span
-                key={`${item.id}-${badge.label}`}
-                className={
-                  badge.tone === "amber"
-                    ? "rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200"
-                    : "rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-200"
-                }
-              >
-                {badge.label}
-              </span>
-            ))}
-          </div>
-        ) : null}
-        <p className="mb-5 line-clamp-2 text-sm leading-relaxed text-slate-400">
-          {item.content}
-        </p>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onShare}
+            className="rounded-md p-1.5 text-slate-500 transition-colors hover:bg-white/8 hover:text-slate-200"
+            aria-label="分享"
+          >
+            <Share2 size={14} />
+          </button>
+          {item.bookmark ? (
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.78 }}
+              disabled={bookmarkBusy}
+              title={item.bookmark.label}
+              onClick={onBookmark}
+              className={`rounded-md p-1.5 transition-colors ${
+                item.bookmark.active
+                  ? "text-yellow-400"
+                  : item.bookmark.available
+                    ? "text-slate-500 hover:bg-white/8 hover:text-slate-200"
+                    : "text-slate-600 hover:bg-white/8 hover:text-slate-400"
+              } ${bookmarkBusy ? "cursor-not-allowed opacity-60" : ""}`}
+            >
+              <Star
+                size={15}
+                fill={item.bookmark.active ? "currentColor" : "none"}
+                className={item.bookmark.active ? "drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]" : undefined}
+              />
+            </motion.button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="mt-2 flex items-center justify-between border-t border-white/5 pt-4">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {tags.map((tag, index) => (
-            <span
-              key={`${item.id}-${tag}-${index}`}
-              className={`rounded px-2 py-1 text-white ${
-                index === 0 ? style.badgeBg : "bg-white/5 text-slate-300"
-              }`}
-            >
-              {tag}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {tags.length > 0
+          ? tags.map((tag, index) => (
+              <span
+                key={`${item.id}-${tag}-${index}`}
+                className="rounded-md border border-white/5 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-300"
+              >
+                {tag}
+              </span>
+            ))
+          : (
+            <span className="rounded-md border border-white/5 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-500">
+              待补充
             </span>
-          ))}
+          )}
+        {badges.slice(0, 2).map((badge) => (
+          <span
+            key={`${item.id}-${badge.label}`}
+            className={
+              badge.tone === "amber"
+                ? "rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200"
+                : "rounded-md border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-200"
+            }
+          >
+            {badge.label}
+          </span>
+        ))}
+      </div>
+
+      <p className="line-clamp-3 text-sm leading-6 text-slate-400">{item.content}</p>
+
+      <div className="mt-4 flex-1" />
+
+      <div className="mt-auto flex items-center justify-between border-t border-white/5 pt-3">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 text-[10px] text-slate-400">
+            <TrendingUp size={12} className="text-slate-500" />
+            <span>{item.type === "adjustment" ? "调剂情报" : "公告正文"}</span>
+          </div>
+          <div className="h-3 w-px bg-white/10" />
+          <div className="text-[10px] text-slate-500">{copied ? "链接已复制" : "点击查看详情"}</div>
         </div>
-        <div className="flex items-center gap-1 text-sm font-medium text-slate-400 transition-colors group-hover:text-white">
-          {copied ? "链接已复制" : "查看详情"}
-          <ChevronRight size={16} className="transition-transform group-hover:translate-x-1" />
+        <div className="flex items-center gap-1 text-[11px] font-medium text-slate-400 transition-colors group-hover:text-slate-200">
+          查看
+          <ArrowUpRight size={14} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
         </div>
       </div>
     </>
@@ -314,23 +277,34 @@ function CardBody({
 
 export function FeedCardSkeleton() {
   return (
-    <div className="relative h-[220px] overflow-hidden rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+    <div className="relative h-[188px] overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-4 md:p-5">
       <motion.div
         initial={{ x: "-100%" }}
-        animate={{ x: "200%" }}
-        transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
-        className="absolute bottom-0 top-0 z-10 w-1/2 skew-x-12 bg-gradient-to-r from-transparent via-white/5 to-transparent"
+        animate={{ x: "220%" }}
+        transition={{ repeat: Infinity, duration: 1.4, ease: "linear" }}
+        className="absolute inset-y-0 z-10 w-1/2 skew-x-12 bg-gradient-to-r from-transparent via-white/5 to-transparent"
       />
-      <div className="mb-4 flex items-center justify-between">
-        <div className="h-4 w-24 animate-pulse rounded-full bg-white/10" />
-        <div className="h-6 w-16 animate-pulse rounded-lg bg-white/5" />
+      <div className="mb-3 flex items-start justify-between">
+        <div className="space-y-2">
+          <div className="h-3 w-16 animate-pulse rounded-full bg-white/10" />
+          <div className="h-5 w-52 animate-pulse rounded-lg bg-white/10" />
+          <div className="h-3 w-20 animate-pulse rounded bg-white/5" />
+        </div>
+        <div className="h-7 w-7 animate-pulse rounded-md bg-white/5" />
       </div>
-      <div className="mb-3 h-6 w-3/4 animate-pulse rounded-lg bg-white/10" />
-      <div className="mb-2 h-4 w-full animate-pulse rounded-lg bg-white/5" />
-      <div className="h-4 w-4/5 animate-pulse rounded-lg bg-white/5" />
-      <div className="absolute bottom-6 left-6 right-6 flex gap-2 border-t border-white/5 pt-4">
-        <div className="h-6 w-16 animate-pulse rounded bg-white/10" />
-        <div className="h-6 w-16 animate-pulse rounded bg-white/5" />
+      <div className="mb-3 flex gap-2">
+        <div className="h-5 w-12 animate-pulse rounded-md bg-white/10" />
+        <div className="h-5 w-12 animate-pulse rounded-md bg-white/5" />
+        <div className="h-5 w-12 animate-pulse rounded-md bg-white/5" />
+      </div>
+      <div className="space-y-2">
+        <div className="h-3.5 w-full animate-pulse rounded bg-white/5" />
+        <div className="h-3.5 w-5/6 animate-pulse rounded bg-white/5" />
+        <div className="h-3.5 w-2/3 animate-pulse rounded bg-white/5" />
+      </div>
+      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between border-t border-white/5 pt-3 md:bottom-5 md:left-5 md:right-5">
+        <div className="h-3 w-28 animate-pulse rounded bg-white/5" />
+        <div className="h-3 w-12 animate-pulse rounded bg-white/5" />
       </div>
     </div>
   );
