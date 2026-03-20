@@ -11,6 +11,7 @@ export const fetchAnnouncementResults = (payload: SearchBaseRequest) =>
     method: "POST",
     url: "/search/announcements",
     data: payload,
+    timeout: 30_000,
   });
 
 export const fetchAdjustmentResults = (payload: AdjustmentSearchRequest) =>
@@ -18,6 +19,7 @@ export const fetchAdjustmentResults = (payload: AdjustmentSearchRequest) =>
     method: "POST",
     url: "/search/adjustments",
     data: payload,
+    timeout: 45_000,
   });
 
 export const fetchAdjustmentDetail = (itemId: string, itemKind: "content" | "opportunity") =>
@@ -25,4 +27,5 @@ export const fetchAdjustmentDetail = (itemId: string, itemKind: "content" | "opp
     method: "GET",
     url: `/search/adjustments/items/${itemId}`,
     params: { item_kind: itemKind },
+    timeout: 30_000,
   });

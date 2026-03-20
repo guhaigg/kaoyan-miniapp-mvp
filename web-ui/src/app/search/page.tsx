@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
@@ -57,6 +57,7 @@ export default function SearchPage() {
   const [score, setScore] = useState("");
   const [major, setMajor] = useState("");
   const [result, setResult] = useState<{ percent: number; text: string } | null>(null);
+  const searchRequestIdRef = useRef(0);
 
   const announcementMutation = useAnnouncementSearchMutation();
   const adjustmentMutation = useAdjustmentSearchMutation();
@@ -189,17 +190,20 @@ export default function SearchPage() {
     setMessage("");
   }
 
-  function buildAdjustmentQuickFilterPayload(overrides?: {
+  function buildAdjustmentQuickFilterPayload(
+    effectiveFilters: SearchCommandCenterFilters,
+    overrides?: {
     historyBackedOnly?: boolean;
     longTrackOnly?: boolean;
     referenceLinksOnly?: boolean;
     hideMentorWarnings?: boolean;
-  }) {
+    },
+  ) {
     return {
-      history_backed_only: overrides?.historyBackedOnly ?? filters.historyBackedOnly,
-      long_track_only: overrides?.longTrackOnly ?? filters.longTrackOnly,
-      reference_links_only: overrides?.referenceLinksOnly ?? filters.referenceLinksOnly,
-      exclude_mentor_warnings: overrides?.hideMentorWarnings ?? filters.hideMentorWarnings,
+      history_backed_only: overrides?.historyBackedOnly ?? effectiveFilters.historyBackedOnly,
+      long_track_only: overrides?.longTrackOnly ?? effectiveFilters.longTrackOnly,
+      reference_links_only: overrides?.referenceLinksOnly ?? effectiveFilters.referenceLinksOnly,
+      exclude_mentor_warnings: overrides?.hideMentorWarnings ?? effectiveFilters.hideMentorWarnings,
     };
   }
 
@@ -211,7 +215,10 @@ export default function SearchPage() {
       referenceLinksOnly?: boolean;
       hideMentorWarnings?: boolean;
     },
+    filterOverrides?: Partial<SearchCommandCenterFilters>,
   ) {
+    const requestId = ++searchRequestIdRef.current;
+    const effectiveFilters = { ...filters, ...filterOverrides };
     setMessage("");
     if (queryType === "adjustments" && isAnonymous) {
       setMessage("调剂检索属于登录后的深度功能，请先登录后继续。");
@@ -222,39 +229,60 @@ export default function SearchPage() {
         queryType === "announcements"
           ? await announcementMutation.mutateAsync({
               keywords: keywords.trim() || undefined,
-              school_name: filters.schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : undefined),
+              school_name: effectiveFilters.schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : undefined),
               page,
               page_size: 12,
             })
           : await adjustmentMutation.mutateAsync({
               keywords: resolvedKeywords || undefined,
-              school_name: resolvedSchoolName || undefined,
-              major: resolvedMajorFilter || undefined,
-              region: filters.region !== "不限" ? filters.region.trim() : undefined,
-              city: filters.city.trim() || undefined,
-              school_tier: mapLevelToServerSchoolTier(filters.level),
-              year: filters.year.trim() ? Number(filters.year.trim()) : undefined,
-              candidate_score: filters.score.trim() ? Number(filters.score.trim()) : undefined,
-              ...buildAdjustmentQuickFilterPayload(overrides),
+              school_name:
+                filterOverrides && "schoolName" in filterOverrides
+                  ? effectiveFilters.schoolName.trim() || undefined
+                  : resolvedSchoolName || undefined,
+              major:
+                filterOverrides && "major" in filterOverrides
+                  ? effectiveFilters.major.trim() || undefined
+                  : resolvedMajorFilter || undefined,
+              region: effectiveFilters.region !== "不限" ? effectiveFilters.region.trim() : undefined,
+              city: effectiveFilters.city.trim() || undefined,
+              school_tier: mapLevelToServerSchoolTier(effectiveFilters.level),
+              year: effectiveFilters.year.trim() ? Number(effectiveFilters.year.trim()) : undefined,
+              candidate_score: effectiveFilters.score.trim() ? Number(effectiveFilters.score.trim()) : undefined,
+              ...buildAdjustmentQuickFilterPayload(effectiveFilters, overrides),
               page,
               page_size: 12,
             });
+      if (requestId !== searchRequestIdRef.current) {
+        return;
+      }
       setSearchResult(payload);
       if (payload.total === 0) {
         setMessage(buildEmptyResultMessage(queryType, {
-          keywords: resolvedKeywords,
-          schoolName: resolvedSchoolName,
-          majorFilter: resolvedMajorFilter,
-          regionFilter: filters.region === "不限" ? "" : filters.region,
-          cityFilter: filters.city,
-          schoolTierFilter: filters.level === "不限" ? "" : filters.level,
-          yearFilter: filters.year,
-          candidateScoreFilter: filters.score,
+          keywords:
+            filterOverrides && !("schoolName" in filterOverrides) && !("major" in filterOverrides)
+              ? resolvedKeywords
+              : keywords.trim(),
+          schoolName:
+            filterOverrides && "schoolName" in filterOverrides
+              ? effectiveFilters.schoolName
+              : resolvedSchoolName,
+          majorFilter:
+            filterOverrides && "major" in filterOverrides
+              ? effectiveFilters.major
+              : resolvedMajorFilter,
+          regionFilter: effectiveFilters.region === "不限" ? "" : effectiveFilters.region,
+          cityFilter: effectiveFilters.city,
+          schoolTierFilter: effectiveFilters.level === "不限" ? "" : effectiveFilters.level,
+          yearFilter: effectiveFilters.year,
+          candidateScoreFilter: effectiveFilters.score,
         }));
       } else {
         setMessage("");
       }
     } catch (error) {
+      if (requestId !== searchRequestIdRef.current) {
+        return;
+      }
       if (error instanceof ApiError) {
         setMessage(`查询失败：${error.message}`);
       } else {

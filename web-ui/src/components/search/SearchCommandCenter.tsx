@@ -31,7 +31,7 @@ interface SearchCommandCenterProps {
   setKeyword: (value: string) => void;
   filters: SearchCommandCenterFilters;
   setFilters: Dispatch<SetStateAction<SearchCommandCenterFilters>>;
-  onSearch: () => void;
+  onSearch: (filterPatch?: Partial<SearchCommandCenterFilters>) => void;
 }
 
 type PopoverId = "region" | "year" | "level" | "type";
@@ -69,6 +69,7 @@ function InlineInput({
   placeholder,
   widthClass,
   inputMode,
+  searchOnBlur = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -76,6 +77,7 @@ function InlineInput({
   placeholder: string;
   widthClass?: string;
   inputMode?: "text" | "numeric";
+  searchOnBlur?: boolean;
 }) {
   return (
     <input
@@ -88,7 +90,7 @@ function InlineInput({
         }
       }}
       onBlur={() => {
-        if (value.trim()) {
+        if (searchOnBlur && value.trim()) {
           onSearch();
         }
       }}
@@ -133,15 +135,18 @@ export default function SearchCommandCenter({
       : "输入院校、学院或招生关键词...";
 
   function updatePopoverFilter(id: PopoverId, value: string) {
+    const filterPatch: Partial<SearchCommandCenterFilters> = {
+      region: id === "region" ? value : filters.region,
+      year: id === "year" ? (value === "不限" ? "" : value) : filters.year,
+      level: id === "level" ? (value as LevelFilter) : filters.level,
+      type: id === "type" ? mapStudyModeValue(value) : filters.type,
+    };
     setFilters((previous) => ({
       ...previous,
-      region: id === "region" ? value : previous.region,
-      year: id === "year" ? (value === "不限" ? "" : value) : previous.year,
-      level: id === "level" ? (value as LevelFilter) : previous.level,
-      type: id === "type" ? mapStudyModeValue(value) : previous.type,
+      ...filterPatch,
     }));
     setOpenPopover(null);
-    onSearch();
+    onSearch(filterPatch);
   }
 
   return (
@@ -199,7 +204,7 @@ export default function SearchCommandCenter({
           ) : null}
           <button
             type="button"
-            onClick={onSearch}
+            onClick={() => onSearch()}
             className="rounded-[1.35rem] bg-white px-6 py-3 text-sm font-extrabold text-black transition-all hover:bg-cyan-400 hover:text-white active:scale-[0.98]"
           >
             检索
@@ -276,36 +281,37 @@ export default function SearchCommandCenter({
             </div>
           ))}
 
-          <InlineInput
-            value={filters.schoolName}
-            onChange={(value) => setFilters((previous) => ({ ...previous, schoolName: value }))}
-            onSearch={onSearch}
-            placeholder={tab === "adjustments" ? "精确院校" : "院校限定"}
-          />
+              <InlineInput
+                value={filters.schoolName}
+                onChange={(value) => setFilters((previous) => ({ ...previous, schoolName: value }))}
+                onSearch={() => onSearch({ schoolName: filters.schoolName })}
+                placeholder={tab === "adjustments" ? "精确院校" : "院校限定"}
+              />
 
           {tab === "adjustments" ? (
             <>
               <InlineInput
                 value={filters.major}
                 onChange={(value) => setFilters((previous) => ({ ...previous, major: value }))}
-                onSearch={onSearch}
+                onSearch={() => onSearch({ major: filters.major })}
                 placeholder="精确专业 / 代码"
                 widthClass="w-32"
               />
               <InlineInput
                 value={filters.city}
                 onChange={(value) => setFilters((previous) => ({ ...previous, city: value }))}
-                onSearch={onSearch}
+                onSearch={() => onSearch({ city: filters.city })}
                 placeholder="城市"
                 widthClass="w-24"
               />
               <InlineInput
                 value={filters.score}
                 onChange={(value) => setFilters((previous) => ({ ...previous, score: value }))}
-                onSearch={onSearch}
+                onSearch={() => onSearch({ score: filters.score })}
                 placeholder="你的分数"
                 widthClass="w-20"
                 inputMode="numeric"
+                searchOnBlur
               />
             </>
           ) : null}
@@ -317,11 +323,14 @@ export default function SearchCommandCenter({
                   key={item.key}
                   type="button"
                   onClick={() => {
+                    const filterPatch = {
+                      [item.key]: !filters[item.key],
+                    } as Partial<SearchCommandCenterFilters>;
                     setFilters((previous) => ({
                       ...previous,
-                      [item.key]: !previous[item.key],
+                      ...filterPatch,
                     }));
-                    onSearch();
+                    onSearch(filterPatch);
                   }}
                   className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                     filters[item.key]
