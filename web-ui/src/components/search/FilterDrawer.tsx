@@ -63,7 +63,7 @@ function DrawerInput({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition-colors focus:border-cyan-400"
+      className="rounded-2xl border border-white/8 bg-white/[0.05] px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-400/20 focus:ring-1 focus:ring-cyan-500/50"
     />
   );
 }
@@ -145,7 +145,7 @@ export default function FilterDrawer({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/45"
+            className="fixed inset-0 z-[130] bg-black/45"
             onClick={onClose}
           />
           <motion.aside
@@ -153,7 +153,7 @@ export default function FilterDrawer({
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 26, stiffness: 220 }}
-            className="fixed right-0 top-0 z-[101] flex h-full w-full max-w-[420px] flex-col border-l border-white/10 bg-[#09101b]/96 shadow-[-24px_0_64px_rgba(0,0,0,0.48)] backdrop-blur-3xl"
+            className="fixed right-0 top-0 z-[140] flex h-full w-full max-w-[420px] flex-col border-l border-white/10 bg-[#09101b]/96 shadow-[-24px_0_64px_rgba(0,0,0,0.48)] backdrop-blur-3xl"
           >
             <div className="flex items-center justify-between border-b border-white/10 p-6 text-white">
               <div>
@@ -172,7 +172,7 @@ export default function FilterDrawer({
               </button>
             </div>
 
-            <div className="flex-1 space-y-7 overflow-y-auto p-6">
+            <div className="flex-1 space-y-7 overflow-y-auto p-6 pb-28">
               <DrawerSection title="精确限定">
                 <div className="grid gap-3">
                   <DrawerInput value={schoolName} onChange={onSchoolNameChange} placeholder="精确院校（可选）" />
@@ -185,7 +185,7 @@ export default function FilterDrawer({
                       <select
                         value={schoolTierFilter}
                         onChange={(event) => onSchoolTierFilterChange(event.target.value)}
-                        className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                        className="rounded-2xl border border-white/8 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none transition-all focus:border-cyan-400/20 focus:ring-1 focus:ring-cyan-500/50"
                       >
                         <option value="">院校类别（全部）</option>
                         <option value="985">985</option>
@@ -273,7 +273,7 @@ export default function FilterDrawer({
               </div>
             </div>
 
-            <div className="border-t border-white/10 bg-black/20 p-6">
+            <div className="sticky bottom-0 border-t border-white/10 bg-[#09101b]/96 p-6 pb-8 shadow-[0_-20px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
               <div className="mb-3 flex gap-3">
                 <button
                   type="button"

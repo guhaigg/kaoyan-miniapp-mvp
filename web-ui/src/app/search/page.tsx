@@ -336,6 +336,25 @@ export default function SearchPage() {
     setAdjustmentDetailLoading(false);
   }
 
+  useEffect(() => {
+    const fab = document.querySelector<HTMLElement>("[data-watchlist-fab='true']");
+    if (!fab) return;
+    if (isFilterOpen) {
+      fab.style.opacity = "0";
+      fab.style.pointerEvents = "none";
+      fab.style.transform = "scale(0.92)";
+    } else {
+      fab.style.opacity = "";
+      fab.style.pointerEvents = "";
+      fab.style.transform = "";
+    }
+    return () => {
+      fab.style.opacity = "";
+      fab.style.pointerEvents = "";
+      fab.style.transform = "";
+    };
+  }, [isFilterOpen]);
+
   const isSearching = announcementMutation.isPending || adjustmentMutation.isPending;
   return (
     <motion.div
@@ -357,12 +376,11 @@ export default function SearchPage() {
         </div>
       </div>
 
-      <div className="mb-4">
-        <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur-xl transition-colors hover:border-cyan-500/50">
-          <div className="mb-3 grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-black/20 p-1 text-sm">
+      <div className="mb-4 space-y-3">
+          <div className="inline-grid grid-cols-2 gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 text-sm shadow-lg backdrop-blur-xl">
             <button
               type="button"
-              className={`rounded-lg px-3 py-2 transition-colors ${
+              className={`rounded-full px-4 py-2 transition-colors ${
                 queryType === "announcements"
                   ? "bg-cyan-500 text-white"
                   : "text-slate-300 hover:bg-white/10"
@@ -377,7 +395,7 @@ export default function SearchPage() {
             </button>
             <button
               type="button"
-              className={`rounded-lg px-3 py-2 transition-colors ${
+              className={`rounded-full px-4 py-2 transition-colors ${
                 queryType === "adjustments"
                   ? "bg-cyan-500 text-white"
                   : "text-slate-300 hover:bg-white/10"
@@ -396,7 +414,7 @@ export default function SearchPage() {
               调剂检索{adjustmentLocked ? " · 登录后开放" : ""}
             </button>
           </div>
-          <div className="flex items-center rounded-[26px] border border-white/10 bg-black/25 px-3 py-2">
+          <div className="flex items-center rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] px-3 py-2 shadow-[0_18px_50px_rgba(0,0,0,0.2)] backdrop-blur-xl">
             <Search className="ml-1 text-slate-400" size={18} />
             <input
               value={keywords}
@@ -429,13 +447,13 @@ export default function SearchPage() {
               {isSearching ? "检索中..." : "检索"}
             </button>
           </div>
-          <div className="mt-2 text-xs text-slate-300">
+          <div className="text-xs text-slate-300">
             {queryType === "adjustments"
               ? `当前识别：${adjustmentIntent.label}。${adjustmentIntent.description}`
               : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
           </div>
           {hasAnyDrawerFilters ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">已启用</span>
               {schoolName.trim() ? <FilterPill label={`院校 ${schoolName.trim()}`} /> : null}
               {majorFilter.trim() ? <FilterPill label={`专业 ${majorFilter.trim()}`} /> : null}
@@ -456,7 +474,6 @@ export default function SearchPage() {
               </button>
             </div>
           ) : null}
-        </div>
       </div>
 
       <FilterDrawer
@@ -995,7 +1012,10 @@ function AdjustmentIntelCard({
     item.historical_adjustment?.adjustment_score_min,
     item.historical_adjustment?.adjustment_score_max,
   );
-  const vacancyLabel = item.adjustment_vacancy_count ? `${item.adjustment_vacancy_count}` : "待补充";
+  const vacancyLabel =
+    item.adjustment_vacancy_count !== null && item.adjustment_vacancy_count !== undefined
+      ? `${item.adjustment_vacancy_count}`
+      : "—";
   const tierLabel = item.school_tier || "待补充";
   const studyModeLabel = formatStudyModeLabel(null, item.adjustment_study_modes);
   const decisionSummary = candidateScore
@@ -1110,7 +1130,7 @@ function AdjustmentIntelCard({
           ) : null}
         </div>
 
-        <div className="flex items-center justify-end border-t border-white/8 pt-2.5">
+        <div className="flex items-center justify-end border-t border-white/5 pt-2.5">
           <span className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-400 transition-colors group-hover:text-slate-200">
             查看完整分析
             <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
@@ -1468,10 +1488,11 @@ function DetailStat({ label, value }: { label: string; value: number | null | un
 }
 
 function CompactIntelFact({ label, value }: { label: string; value: string }) {
+  const isMutedValue = value === "—" || value === "--" || value === "待补充";
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300/85">{label}</div>
-      <div className="mt-1 text-sm font-bold text-white md:text-[15px]">{value}</div>
+      <div className={`mt-1 text-sm font-bold md:text-[15px] ${isMutedValue ? "text-slate-600" : "text-white"}`}>{value}</div>
     </div>
   );
 }

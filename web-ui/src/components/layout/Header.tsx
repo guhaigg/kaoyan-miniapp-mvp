@@ -147,6 +147,7 @@ export default function Header() {
 
       <button
         onClick={handleOpenWatchlist}
+        data-watchlist-fab="true"
         className="group fixed bottom-10 right-6 z-[80] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-cyan-600 to-blue-700 shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform hover:scale-110"
       >
         <BellRing className="text-white group-hover:animate-pulse" size={24} />
