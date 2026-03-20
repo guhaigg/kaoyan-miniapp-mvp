@@ -9,15 +9,17 @@ import {
   CheckCircle2,
   ExternalLink,
   Clock3,
-  Search,
   ShieldAlert,
-  SlidersHorizontal,
   Star,
   Target,
   TrendingUp,
   X,
 } from "lucide-react";
-import FilterDrawer, { type SchoolTier, type StudyMode } from "@/components/search/FilterDrawer";
+import SearchCommandCenter, {
+  type SchoolTier,
+  type SearchCommandCenterFilters,
+  type StudyMode,
+} from "@/components/search/SearchCommandCenter";
 import FeedCard, { FeedCardSkeleton } from "@/components/shared/FeedCard";
 import { AdjustmentSearchDetailResponse, ApiError, SearchItem, SearchResponse } from "@/lib/api";
 import { fetchAdjustmentDetail } from "@/api/search";
@@ -29,22 +31,22 @@ export default function SearchPage() {
   const router = useRouter();
   const { portalAuth } = useAppStore();
   const isAnonymous = !portalAuth;
-  const [queryType, setQueryType] = useState<"announcements" | "adjustments">("announcements");
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [queryType, setQueryType] = useState<"announcements" | "adjustments">(portalAuth ? "adjustments" : "announcements");
   const [keywords, setKeywords] = useState("");
-  const [schoolName, setSchoolName] = useState("");
-  const [majorFilter, setMajorFilter] = useState("");
-  const [regionFilter, setRegionFilter] = useState("");
-  const [cityFilter, setCityFilter] = useState("");
-  const [yearFilter, setYearFilter] = useState("");
-  const [schoolTierFilter, setSchoolTierFilter] = useState("");
-  const [candidateScoreFilter, setCandidateScoreFilter] = useState("");
-  const [schoolTiers, setSchoolTiers] = useState<SchoolTier[]>([]);
-  const [studyMode, setStudyMode] = useState<StudyMode>("all");
-  const [onlyHistoryBacked, setOnlyHistoryBacked] = useState(false);
-  const [onlyLongTrack, setOnlyLongTrack] = useState(false);
-  const [onlyWithReferenceLinks, setOnlyWithReferenceLinks] = useState(false);
-  const [hideMentorWarnings, setHideMentorWarnings] = useState(false);
+  const [filters, setFilters] = useState<SearchCommandCenterFilters>({
+    schoolName: "",
+    major: "",
+    region: "不限",
+    city: "",
+    year: "",
+    level: "不限",
+    type: "all",
+    score: "",
+    historyBackedOnly: false,
+    longTrackOnly: false,
+    referenceLinksOnly: false,
+    hideMentorWarnings: false,
+  });
   const [message, setMessage] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [selectedAdjustmentItem, setSelectedAdjustmentItem] = useState<SearchItem | null>(null);
@@ -67,8 +69,8 @@ export default function SearchPage() {
     const filtered = searchResult.items.filter((item) => {
       const text = [item.school_name, item.title, item.summary, item.major, item.city, item.school_tier].filter(Boolean).join(" ");
       const matchesTier =
-        schoolTiers.length === 0 || schoolTiers.some((tier) => matchesSchoolTier(tier, item.school_tier, text));
-      const matchesMode = matchesStudyMode(studyMode, text, item.adjustment_study_modes);
+        filters.level === "不限" || matchesSchoolTier(filters.level, item.school_tier, text);
+      const matchesMode = matchesStudyMode(filters.type, text, item.adjustment_study_modes);
       return matchesTier && matchesMode;
     });
     if (queryType !== "adjustments") {
@@ -94,22 +96,33 @@ export default function SearchPage() {
       return new Date(right.published_at || right.updated_at).getTime() - new Date(left.published_at || left.updated_at).getTime();
     });
   }, [
+    filters.level,
+    filters.type,
     queryType,
-    schoolTiers,
     searchResult,
-    studyMode,
   ]);
 
   const currentPage = searchResult?.page || 1;
   const totalPages = searchResult ? Math.max(1, Math.ceil(searchResult.total / searchResult.page_size)) : 1;
   const hasLocalFilters =
-    schoolTiers.length > 0 ||
-    studyMode !== "all";
+    filters.level !== "不限" ||
+    filters.type !== "all";
   const activeServerQuickFilters = [
-    onlyHistoryBacked ? "有历史样本" : null,
-    onlyLongTrack ? "连续活跃" : null,
-    onlyWithReferenceLinks ? "带历史链接" : null,
-    hideMentorWarnings ? "排除导师预警" : null,
+    filters.historyBackedOnly ? "有历史样本" : null,
+    filters.longTrackOnly ? "连续活跃" : null,
+    filters.referenceLinksOnly ? "带历史链接" : null,
+    filters.hideMentorWarnings ? "排除导师预警" : null,
+  ].filter(Boolean) as string[];
+  const activeInlineFilters = [
+    filters.schoolName.trim() ? `院校 ${filters.schoolName.trim()}` : null,
+    filters.major.trim() ? `专业 ${filters.major.trim()}` : null,
+    filters.region !== "不限" ? `地区 ${filters.region}` : null,
+    filters.city.trim() ? `城市 ${filters.city.trim()}` : null,
+    filters.year.trim() ? `年份 ${filters.year.trim()}` : null,
+    filters.level !== "不限" ? filters.level : null,
+    filters.type !== "all" ? (filters.type === "fulltime" ? "全日制" : "非全日制") : null,
+    filters.score.trim() ? `分数 ${filters.score.trim()}` : null,
+    ...(queryType === "adjustments" ? activeServerQuickFilters : []),
   ].filter(Boolean) as string[];
   const hasServerQuickFilters = activeServerQuickFilters.length > 0;
   const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
@@ -127,41 +140,17 @@ export default function SearchPage() {
 
   const adjustmentQueryIntent = resolveAdjustmentQueryIntent({
     keywords,
-    schoolName,
-    majorFilter,
+    schoolName: filters.schoolName,
+    majorFilter: filters.major,
   });
   const resolvedSchoolName =
     queryType === "adjustments"
       ? adjustmentQueryIntent.schoolName
-      : schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : "");
+      : filters.schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : "");
   const resolvedMajorFilter =
-    queryType === "adjustments" ? adjustmentQueryIntent.major : majorFilter.trim();
+    queryType === "adjustments" ? adjustmentQueryIntent.major : filters.major.trim();
   const resolvedKeywords =
     queryType === "adjustments" ? adjustmentQueryIntent.keywords : keywords.trim();
-  const primaryInputPlaceholder =
-    queryType === "adjustments"
-      ? "学校名、专业名或专业代码"
-      : "输入院校代码、名称、学院或招生关键字...";
-  const adjustmentIntent = getAdjustmentIntentMeta({
-    keywords,
-    schoolName,
-    majorFilter,
-  });
-  const hasAdvancedAdjustmentFilters = Boolean(
-    schoolName.trim() ||
-      majorFilter.trim() ||
-      regionFilter.trim() ||
-      cityFilter.trim() ||
-      yearFilter.trim() ||
-      schoolTierFilter.trim() ||
-      candidateScoreFilter.trim(),
-  );
-  const hasAnyDrawerFilters =
-    hasAdvancedAdjustmentFilters ||
-    schoolTiers.length > 0 ||
-    studyMode !== "all" ||
-    (queryType === "adjustments" && hasServerQuickFilters);
-
   const calculateMatch = () => {
     if (isAnonymous) {
       setMessage("调剂测算属于登录后的深度功能，请先登录。");
@@ -182,19 +171,20 @@ export default function SearchPage() {
 
   function resetAllFilters() {
     setKeywords("");
-    setSchoolName("");
-    setMajorFilter("");
-    setRegionFilter("");
-    setCityFilter("");
-    setYearFilter("");
-    setSchoolTierFilter("");
-    setCandidateScoreFilter("");
-    setSchoolTiers([]);
-    setStudyMode("all");
-    setOnlyHistoryBacked(false);
-    setOnlyLongTrack(false);
-    setOnlyWithReferenceLinks(false);
-    setHideMentorWarnings(false);
+    setFilters({
+      schoolName: "",
+      major: "",
+      region: "不限",
+      city: "",
+      year: "",
+      level: "不限",
+      type: "all",
+      score: "",
+      historyBackedOnly: false,
+      longTrackOnly: false,
+      referenceLinksOnly: false,
+      hideMentorWarnings: false,
+    });
     setSearchResult(null);
     setMessage("");
   }
@@ -206,10 +196,10 @@ export default function SearchPage() {
     hideMentorWarnings?: boolean;
   }) {
     return {
-      history_backed_only: overrides?.historyBackedOnly ?? onlyHistoryBacked,
-      long_track_only: overrides?.longTrackOnly ?? onlyLongTrack,
-      reference_links_only: overrides?.referenceLinksOnly ?? onlyWithReferenceLinks,
-      exclude_mentor_warnings: overrides?.hideMentorWarnings ?? hideMentorWarnings,
+      history_backed_only: overrides?.historyBackedOnly ?? filters.historyBackedOnly,
+      long_track_only: overrides?.longTrackOnly ?? filters.longTrackOnly,
+      reference_links_only: overrides?.referenceLinksOnly ?? filters.referenceLinksOnly,
+      exclude_mentor_warnings: overrides?.hideMentorWarnings ?? filters.hideMentorWarnings,
     };
   }
 
@@ -232,7 +222,7 @@ export default function SearchPage() {
         queryType === "announcements"
           ? await announcementMutation.mutateAsync({
               keywords: keywords.trim() || undefined,
-              school_name: schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : undefined),
+              school_name: filters.schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : undefined),
               page,
               page_size: 12,
             })
@@ -240,11 +230,11 @@ export default function SearchPage() {
               keywords: resolvedKeywords || undefined,
               school_name: resolvedSchoolName || undefined,
               major: resolvedMajorFilter || undefined,
-              region: regionFilter.trim() || undefined,
-              city: cityFilter.trim() || undefined,
-              school_tier: schoolTierFilter.trim() || undefined,
-              year: yearFilter.trim() ? Number(yearFilter.trim()) : undefined,
-              candidate_score: candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined,
+              region: filters.region !== "不限" ? filters.region.trim() : undefined,
+              city: filters.city.trim() || undefined,
+              school_tier: mapLevelToServerSchoolTier(filters.level),
+              year: filters.year.trim() ? Number(filters.year.trim()) : undefined,
+              candidate_score: filters.score.trim() ? Number(filters.score.trim()) : undefined,
               ...buildAdjustmentQuickFilterPayload(overrides),
               page,
               page_size: 12,
@@ -255,11 +245,11 @@ export default function SearchPage() {
           keywords: resolvedKeywords,
           schoolName: resolvedSchoolName,
           majorFilter: resolvedMajorFilter,
-          regionFilter,
-          cityFilter,
-          schoolTierFilter,
-          yearFilter,
-          candidateScoreFilter,
+          regionFilter: filters.region === "不限" ? "" : filters.region,
+          cityFilter: filters.city,
+          schoolTierFilter: filters.level === "不限" ? "" : filters.level,
+          yearFilter: filters.year,
+          candidateScoreFilter: filters.score,
         }));
       } else {
         setMessage("");
@@ -336,25 +326,6 @@ export default function SearchPage() {
     setAdjustmentDetailLoading(false);
   }
 
-  useEffect(() => {
-    const fab = document.querySelector<HTMLElement>("[data-watchlist-fab='true']");
-    if (!fab) return;
-    if (isFilterOpen) {
-      fab.style.opacity = "0";
-      fab.style.pointerEvents = "none";
-      fab.style.transform = "scale(0.92)";
-    } else {
-      fab.style.opacity = "";
-      fab.style.pointerEvents = "";
-      fab.style.transform = "";
-    }
-    return () => {
-      fab.style.opacity = "";
-      fab.style.pointerEvents = "";
-      fab.style.transform = "";
-    };
-  }, [isFilterOpen]);
-
   const isSearching = announcementMutation.isPending || adjustmentMutation.isPending;
   return (
     <motion.div
@@ -362,149 +333,31 @@ export default function SearchPage() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.4 }}
-      className="mx-auto max-w-6xl px-4 pb-20 pt-6"
+      className="mx-auto max-w-6xl px-4 pb-20 pt-10"
     >
-      <div className="mx-auto mb-4 max-w-5xl space-y-3">
-          <div className="inline-grid grid-cols-2 gap-1 rounded-full bg-white/[0.04] p-1 text-sm shadow-lg backdrop-blur-xl">
-            <button
-              type="button"
-              className={`rounded-full px-4 py-2 transition-colors ${
-                queryType === "announcements"
-                  ? "bg-cyan-500 text-white"
-                  : "text-slate-300 hover:bg-white/10"
-              }`}
-              onClick={() => {
-                setQueryType("announcements");
-                setMessage("");
-                setSearchResult(null);
-              }}
-            >
-              公告检索
-            </button>
-            <button
-              type="button"
-              className={`rounded-full px-4 py-2 transition-colors ${
-                queryType === "adjustments"
-                  ? "bg-cyan-500 text-white"
-                  : "text-slate-300 hover:bg-white/10"
-              } ${adjustmentLocked ? "cursor-not-allowed opacity-50 hover:bg-transparent" : ""}`}
-              onClick={() => {
-                if (adjustmentLocked) {
-                  setMessage("调剂检索属于登录后的深度功能，请先登录。");
-                  return;
-                }
-                setQueryType("adjustments");
-                setMessage("");
-                setSearchResult(null);
-              }}
-              disabled={adjustmentLocked}
-            >
-              调剂检索{adjustmentLocked ? " · 登录后开放" : ""}
-            </button>
-          </div>
-          <div className="flex items-center rounded-full border border-white/8 bg-[#0f172a]/82 px-3 py-2 shadow-[0_18px_50px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-            <Search className="ml-1 text-slate-400" size={18} />
-            <input
-              value={keywords}
-              onChange={(event) => setKeywords(event.target.value)}
-              onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-              type="text"
-              placeholder={primaryInputPlaceholder}
-              className="w-full border-none bg-transparent px-3 py-2.5 text-base text-white placeholder-slate-500 focus:outline-none md:text-lg"
-            />
-            <div className="mx-1 h-7 w-px bg-white/10" />
-            <button
-              type="button"
-              onClick={() => setIsFilterOpen(true)}
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold transition-colors ${
-                hasAnyDrawerFilters
-                  ? "bg-white/10 text-white"
-                  : "text-slate-300 hover:bg-white/8 hover:text-white"
-              }`}
-              aria-label="打开筛选"
-            >
-              <SlidersHorizontal size={16} />
-              筛选
-            </button>
-            <button
-              type="button"
-              onClick={() => triggerSearch(1)}
-              disabled={isSearching}
-              className="ml-2 inline-flex h-10 min-w-10 items-center justify-center rounded-full bg-cyan-500 px-4 text-sm font-bold text-white transition-colors hover:bg-cyan-400 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {isSearching ? "检索中" : "检索"}
-            </button>
-          </div>
-          <div className="text-xs text-slate-300">
-            {queryType === "adjustments"
-              ? `当前识别：${adjustmentIntent.label}。${adjustmentIntent.description}`
-              : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
-          </div>
-          {hasAnyDrawerFilters ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">已启用</span>
-              {schoolName.trim() ? <FilterPill label={`院校 ${schoolName.trim()}`} /> : null}
-              {majorFilter.trim() ? <FilterPill label={`专业 ${majorFilter.trim()}`} /> : null}
-              {regionFilter.trim() ? <FilterPill label={`地区 ${regionFilter.trim()}`} /> : null}
-              {cityFilter.trim() ? <FilterPill label={`城市 ${cityFilter.trim()}`} /> : null}
-              {yearFilter.trim() ? <FilterPill label={`年份 ${yearFilter.trim()}`} /> : null}
-              {schoolTierFilter.trim() ? <FilterPill label={`院校类别 ${schoolTierFilter.trim()}`} /> : null}
-              {candidateScoreFilter.trim() ? <FilterPill label={`分数 ${candidateScoreFilter.trim()}`} /> : null}
-              {schoolTiers.map((tier) => <FilterPill key={tier} label={tier} />)}
-              {studyMode !== "all" ? <FilterPill label={studyMode === "fulltime" ? "全日制" : "非全日制"} /> : null}
-              {queryType === "adjustments" ? activeServerQuickFilters.map((label) => <FilterPill key={label} label={label} />) : null}
-              <button
-                type="button"
-                onClick={resetAllFilters}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-white/[0.08]"
-              >
-                清空筛选
-              </button>
-            </div>
-          ) : null}
+      <div className="mx-auto mb-6 max-w-5xl text-center">
+        <h2 className="text-3xl font-black tracking-tight text-white md:text-4xl">数据库全局检索</h2>
       </div>
 
-      <FilterDrawer
-        isOpen={isFilterOpen}
-        queryType={queryType}
-        onClose={() => setIsFilterOpen(false)}
-        onApply={() => {
-          setIsFilterOpen(false);
-          void triggerSearch(1);
-        }}
-        tiers={schoolTiers}
-        studyMode={studyMode}
-        onToggleTier={(value) =>
-          setSchoolTiers((prev) =>
-            prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value],
-          )
-        }
-        onStudyModeChange={setStudyMode}
-        schoolName={schoolName}
-        majorFilter={majorFilter}
-        regionFilter={regionFilter}
-        cityFilter={cityFilter}
-        yearFilter={yearFilter}
-        schoolTierFilter={schoolTierFilter}
-        candidateScoreFilter={candidateScoreFilter}
-        onSchoolNameChange={setSchoolName}
-        onMajorFilterChange={setMajorFilter}
-        onRegionFilterChange={setRegionFilter}
-        onCityFilterChange={setCityFilter}
-        onYearFilterChange={setYearFilter}
-        onSchoolTierFilterChange={setSchoolTierFilter}
-        onCandidateScoreFilterChange={setCandidateScoreFilter}
-        onlyHistoryBacked={onlyHistoryBacked}
-        onlyLongTrack={onlyLongTrack}
-        onlyWithReferenceLinks={onlyWithReferenceLinks}
-        hideMentorWarnings={hideMentorWarnings}
-        onOnlyHistoryBackedChange={setOnlyHistoryBacked}
-        onOnlyLongTrackChange={setOnlyLongTrack}
-        onOnlyWithReferenceLinksChange={setOnlyWithReferenceLinks}
-        onHideMentorWarningsChange={setHideMentorWarnings}
-        onReset={resetAllFilters}
-        resultCount={searchResult ? filteredItems.length : 0}
-      />
+      <div className="mx-auto max-w-5xl">
+        <SearchCommandCenter
+          tab={queryType}
+          setTab={(nextTab) => {
+            if (nextTab === "adjustments" && adjustmentLocked) {
+              setMessage("调剂检索属于登录后的深度功能，请先登录。");
+              return;
+            }
+            setQueryType(nextTab);
+            setMessage("");
+            setSearchResult(null);
+          }}
+          keyword={keywords}
+          setKeyword={setKeywords}
+          filters={filters}
+          setFilters={setFilters}
+          onSearch={() => void triggerSearch(1)}
+        />
+      </div>
 
       {showUpgradePanel ? (
         <div className="mb-4 rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.25),rgba(20,24,36,0.86))] px-4 py-3 shadow-lg">
@@ -585,19 +438,32 @@ export default function SearchPage() {
                     <span className="text-amber-300">匿名预览仅展示前 {previewLimit} 条</span>
                   </>
                 ) : null}
-                {hasLocalFilters ? (
+                {activeInlineFilters.length > 0 ? (
                   <>
                     <span className="text-slate-500">/</span>
-                    <span className="text-cyan-300">本地筛选已生效</span>
-                  </>
-                ) : null}
-                {hasServerQuickFilters ? (
-                  <>
-                    <span className="text-slate-500">/</span>
-                    <span className="text-emerald-300">快筛：{activeServerQuickFilters.join(" / ")}</span>
+                    <span className="text-cyan-300">已叠加 {activeInlineFilters.length} 个过滤条件</span>
                   </>
                 ) : null}
               </div>
+              {activeInlineFilters.length > 0 ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {activeInlineFilters.map((label) => (
+                    <span
+                      key={label}
+                      className="inline-flex rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-slate-300"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={resetAllFilters}
+                    className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold text-slate-300 transition-colors hover:bg-white/[0.08]"
+                  >
+                    清空
+                  </button>
+                </div>
+              ) : null}
             </div>
 
             {filteredItems.length > 0 ? (
@@ -607,7 +473,7 @@ export default function SearchPage() {
                     <AdjustmentIntelCard
                       key={item.id}
                       item={item}
-                      candidateScore={candidateScoreFilter.trim() ? Number(candidateScoreFilter.trim()) : undefined}
+                      candidateScore={filters.score.trim() ? Number(filters.score.trim()) : undefined}
                       onOpenDetail={() => openAdjustmentDetail(item)}
                       bookmark={
                         item.school_name
@@ -887,14 +753,6 @@ export default function SearchPage() {
         </AnimatePresence>
       </div>
     </motion.div>
-  );
-}
-
-function FilterPill({ label }: { label: string }) {
-  return (
-    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-200">
-      {label}
-    </span>
   );
 }
 
@@ -1655,51 +1513,6 @@ function resolveAdjustmentQueryIntent(filters: {
   };
 }
 
-function getAdjustmentIntentMeta(filters: {
-  keywords: string;
-  schoolName: string;
-  majorFilter: string;
-}) {
-  const keyword = filters.keywords.trim();
-  const schoolName = filters.schoolName.trim();
-  const major = filters.majorFilter.trim();
-
-  if (schoolName) {
-    return {
-      label: "精确院校",
-      description: "院校名会作为精确筛选，主搜索框继续做补充匹配。",
-    };
-  }
-  if (major) {
-    return {
-      label: "精确专业",
-      description: "专业或专业代码会优先收窄结果，主搜索框保留宽匹配。",
-    };
-  }
-  if (!keyword) {
-    return {
-      label: "宽匹配待输入",
-      description: "直接输入学校名、专业名、专业代码或关键词即可开始检索。",
-    };
-  }
-  if (isSchoolLikeQuery(keyword)) {
-    return {
-      label: "院校名",
-      description: "已按学校名理解，同时会补充宽匹配学校名、标题和正文。",
-    };
-  }
-  if (isMajorCodeLikeQuery(keyword)) {
-    return {
-      label: "专业代码",
-      description: "已按专业代码理解，同时会兼容相关专业名和标题内容。",
-    };
-  }
-  return {
-    label: "宽匹配",
-    description: "会同时匹配学校名、专业名、标题和正文；需要更准就展开高级条件。",
-  };
-}
-
 function buildEmptyResultMessage(
   queryType: "announcements" | "adjustments",
   filters: {
@@ -1769,16 +1582,6 @@ function buildEmptyResultMessage(
   return "暂时没有命中公告结果，建议先输入学校名、学院名或招生关键词。";
 }
 
-function handleSearchInputKeyDown(
-  event: React.KeyboardEvent<HTMLInputElement>,
-  onSearch: () => void,
-) {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    onSearch();
-  }
-}
-
 function buildEmptyStateTitle(queryType: "announcements" | "adjustments", hasFilters: boolean) {
   if (queryType === "adjustments") {
     return hasFilters ? "当前筛选条件下没有调剂结果" : "还没有开始拉取调剂结果";
@@ -1825,6 +1628,12 @@ function matchesSchoolTier(tier: SchoolTier, schoolTier: string | null, text: st
     普通本科: /(学院|大学)/i,
   };
   return ruleMap[tier].test([schoolTier || "", text].join(" "));
+}
+
+function mapLevelToServerSchoolTier(level: "不限" | SchoolTier) {
+  if (level === "双一流") return "双一流";
+  if (level === "普通本科") return "普本";
+  return undefined;
 }
 
 function matchesStudyMode(mode: StudyMode, text: string, structuredModes: string[] = []) {
