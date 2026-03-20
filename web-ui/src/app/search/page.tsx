@@ -5,15 +5,16 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowRight,
   CheckCircle2,
   ExternalLink,
   Clock3,
   Search,
   ShieldAlert,
   SlidersHorizontal,
+  Star,
   Target,
   TrendingUp,
-  ChevronDown,
   X,
 } from "lucide-react";
 import FilterDrawer, { type SchoolTier, type StudyMode } from "@/components/search/FilterDrawer";
@@ -38,7 +39,6 @@ export default function SearchPage() {
   const [yearFilter, setYearFilter] = useState("");
   const [schoolTierFilter, setSchoolTierFilter] = useState("");
   const [candidateScoreFilter, setCandidateScoreFilter] = useState("");
-  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [schoolTiers, setSchoolTiers] = useState<SchoolTier[]>([]);
   const [studyMode, setStudyMode] = useState<StudyMode>("all");
   const [onlyHistoryBacked, setOnlyHistoryBacked] = useState(false);
@@ -156,6 +156,11 @@ export default function SearchPage() {
       schoolTierFilter.trim() ||
       candidateScoreFilter.trim(),
   );
+  const hasAnyDrawerFilters =
+    hasAdvancedAdjustmentFilters ||
+    schoolTiers.length > 0 ||
+    studyMode !== "all" ||
+    (queryType === "adjustments" && hasServerQuickFilters);
 
   const calculateMatch = () => {
     if (isAnonymous) {
@@ -174,6 +179,25 @@ export default function SearchPage() {
             : "高分段优势极大！可冲击优质调剂名额！",
     });
   };
+
+  function resetAllFilters() {
+    setKeywords("");
+    setSchoolName("");
+    setMajorFilter("");
+    setRegionFilter("");
+    setCityFilter("");
+    setYearFilter("");
+    setSchoolTierFilter("");
+    setCandidateScoreFilter("");
+    setSchoolTiers([]);
+    setStudyMode("all");
+    setOnlyHistoryBacked(false);
+    setOnlyLongTrack(false);
+    setOnlyWithReferenceLinks(false);
+    setHideMentorWarnings(false);
+    setSearchResult(null);
+    setMessage("");
+  }
 
   function buildAdjustmentQuickFilterPayload(overrides?: {
     historyBackedOnly?: boolean;
@@ -321,12 +345,13 @@ export default function SearchPage() {
       transition={{ duration: 0.4 }}
       className="mx-auto max-w-6xl px-4 pb-20 pt-10"
     >
-      <div className="mb-10 text-center">
-        <h2 className="mb-4 text-4xl font-bold text-white">数据库全局检索</h2>
-        <p className="font-mono text-sm text-slate-400">
-          Indexed Records:{" "}
-          <span className="text-cyan-400">{searchResult?.total ?? "点击检索后显示"}</span>
-        </p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-3xl font-bold text-white">数据库全局检索</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            当前记录 <span className="text-cyan-300">{searchResult?.total ?? "点击检索后显示"}</span>
+          </p>
+        </div>
       </div>
 
       <div className="mb-5">
@@ -368,201 +393,76 @@ export default function SearchPage() {
               调剂检索{adjustmentLocked ? " · 登录后开放" : ""}
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            <Search className="ml-2 text-slate-400" />
+          <div className="flex items-center rounded-[26px] border border-white/10 bg-black/25 px-3 py-2">
+            <Search className="ml-1 text-slate-400" size={18} />
             <input
               value={keywords}
               onChange={(event) => setKeywords(event.target.value)}
               onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
               type="text"
               placeholder={primaryInputPlaceholder}
-              className="w-full border-none bg-transparent py-4 text-lg text-white placeholder-slate-500 focus:outline-none"
+              className="w-full border-none bg-transparent px-3 py-2.5 text-base text-white placeholder-slate-500 focus:outline-none md:text-lg"
             />
+            <div className="mx-1 h-7 w-px bg-white/10" />
+            <button
+              type="button"
+              onClick={() => setIsFilterOpen(true)}
+              className={`inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold transition-colors ${
+                hasAnyDrawerFilters
+                  ? "bg-white/10 text-white"
+                  : "text-slate-300 hover:bg-white/8 hover:text-white"
+              }`}
+              aria-label="打开筛选"
+            >
+              <SlidersHorizontal size={16} />
+              筛选
+            </button>
             <button
               type="button"
               onClick={() => triggerSearch(1)}
               disabled={isSearching}
-              className="rounded-2xl bg-cyan-600 px-8 py-3 font-bold text-white transition-colors hover:bg-cyan-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
+              className="ml-2 rounded-2xl bg-cyan-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSearching ? "检索中..." : "检索"}
             </button>
-            <button
-              type="button"
-              onClick={() => setIsFilterOpen(true)}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-              aria-label="打开筛选"
-            >
-              <SlidersHorizontal size={18} />
-            </button>
           </div>
-          <div className="mt-2 text-xs text-slate-500">
+          <div className="mt-2 text-xs text-slate-400">
             {queryType === "adjustments"
               ? `当前识别：${adjustmentIntent.label}。${adjustmentIntent.description}`
               : "公告模式下，主搜索框适合输入学校简称、学院名或招生关键词。"}
           </div>
-          {queryType === "adjustments" ? (
-            <div className="mt-3 rounded-2xl border border-white/8 bg-black/15">
+          {hasAnyDrawerFilters ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {schoolName.trim() ? <FilterPill label={`院校 ${schoolName.trim()}`} /> : null}
+              {majorFilter.trim() ? <FilterPill label={`专业 ${majorFilter.trim()}`} /> : null}
+              {regionFilter.trim() ? <FilterPill label={`地区 ${regionFilter.trim()}`} /> : null}
+              {cityFilter.trim() ? <FilterPill label={`城市 ${cityFilter.trim()}`} /> : null}
+              {yearFilter.trim() ? <FilterPill label={`年份 ${yearFilter.trim()}`} /> : null}
+              {schoolTierFilter.trim() ? <FilterPill label={`院校类别 ${schoolTierFilter.trim()}`} /> : null}
+              {candidateScoreFilter.trim() ? <FilterPill label={`分数 ${candidateScoreFilter.trim()}`} /> : null}
+              {schoolTiers.map((tier) => <FilterPill key={tier} label={tier} />)}
+              {studyMode !== "all" ? <FilterPill label={studyMode === "fulltime" ? "全日制" : "非全日制"} /> : null}
+              {queryType === "adjustments" ? activeServerQuickFilters.map((label) => <FilterPill key={label} label={label} />) : null}
               <button
                 type="button"
-                onClick={() => setAdvancedFiltersOpen((value) => !value)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-slate-300"
-              >
-                <div>
-                  <div className="font-semibold text-white">高级条件</div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    用于精确限定院校、专业、地区和分数；不填也可以直接搜。
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  {hasAdvancedAdjustmentFilters ? (
-                    <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
-                    已启用 {[
-                        schoolName.trim() && "院校",
-                        majorFilter.trim() && "专业",
-                        regionFilter.trim() && "地区",
-                        cityFilter.trim() && "城市",
-                        yearFilter.trim() && "年份",
-                        schoolTierFilter.trim() && "院校类别",
-                        candidateScoreFilter.trim() && "分数",
-                      ]
-                        .filter(Boolean)
-                        .join(" / ")}
-                    </span>
-                  ) : null}
-                  <ChevronDown
-                    size={18}
-                    className={`text-slate-400 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`}
-                  />
-                </div>
-              </button>
-              {advancedFiltersOpen ? (
-                <div className="grid gap-2 border-t border-white/8 px-4 pb-4 pt-3 md:grid-cols-7">
-                  <input
-                    value={schoolName}
-                    onChange={(event) => setSchoolName(event.target.value)}
-                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-                    placeholder="精确院校（可选）"
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-                  />
-                  <input
-                    value={majorFilter}
-                    onChange={(event) => setMajorFilter(event.target.value)}
-                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-                    placeholder="精确专业/代码（可选）"
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-                  />
-                  <input
-                    value={regionFilter}
-                    onChange={(event) => setRegionFilter(event.target.value)}
-                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-                    placeholder="地区（如 湖北、武汉）"
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-                  />
-                  <input
-                    value={cityFilter}
-                    onChange={(event) => setCityFilter(event.target.value)}
-                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-                    placeholder="城市（如 武汉、上海）"
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-                  />
-                  <input
-                    value={yearFilter}
-                    onChange={(event) => setYearFilter(event.target.value)}
-                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-                    placeholder="年份（如 2026）"
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-                  />
-                  <select
-                    value={schoolTierFilter}
-                    onChange={(event) => setSchoolTierFilter(event.target.value)}
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-                  >
-                    <option value="">院校类别（全部）</option>
-                    <option value="985">985</option>
-                    <option value="211">211</option>
-                    <option value="双一流">双一流</option>
-                    <option value="普本">普本</option>
-                  </select>
-                  <input
-                    value={candidateScoreFilter}
-                    onChange={(event) => setCandidateScoreFilter(event.target.value)}
-                    onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-                    placeholder="你的分数（可选）"
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setKeywords("");
-                      setSchoolName("");
-                      setMajorFilter("");
-                      setRegionFilter("");
-                      setCityFilter("");
-                      setYearFilter("");
-                      setSchoolTierFilter("");
-                      setCandidateScoreFilter("");
-                      setSchoolTiers([]);
-                      setStudyMode("all");
-                      setOnlyHistoryBacked(false);
-                      setOnlyLongTrack(false);
-                      setOnlyWithReferenceLinks(false);
-                      setHideMentorWarnings(false);
-                      setSearchResult(null);
-                      setMessage("");
-                    }}
-                    className="rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10"
-                  >
-                    清空筛选
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="mt-3 grid gap-2 md:grid-cols-3">
-              <input
-                value={schoolName}
-                onChange={(event) => setSchoolName(event.target.value)}
-                onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-                placeholder="院校名（可选）"
-                className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-              />
-              <input
-                value={majorFilter}
-                onChange={(event) => setMajorFilter(event.target.value)}
-                onKeyDown={(event) => handleSearchInputKeyDown(event, () => triggerSearch(1))}
-                placeholder="专业（可选）"
-                className="rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-cyan-400"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setKeywords("");
-                  setSchoolName("");
-                  setMajorFilter("");
-                  setCityFilter("");
-                  setYearFilter("");
-                  setSchoolTierFilter("");
-                  setSchoolTiers([]);
-                  setStudyMode("all");
-                  setOnlyHistoryBacked(false);
-                  setOnlyLongTrack(false);
-                  setOnlyWithReferenceLinks(false);
-                  setHideMentorWarnings(false);
-                  setSearchResult(null);
-                  setMessage("");
-                }}
-                className="rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-sm text-slate-200 transition-colors hover:bg-white/10"
+                onClick={resetAllFilters}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-white/[0.08]"
               >
                 清空筛选
               </button>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
       <FilterDrawer
         isOpen={isFilterOpen}
+        queryType={queryType}
         onClose={() => setIsFilterOpen(false)}
+        onApply={() => {
+          setIsFilterOpen(false);
+          void triggerSearch(1);
+        }}
         tiers={schoolTiers}
         studyMode={studyMode}
         onToggleTier={(value) =>
@@ -571,10 +471,29 @@ export default function SearchPage() {
           )
         }
         onStudyModeChange={setStudyMode}
-        onReset={() => {
-          setSchoolTiers([]);
-          setStudyMode("all");
-        }}
+        schoolName={schoolName}
+        majorFilter={majorFilter}
+        regionFilter={regionFilter}
+        cityFilter={cityFilter}
+        yearFilter={yearFilter}
+        schoolTierFilter={schoolTierFilter}
+        candidateScoreFilter={candidateScoreFilter}
+        onSchoolNameChange={setSchoolName}
+        onMajorFilterChange={setMajorFilter}
+        onRegionFilterChange={setRegionFilter}
+        onCityFilterChange={setCityFilter}
+        onYearFilterChange={setYearFilter}
+        onSchoolTierFilterChange={setSchoolTierFilter}
+        onCandidateScoreFilterChange={setCandidateScoreFilter}
+        onlyHistoryBacked={onlyHistoryBacked}
+        onlyLongTrack={onlyLongTrack}
+        onlyWithReferenceLinks={onlyWithReferenceLinks}
+        hideMentorWarnings={hideMentorWarnings}
+        onOnlyHistoryBackedChange={setOnlyHistoryBacked}
+        onOnlyLongTrackChange={setOnlyLongTrack}
+        onOnlyWithReferenceLinksChange={setOnlyWithReferenceLinks}
+        onHideMentorWarningsChange={setHideMentorWarnings}
+        onReset={resetAllFilters}
         resultCount={searchResult ? filteredItems.length : 0}
       />
 
@@ -1039,6 +958,14 @@ function IntelFilterChip({
   );
 }
 
+function FilterPill({ label }: { label: string }) {
+  return (
+    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-200">
+      {label}
+    </span>
+  );
+}
+
 function AdjustmentIntelCard({
   item,
   candidateScore,
@@ -1100,7 +1027,16 @@ function AdjustmentIntelCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ type: "spring", stiffness: 260, damping: 28 }}
-      className={`relative overflow-hidden rounded-[22px] border bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(6,10,18,0.94))] shadow-[0_20px_64px_rgba(0,0,0,0.3)] ${isUrgent ? "border-cyan-400/25" : "border-white/10"}`}
+      role="button"
+      tabIndex={0}
+      onClick={onOpenDetail}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpenDetail();
+        }
+      }}
+      className={`group relative cursor-pointer overflow-hidden rounded-[22px] border bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(6,10,18,0.94))] shadow-[0_20px_64px_rgba(0,0,0,0.3)] transition-transform ${isUrgent ? "border-cyan-400/25" : "border-white/10"} focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70`}
     >
       {isUrgent ? <div className="absolute inset-y-0 left-0 w-1 bg-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.75)]" /> : null}
       <div className="absolute -right-10 top-0 h-24 w-24 rounded-full bg-cyan-500/10 blur-3xl" />
@@ -1123,9 +1059,27 @@ function AdjustmentIntelCard({
             </div>
           </div>
           <div className="shrink-0 text-right">
-            <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-slate-500">
+            <div className="flex items-center justify-end gap-1.5 text-[10px] font-mono text-slate-500">
               <Clock3 size={13} />
               {releaseTime}
+              {bookmark ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleBookmarkClick();
+                  }}
+                  className={`ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
+                    bookmark.active
+                      ? "border-yellow-400/25 bg-yellow-500/10 text-yellow-300 shadow-[0_0_18px_rgba(250,204,21,0.18)]"
+                      : "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.08] hover:text-white"
+                  }`}
+                  title={bookmark.label}
+                  aria-label={bookmark.label}
+                >
+                  <Star size={15} fill={bookmark.active ? "currentColor" : "none"} />
+                </button>
+              ) : null}
             </div>
             <div className="mt-2 flex flex-wrap justify-end gap-1.5">
               {isUrgent ? (
@@ -1162,32 +1116,11 @@ function AdjustmentIntelCard({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/8 pt-2.5">
-          <div className="flex flex-wrap gap-2">
-            {bookmark ? (
-              <button
-                type="button"
-                onClick={handleBookmarkClick}
-                className={`rounded-xl border px-3 py-1.5 text-[13px] font-semibold transition-colors ${
-                  bookmark.active
-                    ? "border-yellow-400/25 bg-yellow-500/10 text-yellow-200"
-                    : bookmark.available
-                      ? "border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"
-                      : "border-white/10 bg-white/[0.03] text-slate-400"
-                }`}
-                title={bookmark.label}
-              >
-                {bookmark.active ? "已收藏" : bookmark.available ? "收藏" : "收藏受限"}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={onOpenDetail}
-              className="rounded-xl bg-cyan-500 px-3 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-cyan-400"
-            >
-              查看详情
-            </button>
-          </div>
+        <div className="flex items-center justify-end border-t border-white/8 pt-2.5">
+          <span className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-400 transition-colors group-hover:text-slate-200">
+            查看完整分析
+            <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+          </span>
         </div>
       </div>
     </motion.div>
@@ -1551,7 +1484,7 @@ function CompactIntelFact({ label, value }: { label: string; value: string }) {
 
 function CompactIntelTag({ label }: { label: string }) {
   return (
-    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300">
+    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300">
       {label}
     </span>
   );
