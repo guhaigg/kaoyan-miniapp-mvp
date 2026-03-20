@@ -587,6 +587,10 @@ export default function SearchPage() {
                 <span>
                   当前显示 <span className="text-cyan-300">{filteredItems.length}</span> 条
                 </span>
+                <span className="text-slate-500">/</span>
+                <span>
+                  第 <span className="text-white">{currentPage}</span> / {totalPages} 页
+                </span>
                 {searchResult.access_limited ? (
                   <>
                     <span className="text-slate-500">/</span>
@@ -599,60 +603,13 @@ export default function SearchPage() {
                     <span className="text-cyan-300">本地筛选已生效</span>
                   </>
                 ) : null}
+                {hasServerQuickFilters ? (
+                  <>
+                    <span className="text-slate-500">/</span>
+                    <span className="text-emerald-300">快筛：{activeServerQuickFilters.join(" / ")}</span>
+                  </>
+                ) : null}
               </div>
-              {queryType === "adjustments" ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <IntelFilterChip
-                    active={onlyHistoryBacked}
-                    onClick={() => {
-                      const nextValue = !onlyHistoryBacked;
-                      setOnlyHistoryBacked(nextValue);
-                      if (searchResult) {
-                        void triggerSearch(1, { historyBackedOnly: nextValue });
-                      }
-                    }}
-                    label="有历史样本"
-                  />
-                  <IntelFilterChip
-                    active={onlyLongTrack}
-                    onClick={() => {
-                      const nextValue = !onlyLongTrack;
-                      setOnlyLongTrack(nextValue);
-                      if (searchResult) {
-                        void triggerSearch(1, { longTrackOnly: nextValue });
-                      }
-                    }}
-                    label="连续活跃"
-                  />
-                  <IntelFilterChip
-                    active={onlyWithReferenceLinks}
-                    onClick={() => {
-                      const nextValue = !onlyWithReferenceLinks;
-                      setOnlyWithReferenceLinks(nextValue);
-                      if (searchResult) {
-                        void triggerSearch(1, { referenceLinksOnly: nextValue });
-                      }
-                    }}
-                    label="带历史链接"
-                  />
-                  <IntelFilterChip
-                    active={hideMentorWarnings}
-                    onClick={() => {
-                      const nextValue = !hideMentorWarnings;
-                      setHideMentorWarnings(nextValue);
-                      if (searchResult) {
-                        void triggerSearch(1, { hideMentorWarnings: nextValue });
-                      }
-                    }}
-                    label="排除导师预警"
-                  />
-                  {hasServerQuickFilters ? (
-                    <span className="inline-flex items-center rounded-full border border-emerald-400/15 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
-                      已启用：{activeServerQuickFilters.join(" / ")}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
 
             {filteredItems.length > 0 ? (
@@ -945,30 +902,6 @@ export default function SearchPage() {
   );
 }
 
-function IntelFilterChip({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-        active
-          ? "border-cyan-400/40 bg-cyan-400/12 text-cyan-100"
-          : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
 function FilterPill({ label }: { label: string }) {
   return (
     <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-200">
@@ -1019,8 +952,8 @@ function AdjustmentIntelCard({
   const tierLabel = item.school_tier || "待补充";
   const studyModeLabel = formatStudyModeLabel(null, item.adjustment_study_modes);
   const decisionSummary = candidateScore
-    ? `${candidateScore} 分 · ${probability.label}`
-    : `分数判断 · ${probability.label}`;
+    ? `${candidateScore}分 ${probability.label}`
+    : `分数判断 ${probability.label}`;
   const mentorSummary = mentorWarning
     ? `本校导师预警 ${schoolReviewCount}${item.department_name ? ` · 本院 ${departmentReviewCount}` : ""}`
     : schoolReviewCount > 0 || departmentReviewCount > 0
@@ -1111,22 +1044,21 @@ function AdjustmentIntelCard({
           <CompactIntelFact label="调剂人数" value={vacancyLabel} />
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${probability.bg} ${probability.border} ${probability.textClass}`}>
-            <TrendingUp size={14} className={probability.iconClass} />
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium">
+          <span className={`inline-flex items-center gap-1 ${probability.textClass}`}>
+            <TrendingUp size={13} className={probability.iconClass} />
             {decisionSummary}
-          </div>
+          </span>
+          {mentorSummary ? <span className="text-slate-600">/</span> : null}
           {mentorSummary ? (
-            <div
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${
-                mentorWarning
-                  ? "border-red-400/20 bg-red-500/10 text-red-200"
-                  : "border-white/10 bg-white/[0.04] text-slate-200"
+            <span
+              className={`inline-flex items-center gap-1 ${
+                mentorWarning ? "text-red-200" : "text-slate-300"
               }`}
             >
-              {mentorWarning ? <ShieldAlert size={14} className="text-red-300" /> : <CheckCircle2 size={14} className="text-emerald-300" />}
+              {mentorWarning ? <ShieldAlert size={13} className="text-red-300" /> : <CheckCircle2 size={13} className="text-emerald-300" />}
               {mentorSummary}
-            </div>
+            </span>
           ) : null}
         </div>
 
