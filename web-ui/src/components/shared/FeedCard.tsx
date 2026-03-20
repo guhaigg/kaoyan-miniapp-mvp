@@ -9,10 +9,15 @@ export interface FeedItem {
   type: "adjustment" | "announcement";
   title: string;
   content: string;
+  subtitle?: string;
   publishTime: string | Date;
   tags: string[];
   badges?: Array<{ label: string; tone: "sky" | "amber" }>;
   isUrgent?: boolean;
+  metricLabel?: string;
+  metricPrimary?: string | null;
+  metricSecondary?: string | null;
+  warningLabel?: string | null;
   href?: string | null;
   bookmark?: {
     active: boolean;
@@ -310,7 +315,7 @@ export function FeedCardSkeleton() {
   );
 }
 
-function formatDistanceToNowZh(input: string | Date) {
+export function formatDistanceToNowZh(input: string | Date) {
   const date = new Date(input);
   if (Number.isNaN(date.getTime())) return "时间未知";
   const diffMs = Date.now() - date.getTime();
