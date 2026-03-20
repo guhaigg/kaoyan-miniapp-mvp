@@ -21,6 +21,7 @@ import SearchCommandCenter, {
   type SearchCommandCenterFilters,
   type StudyMode,
 } from "@/components/search/SearchCommandCenter";
+import SearchEmptyState from "@/components/search/SearchEmptyState";
 import FeedCard, { FeedCardSkeleton, type FeedItem } from "@/components/shared/FeedCard";
 import FeedRow, { FeedRowSkeleton } from "@/components/shared/FeedRow";
 import {
@@ -696,7 +697,7 @@ export default function SearchPage() {
             </div>
           </>
         ) : queryType === "adjustments" ? (
-          <AdjustmentSearchIdleState />
+          <SearchEmptyState setKeyword={setKeywords} />
         ) : null}
       </div>
 
@@ -1290,50 +1291,6 @@ function DetailStat({ label, value }: { label: string; value: number | null | un
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
       <div className="mt-2 text-2xl font-black text-white">{value ?? "--"}</div>
-    </div>
-  );
-}
-
-function AdjustmentSearchIdleState() {
-  return (
-    <div className="relative overflow-hidden rounded-[28px] border border-cyan-400/10 bg-[radial-gradient(circle_at_18%_22%,rgba(34,211,238,0.08),transparent_28%),radial-gradient(circle_at_86%_18%,rgba(59,130,246,0.06),transparent_24%),linear-gradient(180deg,rgba(7,12,21,0.78),rgba(5,9,16,0.92))]">
-      <div className="pointer-events-none absolute inset-0 opacity-60">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:36px_36px] [mask-image:linear-gradient(180deg,rgba(255,255,255,0.35),transparent_85%)]" />
-        <div className="absolute left-8 top-8 text-[58px] font-black tracking-[0.28em] text-white/[0.035] md:text-[88px]">
-          RADAR
-        </div>
-        <div className="absolute right-8 top-10 hidden text-[10px] font-semibold uppercase tracking-[0.32em] text-cyan-200/30 md:block">
-          School · Major · Score · Region
-        </div>
-        <div className="absolute inset-x-0 top-1/2 h-px bg-gradient-to-r from-transparent via-cyan-300/10 to-transparent" />
-        <div className="absolute bottom-8 right-10 hidden text-right text-[11px] leading-6 text-slate-500 md:block">
-          调剂结果流会在这里展开
-          <br />
-          包括分数、名额、导师与节奏线索
-        </div>
-      </div>
-
-      <div className="relative z-10 flex min-h-[280px] items-end p-5 md:min-h-[320px] md:p-8">
-        <div className="max-w-2xl rounded-2xl border border-white/8 bg-[#07101b]/55 px-5 py-4 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-md">
-          <div className="mb-2 flex items-center gap-3">
-            <span className="rounded-full border border-cyan-400/15 bg-cyan-400/8 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.26em] text-cyan-200/85">
-              Radar Ready
-            </span>
-            <span className="text-[11px] font-medium text-slate-500">未开始检索</span>
-          </div>
-          <h4 className="text-lg font-bold tracking-tight text-white md:text-[1.35rem]">
-            先输院校、专业、地区或分数，结果流再进场。
-          </h4>
-          <p className="mt-2 max-w-xl text-sm leading-7 text-slate-400">
-            这里不需要一张大空卡。检索触发后，系统会把实时调剂、历史分数、导师评价和发布时间规律一起铺开。
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <CompactIntelTag label="初试分数" />
-            <CompactIntelTag label="历史来源" />
-            <CompactIntelTag label="导师预警" />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
