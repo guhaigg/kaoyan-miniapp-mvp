@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ExternalLink,
   Clock3,
-  History,
   Search,
   ShieldAlert,
   SlidersHorizontal,
@@ -314,26 +313,6 @@ export default function SearchPage() {
   }
 
   const isSearching = announcementMutation.isPending || adjustmentMutation.isPending;
-  const adjustmentSummary = useMemo(() => {
-    if (!searchResult || queryType !== "adjustments") return null;
-    const items = filteredItems;
-    const withHistory = items.filter((item) => item.historical_adjustment?.sample_count);
-    const withWarnings = items.filter((item) => (item.mentor_radar?.warning_count || 0) > 0);
-    const withLongTrack = items.filter((item) => item.school_intelligence?.confidence_label === "连续活跃");
-    const nightReleases = items.filter((item) => {
-      const value = item.published_at || item.updated_at;
-      const hour = new Date(value).getHours();
-      return Number.isFinite(hour) && hour >= 18;
-    });
-    return {
-      hits: items.length,
-      withHistory: withHistory.length,
-      withWarnings: withWarnings.length,
-      withLongTrack: withLongTrack.length,
-      nightReleases: nightReleases.length,
-    };
-  }, [filteredItems, queryType, searchResult]);
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -350,8 +329,8 @@ export default function SearchPage() {
         </p>
       </div>
 
-      <div className="mb-6 flex gap-4">
-        <div className="flex-1 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur-xl transition-colors hover:border-cyan-500/50">
+      <div className="mb-5">
+        <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur-xl transition-colors hover:border-cyan-500/50">
           <div className="mb-3 grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-black/20 p-1 text-sm">
             <button
               type="button"
@@ -406,6 +385,14 @@ export default function SearchPage() {
               className="rounded-2xl bg-cyan-600 px-8 py-3 font-bold text-white transition-colors hover:bg-cyan-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSearching ? "检索中..." : "检索"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFilterOpen(true)}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+              aria-label="打开筛选"
+            >
+              <SlidersHorizontal size={18} />
             </button>
           </div>
           <div className="mt-2 text-xs text-slate-500">
@@ -571,15 +558,6 @@ export default function SearchPage() {
             </div>
           )}
         </div>
-
-        <button
-          type="button"
-          onClick={() => setIsFilterOpen(true)}
-          className="hidden rounded-3xl border border-white/10 bg-white/5 px-6 text-slate-300 shadow-xl transition-colors hover:bg-white/10 hover:text-white md:flex md:flex-col md:items-center md:justify-center md:gap-1"
-        >
-          <SlidersHorizontal size={20} />
-          <span className="text-[10px] font-bold tracking-[0.18em]">筛选</span>
-        </button>
       </div>
 
       <FilterDrawer
@@ -662,109 +640,6 @@ export default function SearchPage() {
         </div>
       ) : null}
 
-      {queryType === "adjustments" ? (
-        <section className="mb-6 overflow-hidden rounded-[28px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(8,145,178,0.14),transparent_30%),linear-gradient(180deg,rgba(10,15,24,0.98),rgba(8,12,20,0.95))] shadow-2xl">
-          <div className="border-b border-white/8 px-5 py-5 md:px-6">
-            <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-cyan-300/80">
-                  <Target size={14} className="text-cyan-400" />
-                  GEWUJL 情报分析终端
-                </div>
-                <h3 className="text-2xl font-black tracking-tight text-white">调剂实时决策流</h3>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                  把历史调剂分数、导师评价、发布时间信号和实时公告揉成一条决策流。当前不是简单全文检索，而是按“能不能报、值不值得报、何时容易出结果”来排视角。
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <IntelStatCard label="命中情报" value={`${adjustmentSummary?.hits || 0}`} accent="cyan" />
-                <IntelStatCard label="历史样本" value={`${adjustmentSummary?.withHistory || 0}`} accent="emerald" />
-                <IntelStatCard label="导师预警" value={`${adjustmentSummary?.withWarnings || 0}`} accent="amber" />
-                <IntelStatCard label="连续活跃" value={`${adjustmentSummary?.withLongTrack || 0}`} accent="emerald" />
-                <IntelStatCard label="晚间发布" value={`${adjustmentSummary?.nightReleases || 0}`} accent="violet" />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 px-5 py-5 md:px-6 xl:grid-cols-3">
-            <IntelSignalCard
-              icon={<TrendingUp size={16} className="text-emerald-300" />}
-              title="分数胜率"
-              description={
-                candidateScoreFilter.trim()
-                  ? `已按你的分数 ${candidateScoreFilter.trim()} 分做历史对比，优先展示有分数样本的院校。`
-                  : "输入你的初试分数后，卡片会直接给出历史最低分和胜率分层。"
-              }
-              accent="emerald"
-            />
-            <IntelSignalCard
-              icon={<ShieldAlert size={16} className="text-amber-300" />}
-              title="导师雷达"
-              description="如果该校命中过去公开评价里的高风险导师信号，卡片会直接点亮导师预警。"
-              accent="amber"
-            />
-            <IntelSignalCard
-              icon={<History size={16} className="text-indigo-300" />}
-              title="发布时间"
-              description="当前先基于真实发布时间和历史样本覆盖做发榜信号，后续再叠加更细的生物钟统计。"
-              accent="violet"
-            />
-          </div>
-
-          <div className="border-t border-white/8 px-5 py-4 md:px-6">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-              情报快筛
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <IntelFilterChip
-                active={onlyHistoryBacked}
-                onClick={() => {
-                  const nextValue = !onlyHistoryBacked;
-                  setOnlyHistoryBacked(nextValue);
-                  if (searchResult) {
-                    void triggerSearch(1, { historyBackedOnly: nextValue });
-                  }
-                }}
-                label="只看有历史样本"
-              />
-              <IntelFilterChip
-                active={onlyLongTrack}
-                onClick={() => {
-                  const nextValue = !onlyLongTrack;
-                  setOnlyLongTrack(nextValue);
-                  if (searchResult) {
-                    void triggerSearch(1, { longTrackOnly: nextValue });
-                  }
-                }}
-                label="只看连续活跃"
-              />
-              <IntelFilterChip
-                active={onlyWithReferenceLinks}
-                onClick={() => {
-                  const nextValue = !onlyWithReferenceLinks;
-                  setOnlyWithReferenceLinks(nextValue);
-                  if (searchResult) {
-                    void triggerSearch(1, { referenceLinksOnly: nextValue });
-                  }
-                }}
-                label="只看带历史链接"
-              />
-              <IntelFilterChip
-                active={hideMentorWarnings}
-                onClick={() => {
-                  const nextValue = !hideMentorWarnings;
-                  setHideMentorWarnings(nextValue);
-                  if (searchResult) {
-                    void triggerSearch(1, { hideMentorWarnings: nextValue });
-                  }
-                }}
-                label="排除导师预警"
-              />
-            </div>
-          </div>
-        </section>
-      ) : null}
-
       <div className="mb-12 min-h-[400px] space-y-4">
         {isSearching ? (
           <div className="grid gap-6 md:grid-cols-2">
@@ -773,35 +648,80 @@ export default function SearchPage() {
           </div>
         ) : searchResult ? (
           <>
-            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-300">
-              <span>
-                当前页返回 <span className="text-cyan-300">{filteredItems.length}</span> 条
-              </span>
-              <span className="text-slate-500">/</span>
-              <span>
-                实际返回 <span className="text-white">{searchResult.items.length}</span> 条
-              </span>
-              <span className="text-slate-500">/</span>
-              <span>
-                总记录 <span className="text-white">{searchResult.total}</span>
-              </span>
-              {hasServerQuickFilters ? (
-                <>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-emerald-300">服务端快筛：{activeServerQuickFilters.join(" / ")}</span>
-                </>
-              ) : null}
-              {searchResult.access_limited ? (
-                <>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-amber-300">匿名预览仅展示前 {previewLimit} 条</span>
-                </>
-              ) : null}
-              {hasLocalFilters ? (
-                <>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-cyan-300">本地筛选已生效</span>
-                </>
+            <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-300">
+              <div className="flex flex-wrap items-center gap-3">
+                <span>
+                  共 <span className="text-white">{searchResult.total}</span> 条
+                </span>
+                <span className="text-slate-500">/</span>
+                <span>
+                  当前显示 <span className="text-cyan-300">{filteredItems.length}</span> 条
+                </span>
+                {searchResult.access_limited ? (
+                  <>
+                    <span className="text-slate-500">/</span>
+                    <span className="text-amber-300">匿名预览仅展示前 {previewLimit} 条</span>
+                  </>
+                ) : null}
+                {hasLocalFilters ? (
+                  <>
+                    <span className="text-slate-500">/</span>
+                    <span className="text-cyan-300">本地筛选已生效</span>
+                  </>
+                ) : null}
+              </div>
+              {queryType === "adjustments" ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <IntelFilterChip
+                    active={onlyHistoryBacked}
+                    onClick={() => {
+                      const nextValue = !onlyHistoryBacked;
+                      setOnlyHistoryBacked(nextValue);
+                      if (searchResult) {
+                        void triggerSearch(1, { historyBackedOnly: nextValue });
+                      }
+                    }}
+                    label="有历史样本"
+                  />
+                  <IntelFilterChip
+                    active={onlyLongTrack}
+                    onClick={() => {
+                      const nextValue = !onlyLongTrack;
+                      setOnlyLongTrack(nextValue);
+                      if (searchResult) {
+                        void triggerSearch(1, { longTrackOnly: nextValue });
+                      }
+                    }}
+                    label="连续活跃"
+                  />
+                  <IntelFilterChip
+                    active={onlyWithReferenceLinks}
+                    onClick={() => {
+                      const nextValue = !onlyWithReferenceLinks;
+                      setOnlyWithReferenceLinks(nextValue);
+                      if (searchResult) {
+                        void triggerSearch(1, { referenceLinksOnly: nextValue });
+                      }
+                    }}
+                    label="带历史链接"
+                  />
+                  <IntelFilterChip
+                    active={hideMentorWarnings}
+                    onClick={() => {
+                      const nextValue = !hideMentorWarnings;
+                      setHideMentorWarnings(nextValue);
+                      if (searchResult) {
+                        void triggerSearch(1, { hideMentorWarnings: nextValue });
+                      }
+                    }}
+                    label="排除导师预警"
+                  />
+                  {hasServerQuickFilters ? (
+                    <span className="inline-flex items-center rounded-full border border-emerald-400/15 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
+                      已启用：{activeServerQuickFilters.join(" / ")}
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
             </div>
 
@@ -1095,56 +1015,6 @@ export default function SearchPage() {
   );
 }
 
-function IntelStatCard({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent: "cyan" | "emerald" | "amber" | "violet";
-}) {
-  const styles = {
-    cyan: "border-cyan-400/15 bg-cyan-500/10 text-cyan-200",
-    emerald: "border-emerald-400/15 bg-emerald-500/10 text-emerald-200",
-    amber: "border-amber-400/15 bg-amber-500/10 text-amber-200",
-    violet: "border-violet-400/15 bg-violet-500/10 text-violet-200",
-  }[accent];
-  return (
-    <div className={`rounded-2xl border px-4 py-3 ${styles}`}>
-      <div className="text-[11px] uppercase tracking-[0.22em] text-white/60">{label}</div>
-      <div className="mt-1 text-2xl font-black text-white">{value}</div>
-    </div>
-  );
-}
-
-function IntelSignalCard({
-  icon,
-  title,
-  description,
-  accent,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-  accent: "emerald" | "amber" | "violet";
-}) {
-  const styles = {
-    emerald: "border-emerald-400/15 bg-emerald-500/10",
-    amber: "border-amber-400/15 bg-amber-500/10",
-    violet: "border-violet-400/15 bg-violet-500/10",
-  }[accent];
-  return (
-    <div className={`rounded-2xl border px-4 py-4 ${styles}`}>
-      <div className="flex items-center gap-2 text-sm font-semibold text-white">
-        {icon}
-        {title}
-      </div>
-      <p className="mt-2 text-sm leading-6 text-slate-300">{description}</p>
-    </div>
-  );
-}
-
 function IntelFilterChip({
   active,
   onClick,
@@ -1191,7 +1061,7 @@ function AdjustmentIntelCard({
     item.historical_adjustment?.min_score ?? null,
     item.historical_adjustment?.max_score ?? null,
   );
-  const releaseTime = formatIntelTime(item.published_at || item.updated_at);
+  const releaseTime = formatCardIntelTime(item.published_at || item.updated_at);
   const mentorSignals = getMentorScopeSignals(item);
   const mentorWarning = getMentorWarningCount(item) > 0;
   const departmentReviewCount = mentorSignals.department?.review_count ?? 0;
@@ -1208,13 +1078,15 @@ function AdjustmentIntelCard({
   const tierLabel = item.school_tier || "待补充";
   const studyModeLabel = formatStudyModeLabel(null, item.adjustment_study_modes);
   const decisionSummary = candidateScore
-    ? `你的分数 ${candidateScore} · ${probability.label}`
-    : `历史判断 · ${probability.label}`;
+    ? `${candidateScore} 分 · ${probability.label}`
+    : `分数判断 · ${probability.label}`;
   const mentorSummary = mentorWarning
-    ? `导师预警 · 本学校 ${schoolReviewCount}${item.department_name ? ` · 本学院 ${departmentReviewCount}` : ""}`
+    ? `本校导师预警 ${schoolReviewCount}${item.department_name ? ` · 本院 ${departmentReviewCount}` : ""}`
     : schoolReviewCount > 0 || departmentReviewCount > 0
-      ? `${item.department_name ? `本学院 ${departmentReviewCount} · ` : ""}本学校 ${schoolReviewCount} 条评价`
-      : "导师评价待补充";
+      ? `${item.department_name ? `本院 ${departmentReviewCount} · ` : ""}本校 ${schoolReviewCount} 条评价`
+      : null;
+  const title = [item.major, item.adjustment_major_codes[0]].filter(Boolean).join(" · ") || item.school_name || "调剂项目待补充";
+  const subtitle = [item.department_name, item.school_name].filter(Boolean).join(" · ") || "学院与院校待补充";
 
   async function handleBookmarkClick() {
     if (!bookmark) return;
@@ -1240,9 +1112,9 @@ function AdjustmentIntelCard({
               <span className="text-slate-600">•</span>
               <span>{item.region || "地区待补充"}</span>
             </div>
-            <h3 className="text-[24px] font-black leading-none tracking-tight text-white md:text-[26px]">{item.school_name || "未知院校"}</h3>
+            <h3 className="text-[23px] font-black leading-tight tracking-tight text-white md:text-[25px]">{title}</h3>
             <p className="mt-1 text-[13px] font-medium leading-5 text-slate-300">
-              {[item.department_name, item.major, item.adjustment_major_codes[0]].filter(Boolean).join(" · ") || "学院与专业待补充"}
+              {subtitle}
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <CompactIntelTag label={tierLabel} />
@@ -1261,11 +1133,6 @@ function AdjustmentIntelCard({
                   最新
                 </span>
               ) : null}
-              {mentorWarning ? (
-                <span className="inline-flex rounded-full border border-red-400/25 bg-red-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-red-200">
-                  导师预警
-                </span>
-              ) : null}
             </div>
           </div>
         </div>
@@ -1281,16 +1148,18 @@ function AdjustmentIntelCard({
             <TrendingUp size={14} className={probability.iconClass} />
             {decisionSummary}
           </div>
-          <div
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${
-              mentorWarning
-                ? "border-red-400/20 bg-red-500/10 text-red-200"
-                : "border-white/10 bg-white/[0.04] text-slate-200"
-            }`}
-          >
-            {mentorWarning ? <ShieldAlert size={14} className="text-red-300" /> : <CheckCircle2 size={14} className="text-emerald-300" />}
-            {mentorSummary}
-          </div>
+          {mentorSummary ? (
+            <div
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${
+                mentorWarning
+                  ? "border-red-400/20 bg-red-500/10 text-red-200"
+                  : "border-white/10 bg-white/[0.04] text-slate-200"
+              }`}
+            >
+              {mentorWarning ? <ShieldAlert size={14} className="text-red-300" /> : <CheckCircle2 size={14} className="text-emerald-300" />}
+              {mentorSummary}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/8 pt-2.5">
@@ -1308,25 +1177,15 @@ function AdjustmentIntelCard({
                 }`}
                 title={bookmark.label}
               >
-                {bookmark.active ? "已收藏院校" : bookmark.available ? "收藏院校" : "收藏受限"}
+                {bookmark.active ? "已收藏" : bookmark.available ? "收藏" : "收藏受限"}
               </button>
-            ) : null}
-            {item.source_url ? (
-              <a
-                href={item.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-xl bg-cyan-500 px-3 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-cyan-400"
-              >
-                查看原文
-              </a>
             ) : null}
             <button
               type="button"
               onClick={onOpenDetail}
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-[13px] font-semibold text-slate-100 transition-colors hover:bg-white/10"
+              className="rounded-xl bg-cyan-500 px-3 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-cyan-400"
             >
-              查看完整信息
+              查看详情
             </button>
           </div>
         </div>
@@ -1684,7 +1543,7 @@ function DetailStat({ label, value }: { label: string; value: number | null | un
 function CompactIntelFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300/85">{label}</div>
       <div className="mt-1 text-sm font-bold text-white md:text-[15px]">{value}</div>
     </div>
   );
@@ -1865,6 +1724,16 @@ function formatIntelTime(value: string) {
   const hour = String(date.getHours()).padStart(2, "0");
   const minute = String(date.getMinutes()).padStart(2, "0");
   return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function formatCardIntelTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${month}-${day} ${hour}:${minute}`;
 }
 
 function resolveAdjustmentQueryIntent(filters: {
