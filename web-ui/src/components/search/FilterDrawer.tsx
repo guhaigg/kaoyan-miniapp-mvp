@@ -63,7 +63,7 @@ function DrawerInput({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      className="rounded-2xl border border-white/8 bg-white/[0.05] px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-400/20 focus:ring-1 focus:ring-cyan-500/50"
+      className="rounded-2xl border border-white/5 bg-white/[0.05] px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-400/15 focus:ring-1 focus:ring-cyan-500/45"
     />
   );
 }
@@ -153,7 +153,7 @@ export default function FilterDrawer({
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 26, stiffness: 220 }}
-            className="fixed right-0 top-0 z-[140] flex h-full w-full max-w-[420px] flex-col border-l border-white/10 bg-[#09101b]/96 shadow-[-24px_0_64px_rgba(0,0,0,0.48)] backdrop-blur-3xl"
+            className="fixed right-0 top-0 z-[140] flex h-full w-full max-w-[420px] flex-col border-l border-white/8 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.08),transparent_28%),linear-gradient(180deg,rgba(5,11,20,0.82),rgba(5,11,20,0.9))] shadow-[-24px_0_64px_rgba(0,0,0,0.48)] backdrop-blur-2xl"
           >
             <div className="flex items-center justify-between border-b border-white/10 p-6 text-white">
               <div>
@@ -185,7 +185,7 @@ export default function FilterDrawer({
                       <select
                         value={schoolTierFilter}
                         onChange={(event) => onSchoolTierFilterChange(event.target.value)}
-                        className="rounded-2xl border border-white/8 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none transition-all focus:border-cyan-400/20 focus:ring-1 focus:ring-cyan-500/50"
+                        className="rounded-2xl border border-white/5 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none transition-all focus:border-cyan-400/15 focus:ring-1 focus:ring-cyan-500/45"
                       >
                         <option value="">院校类别（全部）</option>
                         <option value="985">985</option>
@@ -273,8 +273,8 @@ export default function FilterDrawer({
               </div>
             </div>
 
-            <div className="sticky bottom-0 border-t border-white/10 bg-[#09101b]/96 p-6 pb-8 shadow-[0_-20px_40px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
-              <div className="mb-3 flex gap-3">
+            <div className="sticky bottom-0 border-t border-white/10 bg-[linear-gradient(180deg,rgba(5,11,20,0.5),rgba(5,11,20,0.92))] p-6 pb-8 pt-5 shadow-[0_-24px_50px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+              <div className="mb-2 flex gap-3">
                 <button
                   type="button"
                   onClick={onReset}

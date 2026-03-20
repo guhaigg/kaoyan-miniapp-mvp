@@ -364,20 +364,8 @@ export default function SearchPage() {
       transition={{ duration: 0.4 }}
       className="mx-auto max-w-6xl px-4 pb-20 pt-6"
     >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-200">
-            {queryType === "adjustments" ? "调剂检索" : "公告检索"}
-          </span>
-          <span>数据库全局检索</span>
-        </div>
-        <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-slate-300">
-          当前记录 <span className="font-semibold text-cyan-300">{searchResult?.total ?? "--"}</span>
-        </div>
-      </div>
-
-      <div className="mb-4 space-y-3">
-          <div className="inline-grid grid-cols-2 gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 text-sm shadow-lg backdrop-blur-xl">
+      <div className="mx-auto mb-4 max-w-5xl space-y-3">
+          <div className="inline-grid grid-cols-2 gap-1 rounded-full bg-white/[0.04] p-1 text-sm shadow-lg backdrop-blur-xl">
             <button
               type="button"
               className={`rounded-full px-4 py-2 transition-colors ${
@@ -414,7 +402,7 @@ export default function SearchPage() {
               调剂检索{adjustmentLocked ? " · 登录后开放" : ""}
             </button>
           </div>
-          <div className="flex items-center rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] px-3 py-2 shadow-[0_18px_50px_rgba(0,0,0,0.2)] backdrop-blur-xl">
+          <div className="flex items-center rounded-full border border-white/8 bg-[#0f172a]/82 px-3 py-2 shadow-[0_18px_50px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
             <Search className="ml-1 text-slate-400" size={18} />
             <input
               value={keywords}
@@ -428,7 +416,7 @@ export default function SearchPage() {
             <button
               type="button"
               onClick={() => setIsFilterOpen(true)}
-              className={`inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold transition-colors ${
                 hasAnyDrawerFilters
                   ? "bg-white/10 text-white"
                   : "text-slate-300 hover:bg-white/8 hover:text-white"
@@ -442,9 +430,9 @@ export default function SearchPage() {
               type="button"
               onClick={() => triggerSearch(1)}
               disabled={isSearching}
-              className="ml-2 rounded-2xl bg-cyan-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-cyan-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
+              className="ml-2 inline-flex h-10 min-w-10 items-center justify-center rounded-full bg-cyan-500 px-4 text-sm font-bold text-white transition-colors hover:bg-cyan-400 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isSearching ? "检索中..." : "检索"}
+              {isSearching ? "检索中" : "检索"}
             </button>
           </div>
           <div className="text-xs text-slate-300">
@@ -995,8 +983,8 @@ function AdjustmentIntelCard({
               <span className="text-slate-600">•</span>
               <span>{item.region || "地区待补充"}</span>
             </div>
-            <h3 className="text-[23px] font-black leading-tight tracking-tight text-white md:text-[25px]">{title}</h3>
-            <p className="mt-1 text-[13px] font-medium leading-5 text-slate-300">
+            <h3 className="text-[22px] font-black leading-tight tracking-tight text-white md:text-[24px]">{title}</h3>
+            <p className="mt-1 text-[14px] font-medium leading-5 text-slate-300 md:text-[15px]">
               {subtitle}
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1062,9 +1050,12 @@ function AdjustmentIntelCard({
           ) : null}
         </div>
 
-        <div className="flex items-center justify-end border-t border-white/5 pt-2.5">
+        <div className="flex items-center justify-between border-t border-white/5 pt-2.5">
+          <span className="text-[11px] font-medium text-slate-500">
+            点击卡片查看完整分析
+          </span>
           <span className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-400 transition-colors group-hover:text-slate-200">
-            查看完整分析
+            进入详情
             <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
           </span>
         </div>
@@ -1431,7 +1422,7 @@ function CompactIntelFact({ label, value }: { label: string; value: string }) {
 
 function CompactIntelTag({ label }: { label: string }) {
   return (
-    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300">
+    <span className="inline-flex rounded-full bg-white/[0.05] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300">
       {label}
     </span>
   );
