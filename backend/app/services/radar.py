@@ -11,7 +11,6 @@ from ..models import HistoricalAdjustmentProfile
 from .historical_intelligence import (
     ENGINEERING_CARE_MAJOR_CODES,
     NATIONAL_ADJUSTMENT_LINES,
-    convert_score_between_years,
     resolve_national_line_key,
     resolve_score_area,
 )
@@ -46,6 +45,19 @@ class RadarPrediction:
     historical_p75_score: float | None
     delta_to_comparison_line: int
     advice: str
+
+
+@dataclass(frozen=True)
+class RadarProfileRow:
+    year: int
+    region_name: str | None
+    major_code: str | None
+    sample_count: int
+    initial_score_min: int | None
+    initial_score_max: int | None
+    avg_score: float | None
+    min_score: int | None
+    max_score: int | None
 
 
 def _normalize_category_token(value: str) -> str:
@@ -135,7 +147,7 @@ def _line_payload(category_key: str, year: int) -> tuple[str, int, int]:
     return payload
 
 
-def _baseline_from_profile(profile: HistoricalAdjustmentProfile) -> float | None:
+def _baseline_from_profile(profile: HistoricalAdjustmentProfile | RadarProfileRow) -> float | None:
     if profile.initial_score_min is not None and profile.initial_score_max is not None:
         return round((float(profile.initial_score_min) + float(profile.initial_score_max)) / 2, 1)
     if profile.initial_score_min is not None:
@@ -154,7 +166,17 @@ def _baseline_from_profile(profile: HistoricalAdjustmentProfile) -> float | None
 
 
 def _build_profile_query(db: Session, category_key: str, years: list[int]):
-    query = db.query(HistoricalAdjustmentProfile).filter(
+    query = db.query(
+        HistoricalAdjustmentProfile.year.label("year"),
+        HistoricalAdjustmentProfile.region_name.label("region_name"),
+        HistoricalAdjustmentProfile.major_code.label("major_code"),
+        HistoricalAdjustmentProfile.sample_count.label("sample_count"),
+        HistoricalAdjustmentProfile.initial_score_min.label("initial_score_min"),
+        HistoricalAdjustmentProfile.initial_score_max.label("initial_score_max"),
+        HistoricalAdjustmentProfile.avg_score.label("avg_score"),
+        HistoricalAdjustmentProfile.min_score.label("min_score"),
+        HistoricalAdjustmentProfile.max_score.label("max_score"),
+    ).execution_options(stream_results=True).filter(
         HistoricalAdjustmentProfile.year.in_(years),
         HistoricalAdjustmentProfile.sample_count > 0,
         HistoricalAdjustmentProfile.major_code.is_not(None),
@@ -169,10 +191,23 @@ def _build_profile_query(db: Session, category_key: str, years: list[int]):
     return query.filter(HistoricalAdjustmentProfile.major_code.like(f"{prefix}%"))
 
 
-def _match_profile_category(profile: HistoricalAdjustmentProfile, category_key: str) -> bool:
+def _match_profile_category(profile: HistoricalAdjustmentProfile | RadarProfileRow, category_key: str) -> bool:
     if not profile.major_code:
         return False
     return resolve_national_line_key(profile.major_code) == category_key
+
+
+def _conversion_offset(category_key: str, from_year: int | None, to_year: int | None, area: RadarArea) -> float | None:
+    if from_year is None or to_year is None:
+        return None
+    try:
+        _from_label, from_a, from_b = _line_payload(category_key, from_year)
+        _to_label, to_a, to_b = _line_payload(category_key, to_year)
+    except KeyError:
+        return None
+    from_total = from_b if area == "B" else from_a
+    to_total = to_b if area == "B" else to_a
+    return round(float(to_total) - float(from_total), 1)
 
 
 def _weighted_quantile(samples: list[tuple[float, int]], quantile: float) -> float | None:
@@ -287,21 +322,37 @@ def predict_adjustment_rate(
     samples: list[tuple[float, int]] = []
     historical_sample_count = 0
     historical_group_count = 0
-    for profile in _build_profile_query(db, resolved.key, reference_years).all():
+    conversion_offsets: dict[tuple[int, RadarArea], float | None] = {}
+    for raw_profile in _build_profile_query(db, resolved.key, reference_years).yield_per(1000):
+        profile = RadarProfileRow(
+            year=raw_profile.year,
+            region_name=raw_profile.region_name,
+            major_code=raw_profile.major_code,
+            sample_count=int(raw_profile.sample_count or 0),
+            initial_score_min=raw_profile.initial_score_min,
+            initial_score_max=raw_profile.initial_score_max,
+            avg_score=raw_profile.avg_score,
+            min_score=raw_profile.min_score,
+            max_score=raw_profile.max_score,
+        )
         if not _match_profile_category(profile, resolved.key):
             continue
         baseline = _baseline_from_profile(profile)
         if baseline is None:
             continue
-        converted = convert_score_between_years(
-            score=baseline,
-            from_year=profile.year,
-            to_year=national_line_year,
-            major_code=profile.major_code,
-            area=resolve_score_area(profile.region_name),
-        )
-        if converted is None:
+        sample_area = resolve_score_area(profile.region_name)
+        offset_key = (profile.year, sample_area)
+        if offset_key not in conversion_offsets:
+            conversion_offsets[offset_key] = _conversion_offset(
+                resolved.key,
+                profile.year,
+                national_line_year,
+                sample_area,
+            )
+        offset = conversion_offsets[offset_key]
+        if offset is None:
             continue
+        converted = round(float(baseline) + float(offset), 1)
         weight = max(1, min(int(profile.sample_count or 1), 20))
         samples.append((float(converted), weight))
         historical_sample_count += int(profile.sample_count or 0)
