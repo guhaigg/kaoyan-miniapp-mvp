@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import re
+from types import SimpleNamespace
 from uuid import uuid4
 from collections import defaultdict
 
@@ -869,6 +870,93 @@ def _build_adjustment_opportunity_summary(row: AdjustmentOpportunity, insight) -
     return " · ".join(parts)
 
 
+def _build_lightweight_adjustment_insight(
+    row: AdjustmentOpportunity,
+    *,
+    candidate_score: int | None,
+):
+    min_score = row.min_score_required or row.min_score or row.initial_score_min
+    avg_score = row.avg_score
+    max_score = row.max_score or row.initial_score_max or min_score
+    delta_to_min = (candidate_score - min_score) if candidate_score is not None and min_score is not None else None
+    delta_to_avg = (
+        int(round(candidate_score - avg_score))
+        if candidate_score is not None and avg_score is not None
+        else None
+    )
+    delta_to_max = (candidate_score - max_score) if candidate_score is not None and max_score is not None else None
+    outlook = None
+    outlook_label = None
+    if candidate_score is not None:
+        if avg_score is not None and candidate_score >= avg_score:
+            outlook = "high"
+            outlook_label = "胜率较高"
+        elif min_score is not None and candidate_score >= min_score:
+            outlook = "reach"
+            outlook_label = "可以冲刺"
+        else:
+            outlook = "cautious"
+            outlook_label = "谨慎尝试"
+    sample_count = max(1, int(row.vacancy_count or 0)) if row.has_history else 0
+    if sample_count <= 0 and not any(
+        (
+            row.initial_score_min is not None,
+            row.adjustment_score_min is not None,
+            row.min_score is not None,
+            row.avg_score is not None,
+        )
+    ):
+        return None
+    return SimpleNamespace(
+        sample_years=[int(row.year)] if row.year else [],
+        source_types=[row.source_type] if row.source_type else [],
+        sample_count=sample_count,
+        initial_score_min=row.initial_score_min,
+        initial_score_max=row.initial_score_max,
+        adjustment_score_min=row.adjustment_score_min,
+        adjustment_score_max=row.adjustment_score_max,
+        min_score=min_score,
+        avg_score=avg_score,
+        max_score=max_score,
+        candidate_score=candidate_score,
+        delta_to_min=delta_to_min,
+        delta_to_avg=delta_to_avg,
+        delta_to_max=delta_to_max,
+        national_line_year=None,
+        national_line_major_category=None,
+        national_line_zone_a=None,
+        national_line_zone_b=None,
+        delta_to_zone_a=None,
+        delta_to_zone_b=None,
+        outlook=outlook,
+        outlook_label=outlook_label,
+        future_program_count=None,
+    )
+
+
+def _build_lightweight_school_intelligence(
+    row: AdjustmentOpportunity,
+    *,
+    reference_urls: list[str],
+):
+    if not row.is_long_track and not reference_urls:
+        return None
+    detail_parts: list[str] = []
+    if row.is_long_track:
+        detail_parts.append("预计算连续活跃")
+    if reference_urls:
+        detail_parts.append(f"可回溯链接 {len(reference_urls)} 条")
+    return SimpleNamespace(
+        profile_count=0,
+        active_years=[int(row.year)] if row.year else [],
+        source_types=[row.source_type] if row.source_type else [],
+        future_program_count=0,
+        reference_urls=reference_urls[:3],
+        confidence_label="连续活跃" if row.is_long_track else "样本有限",
+        signal_detail="，".join(detail_parts) if detail_parts else "预计算学校情报",
+    )
+
+
 def _normalize_merge_major_token(row: AdjustmentOpportunity) -> str:
     return (row.major_code or row.major_name_normalized or "").strip()
 
@@ -1265,38 +1353,52 @@ def _to_adjustment_opportunity_response(
     refresh_job_id: str | None,
     *,
     authenticated: bool,
+    lightweight: bool = False,
 ) -> SearchResponse:
     school_names = [row.school_name for row in rows if row.school_name]
-    historical_profiles = load_profiles_for_search(db, school_names)
     mentor_evaluations = load_mentor_evaluations_for_search(db, school_names)
     release_timings = load_release_timing_for_search(db, school_names)
-    school_intelligence = load_school_intelligence_for_search(db, school_names)
+    historical_profiles = {} if lightweight else load_profiles_for_search(db, school_names)
+    school_intelligence = {} if lightweight else load_school_intelligence_for_search(db, school_names)
     merged_rows = _merge_adjustment_opportunity_rows(rows)
     serialized: list[SearchItem] = []
     for merged in merged_rows:
         row = merged["primary"]
-        display_departments = _resolve_adjustment_departments(db, row, merged["department_names"])
+        if lightweight:
+            display_departments = merged["department_names"] or _extract_department_hints(row.title, row.summary)
+        else:
+            display_departments = _resolve_adjustment_departments(db, row, merged["department_names"])
         resolved_department_name = display_departments[0] if len(display_departments) == 1 else row.department_name
         school_name = row.school_name
         normalized_school_name = normalize_school_name(school_name)
-        school_profiles = historical_profiles.get(normalized_school_name, [])
-        insight = build_search_insight(
-            school_profiles,
-            major_codes=[row.major_code] if row.major_code else [],
-            major_name=row.major_name,
-            department_name=resolved_department_name,
-            study_modes=[row.study_mode] if row.study_mode else [],
-            candidate_score=payload.candidate_score,
-            reference_year=row.year,
-        )
         mentor_signal, mentor_department_signal, mentor_school_signal = _build_mentor_scope_signals(
             mentor_evaluations.get(normalized_school_name, []),
             department_name=resolved_department_name,
         )
         release_timing_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
-        school_signal = school_intelligence.get(normalized_school_name)
         meta = dict(merged["meta_json"] or {})
         reference_urls = [str(url) for url in (merged["reference_urls"] or []) if str(url or "").strip()]
+        if lightweight:
+            insight = _build_lightweight_adjustment_insight(
+                row,
+                candidate_score=payload.candidate_score,
+            )
+            school_signal = _build_lightweight_school_intelligence(
+                row,
+                reference_urls=reference_urls,
+            )
+        else:
+            school_profiles = historical_profiles.get(normalized_school_name, [])
+            insight = build_search_insight(
+                school_profiles,
+                major_codes=[row.major_code] if row.major_code else [],
+                major_name=row.major_name,
+                department_name=resolved_department_name,
+                study_modes=[row.study_mode] if row.study_mode else [],
+                candidate_score=payload.candidate_score,
+                reference_year=row.year,
+            )
+            school_signal = school_intelligence.get(normalized_school_name)
         source_url = (
             (row.source_url or "").strip()
             or
@@ -1681,6 +1783,7 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
         opportunity_source_breakdown,
         refresh_job_id,
         authenticated=True,
+        lightweight=broad_query_mode,
     )
     response = _merge_adjustment_search_responses(
         request_id,
