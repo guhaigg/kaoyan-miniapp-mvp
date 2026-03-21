@@ -1528,7 +1528,7 @@ def test_adjustment_search_broad_filters_use_denormalized_scan_fields(client):
         "/api/v1/search/adjustments",
         json={
             "candidate_score": 280,
-            "school_tier": "普本",
+            "school_tier": "普通本科",
             "history_backed_only": True,
             "long_track_only": True,
             "page_size": 12,

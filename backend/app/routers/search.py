@@ -52,6 +52,17 @@ SCHOOL_SUFFIXES = (
     "中医药大学",
 )
 DEPARTMENT_HINT_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|研究院|研究所|中心))")
+SCHOOL_TIER_FILTER_MAP = {
+    "普本": ["普本", "普通本科", "普通本科院校", "双非"],
+    "普通本科": ["普本", "普通本科", "普通本科院校", "双非"],
+    "普通本科院校": ["普本", "普通本科", "普通本科院校", "双非"],
+    "双非": ["普本", "普通本科", "普通本科院校", "双非"],
+    "985": ["985"],
+    "211": ["211"],
+    "985/211": ["985", "211", "985/211"],
+    "双一流": ["双一流"],
+    "科研院所": ["科研院所"],
+}
 
 
 def _dedupe_terms(values: list[str]) -> list[str]:
@@ -97,6 +108,16 @@ def _build_keyword_terms(value: str) -> list[str]:
     compact = re.sub(r"\s+", "", raw)
     split_terms = [part.strip() for part in re.split(r"[\s,，、/|;；]+", raw) if part.strip()]
     return _dedupe_terms([raw, compact, *split_terms])
+
+
+def _build_school_tier_terms(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    mapped = SCHOOL_TIER_FILTER_MAP.get(text)
+    if mapped:
+        return mapped
+    return [text]
 
 
 def _extract_department_hints(*texts: str | None) -> list[str]:
@@ -197,7 +218,11 @@ def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchReques
     if payload.city:
         query = query.filter(AdjustmentOpportunity.city_name.ilike(f"%{payload.city.strip()}%"))
     if payload.school_tier:
-        query = query.filter(AdjustmentOpportunity.school_tier.ilike(f"%{payload.school_tier.strip()}%"))
+        school_tier_terms = _build_school_tier_terms(payload.school_tier)
+        if len(school_tier_terms) == 1 and school_tier_terms[0] == payload.school_tier.strip():
+            query = query.filter(AdjustmentOpportunity.school_tier.ilike(f"%{payload.school_tier.strip()}%"))
+        else:
+            query = query.filter(AdjustmentOpportunity.school_tier.in_(school_tier_terms))
     return query
 
 
