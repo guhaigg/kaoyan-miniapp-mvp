@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Activity, BellRing, LogOut, Menu, Search, Terminal, UserCircle } from "lucide-react";
+import { Activity, BellRing, LogOut, Menu, Search, Target, Terminal, UserCircle } from "lucide-react";
 import { ApiError, logoutUser } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 
@@ -38,6 +38,7 @@ export default function Header() {
   const navItems = [
     { href: "/", label: "全网流", icon: Activity },
     { href: "/search", label: "数据检索", icon: Search },
+    { href: "/radar", label: "胜率测算", icon: Target },
     ...(showAdminNav ? [{ href: "/admin", label: "监控台", icon: Terminal }] : []),
   ];
 

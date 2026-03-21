@@ -2,7 +2,6 @@
 
 import { motion } from "framer-motion";
 import { Radar, Sparkles } from "lucide-react";
-import RadarCalculator from "@/components/search/RadarCalculator";
 
 export default function SearchEmptyState({ setKeyword }: { setKeyword: (value: string) => void }) {
   const suggestions = ["085400", "计算机科学", "211院校", "接受跨考"];
@@ -49,10 +48,6 @@ export default function SearchEmptyState({ setKeyword }: { setKeyword: (value: s
             ))}
           </div>
         </div>
-      </div>
-
-      <div className="mt-12 w-full px-0 md:px-4">
-        <RadarCalculator />
       </div>
     </motion.div>
   );
