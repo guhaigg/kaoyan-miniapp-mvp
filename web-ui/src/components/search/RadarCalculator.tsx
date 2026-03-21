@@ -105,6 +105,7 @@ export default function RadarCalculator() {
   }
 
   const visual = result ? colorMap[result.level] : colorMap.info;
+  const searchPlan = result ? buildRadarSearchPlan(result, score) : null;
 
   return (
     <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
@@ -336,12 +337,22 @@ export default function RadarCalculator() {
                 <div className="text-xs text-slate-500">
                   这是一版门类级诊断。下一步请进入检索页，把分数和院校条件叠加到真实调剂样本上看。
                 </div>
-                <Link
-                  href="/search"
-                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-cyan-500/25 hover:bg-cyan-500/10 hover:text-cyan-300"
-                >
-                  前往数据检索
-                </Link>
+                {searchPlan ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={searchPlan.primaryHref}
+                      className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-4 py-2 text-xs font-semibold text-cyan-200 transition-colors hover:border-cyan-400/35 hover:bg-cyan-500/14 hover:text-cyan-100"
+                    >
+                      {searchPlan.primaryLabel}
+                    </Link>
+                    <Link
+                      href={searchPlan.secondaryHref}
+                      className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-cyan-500/25 hover:bg-cyan-500/10 hover:text-cyan-300"
+                    >
+                      {searchPlan.secondaryLabel}
+                    </Link>
+                  </div>
+                ) : null}
               </div>
             </motion.div>
           )}
@@ -358,4 +369,63 @@ function MetricChip({ label, value }: { label: string; value: string }) {
       <div className="mt-1 text-base font-bold text-white">{value}</div>
     </div>
   );
+}
+
+function buildRadarSearchPlan(result: RadarPredictResponse, score: string) {
+  const majorToken = resolveRadarSearchMajorToken(result);
+  const baseParams = new URLSearchParams({
+    tab: "adjustments",
+    score,
+    history: "1",
+  });
+
+  if (majorToken) {
+    baseParams.set("major", majorToken);
+  }
+
+  const primaryParams = new URLSearchParams(baseParams);
+  const secondaryParams = new URLSearchParams(baseParams);
+
+  let primaryLabel = "带着结果去搜";
+  let secondaryLabel = "查看全部历史样本";
+
+  if (result.level === "danger") {
+    primaryParams.set("level", "普通本科");
+    primaryParams.set("long", "1");
+    primaryLabel = "先看稳妥样本";
+    secondaryLabel = "放宽到全部历史样本";
+  } else if (result.level === "warning") {
+    primaryParams.set("level", "普通本科");
+    primaryParams.set("long", "1");
+    primaryLabel = "先看保守样本";
+    secondaryLabel = "查看全部活跃样本";
+  } else if (result.level === "info") {
+    primaryParams.set("long", "1");
+    secondaryParams.set("level", "双一流");
+    primaryLabel = "查看高匹配样本";
+    secondaryLabel = "试探双一流样本";
+  } else {
+    primaryParams.set("level", "双一流");
+    secondaryParams.set("level", "985/211");
+    primaryLabel = "先看优质院校";
+    secondaryLabel = "冲刺 985/211";
+  }
+
+  return {
+    primaryHref: `/search?${primaryParams.toString()}`,
+    primaryLabel,
+    secondaryHref: `/search?${secondaryParams.toString()}`,
+    secondaryLabel,
+  };
+}
+
+function resolveRadarSearchMajorToken(result: RadarPredictResponse) {
+  if (result.category_key.length >= 4) {
+    return result.category_key;
+  }
+  const compactLabel = result.category_label.replace(/\s+/g, "");
+  if (compactLabel === "公共管理" || compactLabel === "会计") {
+    return compactLabel;
+  }
+  return "";
 }

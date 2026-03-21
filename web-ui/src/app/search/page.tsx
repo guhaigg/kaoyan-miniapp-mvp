@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -37,27 +37,38 @@ import { useAddSubscriptionMutation, useDeleteSubscriptionMutation, useSubscript
 import { useAppStore } from "@/lib/store";
 import { watchlistNoticeQueryKey } from "@/lib/notice-cache";
 
+const DEFAULT_SEARCH_FILTERS: SearchCommandCenterFilters = {
+  schoolName: "",
+  major: "",
+  region: "不限",
+  city: "",
+  year: "",
+  level: "不限",
+  type: "all",
+  score: "",
+  historyBackedOnly: false,
+  longTrackOnly: false,
+  referenceLinksOnly: false,
+  hideMentorWarnings: false,
+};
+
 export default function SearchPage() {
+  return (
+    <Suspense fallback={<SearchPageLoadingState />}>
+      <SearchPageContent />
+    </Suspense>
+  );
+}
+
+function SearchPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { portalAuth, showToast } = useAppStore();
   const isAnonymous = !portalAuth;
   const [queryType, setQueryType] = useState<"announcements" | "adjustments">(portalAuth ? "adjustments" : "announcements");
   const [keywords, setKeywords] = useState("");
-  const [filters, setFilters] = useState<SearchCommandCenterFilters>({
-    schoolName: "",
-    major: "",
-    region: "不限",
-    city: "",
-    year: "",
-    level: "不限",
-    type: "all",
-    score: "",
-    historyBackedOnly: false,
-    longTrackOnly: false,
-    referenceLinksOnly: false,
-    hideMentorWarnings: false,
-  });
+  const [filters, setFilters] = useState<SearchCommandCenterFilters>(DEFAULT_SEARCH_FILTERS);
   const [message, setMessage] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [selectedAdjustmentItem, setSelectedAdjustmentItem] = useState<SearchItem | null>(null);
@@ -65,6 +76,7 @@ export default function SearchPage() {
   const [adjustmentDetailLoading, setAdjustmentDetailLoading] = useState(false);
   const [adjustmentDetailError, setAdjustmentDetailError] = useState("");
   const searchRequestIdRef = useRef(0);
+  const hydratedSearchParamsRef = useRef<string>("");
 
   const announcementMutation = useAnnouncementSearchMutation();
   const adjustmentMutation = useAdjustmentSearchMutation();
@@ -146,36 +158,9 @@ export default function SearchPage() {
     return map;
   }, [subscriptionsQuery.data?.items]);
 
-  const adjustmentQueryIntent = resolveAdjustmentQueryIntent({
-    keywords,
-    schoolName: filters.schoolName,
-    majorFilter: filters.major,
-  });
-  const resolvedSchoolName =
-    queryType === "adjustments"
-      ? adjustmentQueryIntent.schoolName
-      : filters.schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : "");
-  const resolvedMajorFilter =
-    queryType === "adjustments" ? adjustmentQueryIntent.major : filters.major.trim();
-  const resolvedKeywords =
-    queryType === "adjustments" ? adjustmentQueryIntent.keywords : keywords.trim();
-
   function resetAllFilters() {
     setKeywords("");
-    setFilters({
-      schoolName: "",
-      major: "",
-      region: "不限",
-      city: "",
-      year: "",
-      level: "不限",
-      type: "all",
-      score: "",
-      historyBackedOnly: false,
-      longTrackOnly: false,
-      referenceLinksOnly: false,
-      hideMentorWarnings: false,
-    });
+    setFilters(DEFAULT_SEARCH_FILTERS);
     setSearchResult(null);
     setMessage("");
   }
@@ -206,33 +191,55 @@ export default function SearchPage() {
       hideMentorWarnings?: boolean;
     },
     filterOverrides?: Partial<SearchCommandCenterFilters>,
+    stateOverrides?: {
+      queryType?: "announcements" | "adjustments";
+      keywords?: string;
+      filters?: SearchCommandCenterFilters;
+    },
   ) {
     const requestId = ++searchRequestIdRef.current;
-    const effectiveFilters = { ...filters, ...filterOverrides };
+    const effectiveQueryType = stateOverrides?.queryType ?? queryType;
+    const effectiveKeywords = stateOverrides?.keywords ?? keywords;
+    const baseFilters = stateOverrides?.filters ?? filters;
+    const effectiveFilters = { ...baseFilters, ...filterOverrides };
+    const effectiveIntent = resolveAdjustmentQueryIntent({
+      keywords: effectiveKeywords,
+      schoolName: effectiveFilters.schoolName,
+      majorFilter: effectiveFilters.major,
+    });
+    const effectiveResolvedSchoolName =
+      effectiveQueryType === "adjustments"
+        ? effectiveIntent.schoolName
+        : effectiveFilters.schoolName.trim() || (isSchoolLikeQuery(effectiveKeywords.trim()) ? effectiveKeywords.trim() : "");
+    const effectiveResolvedMajorFilter =
+      effectiveQueryType === "adjustments" ? effectiveIntent.major : effectiveFilters.major.trim();
+    const effectiveResolvedKeywords =
+      effectiveQueryType === "adjustments" ? effectiveIntent.keywords : effectiveKeywords.trim();
     setMessage("");
-    if (queryType === "adjustments" && isAnonymous) {
+    if (effectiveQueryType === "adjustments" && isAnonymous) {
       setMessage("调剂检索属于登录后的深度功能，请先登录后继续。");
       return;
     }
     try {
       const payload =
-        queryType === "announcements"
+        effectiveQueryType === "announcements"
           ? await announcementMutation.mutateAsync({
-              keywords: keywords.trim() || undefined,
-              school_name: effectiveFilters.schoolName.trim() || (isSchoolLikeQuery(keywords.trim()) ? keywords.trim() : undefined),
+              keywords: effectiveKeywords.trim() || undefined,
+              school_name:
+                effectiveFilters.schoolName.trim() || (isSchoolLikeQuery(effectiveKeywords.trim()) ? effectiveKeywords.trim() : undefined),
               page,
               page_size: 12,
             })
           : await adjustmentMutation.mutateAsync({
-              keywords: resolvedKeywords || undefined,
+              keywords: effectiveResolvedKeywords || undefined,
               school_name:
                 filterOverrides && "schoolName" in filterOverrides
                   ? effectiveFilters.schoolName.trim() || undefined
-                  : resolvedSchoolName || undefined,
+                  : effectiveResolvedSchoolName || undefined,
               major:
                 filterOverrides && "major" in filterOverrides
                   ? effectiveFilters.major.trim() || undefined
-                  : resolvedMajorFilter || undefined,
+                  : effectiveResolvedMajorFilter || undefined,
               region: effectiveFilters.region !== "不限" ? effectiveFilters.region.trim() : undefined,
               city: effectiveFilters.city.trim() || undefined,
               school_tier: mapLevelToServerSchoolTier(effectiveFilters.level),
@@ -247,19 +254,19 @@ export default function SearchPage() {
       }
       setSearchResult(payload);
       if (payload.total === 0) {
-        setMessage(buildEmptyResultMessage(queryType, {
+        setMessage(buildEmptyResultMessage(effectiveQueryType, {
           keywords:
             filterOverrides && !("schoolName" in filterOverrides) && !("major" in filterOverrides)
-              ? resolvedKeywords
-              : keywords.trim(),
+              ? effectiveResolvedKeywords
+              : effectiveKeywords.trim(),
           schoolName:
             filterOverrides && "schoolName" in filterOverrides
               ? effectiveFilters.schoolName
-              : resolvedSchoolName,
+              : effectiveResolvedSchoolName,
           majorFilter:
             filterOverrides && "major" in filterOverrides
               ? effectiveFilters.major
-              : resolvedMajorFilter,
+              : effectiveResolvedMajorFilter,
           regionFilter: effectiveFilters.region === "不限" ? "" : effectiveFilters.region,
           cityFilter: effectiveFilters.city,
           schoolTierFilter: effectiveFilters.level === "不限" ? "" : effectiveFilters.level,
@@ -280,6 +287,35 @@ export default function SearchPage() {
       }
     }
   }
+
+  useEffect(() => {
+    const serialized = searchParams.toString();
+    if (!serialized || hydratedSearchParamsRef.current === serialized) {
+      return;
+    }
+    const parsed = parseSearchStateFromParams(searchParams);
+    if (!parsed) {
+      return;
+    }
+    hydratedSearchParamsRef.current = serialized;
+    setQueryType(parsed.queryType);
+    setKeywords(parsed.keywords);
+    setFilters(parsed.filters);
+    if (parsed.shouldSearch) {
+      void triggerSearch(
+        1,
+        undefined,
+        undefined,
+        {
+          queryType: parsed.queryType,
+          keywords: parsed.keywords,
+          filters: parsed.filters,
+        },
+      );
+    }
+    // triggerSearch intentionally stays outside deps so URL hydration runs once per param snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handleRadarBookmark(payload: RadarBookmarkPayload) {
     if (!portalAuth) {
@@ -423,7 +459,7 @@ export default function SearchPage() {
           setKeyword={setKeywords}
           filters={filters}
           setFilters={setFilters}
-          onSearch={() => void triggerSearch(1)}
+          onSearch={(filterPatch) => void triggerSearch(1, undefined, filterPatch)}
         />
       </div>
 
@@ -687,6 +723,25 @@ export default function SearchPage() {
         onClose={closeAdjustmentDetail}
       />
     </motion.div>
+  );
+}
+
+function SearchPageLoadingState() {
+  return (
+    <div className="mx-auto max-w-6xl px-4 pb-20 pt-10">
+      <div className="mx-auto mb-6 max-w-5xl text-center">
+        <h2 className="text-3xl font-black tracking-tight text-white md:text-4xl">数据库全局检索</h2>
+      </div>
+      <div className="space-y-3 md:hidden">
+        <FeedCardSkeleton />
+        <FeedCardSkeleton />
+      </div>
+      <div className="hidden space-y-3 md:block">
+        <FeedRowSkeleton />
+        <FeedRowSkeleton />
+        <FeedRowSkeleton />
+      </div>
+    </div>
   );
 }
 
@@ -1836,4 +1891,132 @@ function schoolConfidenceRank(label: string | null | undefined) {
   if (label === "持续关注") return 2;
   if (label === "样本有限") return 1;
   return 0;
+}
+
+function parseSearchStateFromParams(
+  searchParams: Pick<URLSearchParams, "get">,
+): {
+  queryType: "announcements" | "adjustments";
+  keywords: string;
+  filters: SearchCommandCenterFilters;
+  shouldSearch: boolean;
+} | null {
+  const hasKnownParams = [
+    "tab",
+    "q",
+    "keyword",
+    "keywords",
+    "school",
+    "schoolName",
+    "major",
+    "region",
+    "city",
+    "year",
+    "level",
+    "type",
+    "score",
+    "history",
+    "historyBackedOnly",
+    "history_backed_only",
+    "long",
+    "longTrackOnly",
+    "long_track_only",
+    "refs",
+    "referenceLinksOnly",
+    "reference_links_only",
+    "safe",
+    "hideMentorWarnings",
+    "exclude_mentor_warnings",
+  ].some((key) => searchParams.get(key) !== null);
+
+  if (!hasKnownParams) {
+    return null;
+  }
+
+  const tab = searchParams.get("tab");
+  const queryType = tab === "announcements" ? "announcements" : "adjustments";
+  const filters: SearchCommandCenterFilters = {
+    ...DEFAULT_SEARCH_FILTERS,
+    schoolName: readSearchParam(searchParams, ["school", "schoolName"]),
+    major: readSearchParam(searchParams, ["major"]),
+    region: parseRegionParam(readSearchParam(searchParams, ["region"])),
+    city: readSearchParam(searchParams, ["city"]),
+    year: parseYearParam(readSearchParam(searchParams, ["year"])),
+    level: parseLevelParam(readSearchParam(searchParams, ["level"])),
+    type: parseStudyModeParam(readSearchParam(searchParams, ["type"])),
+    score: parseScoreParam(readSearchParam(searchParams, ["score"])),
+    historyBackedOnly: parseBooleanParam(readSearchParam(searchParams, ["history", "historyBackedOnly", "history_backed_only"])),
+    longTrackOnly: parseBooleanParam(readSearchParam(searchParams, ["long", "longTrackOnly", "long_track_only"])),
+    referenceLinksOnly: parseBooleanParam(readSearchParam(searchParams, ["refs", "referenceLinksOnly", "reference_links_only"])),
+    hideMentorWarnings: parseBooleanParam(readSearchParam(searchParams, ["safe", "hideMentorWarnings", "exclude_mentor_warnings"])),
+  };
+  const keywords = readSearchParam(searchParams, ["q", "keyword", "keywords"]);
+  const shouldSearch = hasSearchIntent(keywords, filters);
+
+  return {
+    queryType,
+    keywords,
+    filters,
+    shouldSearch,
+  };
+}
+
+function readSearchParam(searchParams: Pick<URLSearchParams, "get">, keys: string[]) {
+  for (const key of keys) {
+    const value = searchParams.get(key);
+    if (value !== null) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function parseRegionParam(value: string) {
+  return value && value !== "不限" ? value : "不限";
+}
+
+function parseYearParam(value: string) {
+  return /^\d{4}$/.test(value) ? value : "";
+}
+
+function parseLevelParam(value: string): SearchCommandCenterFilters["level"] {
+  if (value === "985/211" || value === "双一流" || value === "科研院所" || value === "普通本科") {
+    return value;
+  }
+  return "不限";
+}
+
+function parseStudyModeParam(value: string): SearchCommandCenterFilters["type"] {
+  if (value === "fulltime" || value === "parttime" || value === "all") {
+    return value;
+  }
+  if (value === "全日制") return "fulltime";
+  if (value === "非全日制") return "parttime";
+  return "all";
+}
+
+function parseScoreParam(value: string) {
+  return /^\d{2,3}$/.test(value) ? value : "";
+}
+
+function parseBooleanParam(value: string) {
+  return /^(1|true|yes|on)$/i.test(value);
+}
+
+function hasSearchIntent(keywords: string, filters: SearchCommandCenterFilters) {
+  return Boolean(
+    keywords.trim() ||
+      filters.schoolName.trim() ||
+      filters.major.trim() ||
+      filters.region !== "不限" ||
+      filters.city.trim() ||
+      filters.year.trim() ||
+      filters.level !== "不限" ||
+      filters.type !== "all" ||
+      filters.score.trim() ||
+      filters.historyBackedOnly ||
+      filters.longTrackOnly ||
+      filters.referenceLinksOnly ||
+      filters.hideMentorWarnings,
+  );
 }
