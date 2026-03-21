@@ -812,6 +812,113 @@ def _apply_exact_department_mentor_scope(
     return []
 
 
+HISTORY_BACKED_OPPORTUNITY_SOURCE_TYPES = {"stats", "landing", "adjustment_stats"}
+LONG_TRACK_MIN_YEARS = 3
+LONG_TRACK_MIN_ROWS = 40
+
+
+def _build_adjustment_search_facet_base_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(row.get("school_name_normalized") or "").strip(),
+        str(normalize_major_code(row.get("major_code")) or "").strip(),
+        str(normalize_major_name(row.get("major_name")) or row.get("major_name_normalized") or "").strip(),
+        str(normalize_study_mode(row.get("study_mode")) or "").strip(),
+    )
+
+
+def _collect_adjustment_reference_link_count(rows: list[dict[str, Any]]) -> int:
+    seen_urls: set[str] = set()
+    for row in rows:
+        meta = row.get("meta_json") if isinstance(row.get("meta_json"), dict) else {}
+        raw_urls: list[str | None] = [row.get("source_url")]
+        if isinstance(meta, dict):
+            raw_urls.extend([meta.get("source_url"), meta.get("top_source_url")])
+            if isinstance(meta.get("reference_urls"), list):
+                raw_urls.extend(meta.get("reference_urls") or [])
+        for candidate in raw_urls:
+            canonical = canonicalize_reference_url(candidate)
+            if canonical:
+                seen_urls.add(canonical)
+    return len(seen_urls)
+
+
+def _build_adjustment_row_score_floor(row: dict[str, Any], *, target_year: int) -> int | None:
+    raw_min = score_to_int(row.get("initial_score_min"))
+    if raw_min is None and row.get("adjustment_score_min") is None:
+        raw_min = score_to_int(row.get("min_score"))
+    if raw_min is None:
+        return None
+
+    year = score_to_int(row.get("year"))
+    if year is None:
+        return raw_min
+
+    converted = convert_score_between_years(
+        score=raw_min,
+        from_year=year,
+        to_year=target_year,
+        major_code=row.get("major_code"),
+        area=resolve_score_area(row.get("region_name")),
+    )
+    if converted is None:
+        return raw_min
+    return int(round(converted))
+
+
+def _annotate_adjustment_search_facets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return rows
+
+    target_year = max(NATIONAL_ADJUSTMENT_LINES)
+    school_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        school_key = str(row.get("school_name_normalized") or "").strip()
+        if school_key:
+            school_rows[school_key].append(row)
+
+    long_track_by_school: dict[str, int] = {}
+    for school_key, scoped_rows in school_rows.items():
+        active_years = {int(year) for year in (score_to_int(row.get("year")) for row in scoped_rows) if year}
+        long_track_by_school[school_key] = int(
+            len(active_years) >= LONG_TRACK_MIN_YEARS or len(scoped_rows) >= LONG_TRACK_MIN_ROWS
+        )
+
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[_build_adjustment_search_facet_base_key(row)].append(row)
+
+    for grouped_rows in grouped.values():
+        for scoped_rows in _split_records_by_department_scope(
+            grouped_rows,
+            department_getter=lambda row: row.get("department_name_normalized") or row.get("department_name"),
+        ):
+            has_history = int(
+                any(str(row.get("source_type") or "").strip() in HISTORY_BACKED_OPPORTUNITY_SOURCE_TYPES for row in scoped_rows)
+            )
+            reference_link_count = _collect_adjustment_reference_link_count(scoped_rows)
+            score_floor_candidates = [
+                value
+                for value in (
+                    _build_adjustment_row_score_floor(row, target_year=target_year)
+                    for row in scoped_rows
+                )
+                if value is not None
+            ]
+            min_score_required = min(score_floor_candidates) if score_floor_candidates else None
+            for row in scoped_rows:
+                row["has_history"] = has_history
+                row["reference_link_count"] = reference_link_count
+                row["min_score_required"] = min_score_required
+
+    for row in rows:
+        school_key = str(row.get("school_name_normalized") or "").strip()
+        row["is_long_track"] = long_track_by_school.get(school_key, 0)
+        row.setdefault("has_history", 0)
+        row.setdefault("reference_link_count", 0)
+        row.setdefault("min_score_required", None)
+    return rows
+
+
 def build_historical_profiles_from_archives(db: Session) -> list[dict[str, Any]]:
     archives = _load_archives_by_keys(
         db,
@@ -1904,7 +2011,7 @@ def build_adjustment_opportunities_from_archives(db: Session) -> list[dict[str, 
             if not row.get("city_name") and school_dimension_map[school_key].get("city_name"):
                 row["city_name"] = school_dimension_map[school_key]["city_name"]
         normalized_rows.append(row)
-    return normalized_rows
+    return _annotate_adjustment_search_facets(normalized_rows)
 
 
 def build_mentor_evaluations_from_archives(db: Session) -> list[dict[str, Any]]:

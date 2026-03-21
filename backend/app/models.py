@@ -225,6 +225,18 @@ class AdjustmentOpportunity(Base):
         ),
         Index("ix_adjustment_opportunities_source_year", "source_type", "year"),
         Index("ix_adjustment_opportunities_published", "published_at"),
+        Index(
+            "ix_adjustment_opportunities_broad_filters",
+            "school_tier",
+            "has_history",
+            "is_long_track",
+            "min_score_required",
+        ),
+        Index(
+            "ix_adjustment_opportunities_reference_links",
+            "school_tier",
+            "reference_link_count",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -245,6 +257,10 @@ class AdjustmentOpportunity(Base):
     major_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     major_name_normalized: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     study_mode: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    has_history: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    is_long_track: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    reference_link_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    min_score_required: Mapped[int | None] = mapped_column(Integer, nullable=True)
     vacancy_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     initial_score_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     initial_score_max: Mapped[int | None] = mapped_column(Integer, nullable=True)

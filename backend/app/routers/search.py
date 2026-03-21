@@ -37,6 +37,7 @@ from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
 ANONYMOUS_PREVIEW_LIMIT = 2
+ADJUSTMENT_BROAD_SCAN_LIMIT = 360
 UTC = timezone.utc
 SCHOOL_SUFFIXES = (
     "大学",
@@ -200,6 +201,23 @@ def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchReques
     return query
 
 
+def _apply_adjustment_broad_scan_filters(query, payload: AdjustmentSearchRequest):
+    if payload.history_backed_only:
+        query = query.filter(AdjustmentOpportunity.has_history == 1)
+    if payload.long_track_only:
+        query = query.filter(AdjustmentOpportunity.is_long_track == 1)
+    if payload.reference_links_only:
+        query = query.filter(AdjustmentOpportunity.reference_link_count > 0)
+    if payload.candidate_score is not None:
+        query = query.filter(
+            or_(
+                AdjustmentOpportunity.min_score_required.is_(None),
+                AdjustmentOpportunity.min_score_required <= int(payload.candidate_score),
+            )
+        )
+    return query
+
+
 def _should_full_scan_adjustment_query(payload: AdjustmentSearchRequest) -> bool:
     return any(
         (
@@ -218,6 +236,71 @@ def _should_full_scan_adjustment_query(payload: AdjustmentSearchRequest) -> bool
             payload.reference_links_only,
             payload.exclude_mentor_warnings,
         )
+    )
+
+
+def _is_broad_adjustment_query(payload: AdjustmentSearchRequest) -> bool:
+    major = str(payload.major or "").strip()
+    broad_major = False
+    if major:
+        digits = re.sub(r"\D+", "", major)
+        broad_major = bool(digits) and len(digits) <= 2
+    has_precise_filters = any(
+        (
+            bool(str(payload.school_name or "").strip()),
+            bool(str(payload.keywords or "").strip()),
+            bool(major and not broad_major),
+            bool(str(payload.region or "").strip()),
+            bool(str(payload.city or "").strip()),
+            payload.year is not None,
+            payload.start_date is not None,
+            payload.end_date is not None,
+        )
+    )
+    if has_precise_filters:
+        return False
+    return any(
+        (
+            payload.candidate_score is not None,
+            bool(str(payload.school_tier or "").strip()),
+            payload.history_backed_only,
+            payload.long_track_only,
+            payload.reference_links_only,
+            payload.exclude_mentor_warnings,
+            broad_major,
+        )
+    )
+
+
+def _build_source_breakdown_from_rows(rows: list, *, prefix: str = "") -> dict[str, int]:
+    breakdown: dict[str, int] = {}
+    for row in rows:
+        source_type = str(getattr(row, "source_type", "") or "").strip()
+        if not source_type:
+            continue
+        key = f"{prefix}{source_type}"
+        breakdown[key] = breakdown.get(key, 0) + 1
+    return breakdown
+
+
+def _empty_adjustment_branch_response(
+    payload: AdjustmentSearchRequest,
+    request_id: str,
+    refresh_job_id: str | None,
+) -> SearchResponse:
+    return SearchResponse(
+        request_id=request_id,
+        mode="hybrid_refresh" if payload.refresh else "cache",
+        authenticated=True,
+        access_limited=False,
+        preview_limit=None,
+        items=[],
+        total=0,
+        page=payload.page,
+        page_size=payload.page_size,
+        source_breakdown={},
+        last_updated_at=None,
+        refresh_job_id=refresh_job_id,
     )
 
 
@@ -674,11 +757,14 @@ def _to_response(
                     else None
                 ),
                 historical_adjustment=historical_adjustment,
+                history_backed=(historical_adjustment.get("sample_count", 0) > 0) if historical_adjustment else None,
                 mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
                 mentor_department_radar=mentor_department_signal.__dict__ if mentor_department_signal is not None else None,
                 mentor_school_radar=mentor_school_signal.__dict__ if mentor_school_signal is not None else None,
                 release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
                 school_intelligence=school_signal.__dict__ if school_signal is not None else None,
+                long_track=(school_signal.confidence_label == "连续活跃") if school_signal is not None else None,
+                reference_link_count=len(school_signal.reference_urls) if school_signal is not None else None,
                 merged_count=1,
                 updated_at=row.updated_at,
             )
@@ -1231,11 +1317,15 @@ def _to_adjustment_opportunity_response(
                 adjustment_study_modes=[row.study_mode] if row.study_mode else [],
                 adjustment_has_vacancy=(row.vacancy_count > 0) if row.vacancy_count is not None else None,
                 historical_adjustment=insight.__dict__ if insight is not None else None,
+                history_backed=bool(row.has_history),
                 mentor_radar=mentor_signal.__dict__ if mentor_signal is not None else None,
                 mentor_department_radar=mentor_department_signal.__dict__ if mentor_department_signal is not None else None,
                 mentor_school_radar=mentor_school_signal.__dict__ if mentor_school_signal is not None else None,
                 release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
                 school_intelligence=school_signal.__dict__ if school_signal is not None else None,
+                long_track=bool(row.is_long_track),
+                reference_link_count=int(row.reference_link_count or 0),
+                min_score_required=row.min_score_required,
                 merged_count=int(merged["merged_count"]),
                 updated_at=row.updated_at,
             )
@@ -1268,12 +1358,24 @@ def _merge_adjustment_search_responses(
         reference_urls = item.school_intelligence.reference_urls if item.school_intelligence is not None else []
         if reference_urls:
             return True
+        if (item.reference_link_count or 0) > 0:
+            return True
         return item.item_kind == "opportunity" and bool(str(item.source_url or "").strip())
 
     def _matches_intelligence_filters(item: SearchItem) -> bool:
-        if payload.history_backed_only and (item.historical_adjustment.sample_count if item.historical_adjustment is not None else 0) <= 0:
+        history_sample_count = (
+            item.historical_adjustment.sample_count
+            if item.historical_adjustment is not None
+            else (1 if item.history_backed else 0)
+        )
+        confidence_label = (
+            item.school_intelligence.confidence_label
+            if item.school_intelligence is not None
+            else ("连续活跃" if item.long_track else None)
+        )
+        if payload.history_backed_only and history_sample_count <= 0:
             return False
-        if payload.long_track_only and (item.school_intelligence.confidence_label if item.school_intelligence is not None else None) != "连续活跃":
+        if payload.long_track_only and confidence_label != "连续活跃":
             return False
         if payload.reference_links_only and not _has_reference_links(item):
             return False
@@ -1487,34 +1589,40 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     if payload.refresh:
         refresh_job_id = _create_refresh_job(db, "adjustment", payload.model_dump(mode="json"), user.id if user else None)
     requires_full_scan = _should_full_scan_adjustment_query(payload)
+    broad_query_mode = _is_broad_adjustment_query(payload)
     page_window = payload.page * payload.page_size
+    scan_window = max(page_window, ADJUSTMENT_BROAD_SCAN_LIMIT) if broad_query_mode else page_window
 
-    content_total = content_query.count()
-    content_ordered_query = content_query.order_by(
-        Content.published_at.is_(None),
-        Content.published_at.desc(),
-        Content.updated_at.desc(),
-    )
-    if requires_full_scan:
-        content_rows = content_ordered_query.all()
+    if broad_query_mode:
+        content_response = _empty_adjustment_branch_response(payload, request_id, refresh_job_id)
     else:
-        content_rows = content_ordered_query.limit(page_window).all()
-    content_stats_rows = content_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
-    content_source_breakdown = {k: int(v) for k, v in content_stats_rows}
-    content_response = _to_response(
-        db,
-        payload,
-        request_id,
-        content_rows,
-        content_total,
-        content_source_breakdown,
-        refresh_job_id,
-        authenticated=True,
-    )
+        content_total = content_query.count()
+        content_ordered_query = content_query.order_by(
+            Content.published_at.is_(None),
+            Content.published_at.desc(),
+            Content.updated_at.desc(),
+        )
+        if requires_full_scan:
+            content_rows = content_ordered_query.all()
+        else:
+            content_rows = content_ordered_query.limit(page_window).all()
+        content_stats_rows = content_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
+        content_source_breakdown = {k: int(v) for k, v in content_stats_rows}
+        content_response = _to_response(
+            db,
+            payload,
+            request_id,
+            content_rows,
+            content_total,
+            content_source_breakdown,
+            refresh_job_id,
+            authenticated=True,
+        )
 
     opportunity_query = db.query(AdjustmentOpportunity)
     opportunity_query = _apply_adjustment_opportunity_filters(opportunity_query, payload)
-    opportunity_total = opportunity_query.count()
+    if broad_query_mode:
+        opportunity_query = _apply_adjustment_broad_scan_filters(opportunity_query, payload)
     opportunity_ordered_query = opportunity_query.order_by(
         AdjustmentOpportunity.published_at.is_(None),
         AdjustmentOpportunity.published_at.desc(),
@@ -1523,16 +1631,22 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
         AdjustmentOpportunity.vacancy_count.desc(),
         AdjustmentOpportunity.updated_at.desc(),
     )
-    if requires_full_scan:
-        opportunity_rows = opportunity_ordered_query.all()
+    if broad_query_mode:
+        opportunity_rows = opportunity_ordered_query.limit(scan_window).all()
+        opportunity_total = len(opportunity_rows)
+        opportunity_source_breakdown = _build_source_breakdown_from_rows(opportunity_rows, prefix="historical_")
     else:
-        opportunity_rows = opportunity_ordered_query.limit(page_window).all()
-    opportunity_stats_rows = (
-        opportunity_query.with_entities(AdjustmentOpportunity.source_type, func.count(AdjustmentOpportunity.id))
-        .group_by(AdjustmentOpportunity.source_type)
-        .all()
-    )
-    opportunity_source_breakdown = {f"historical_{k}": int(v) for k, v in opportunity_stats_rows}
+        opportunity_total = opportunity_query.count()
+        if requires_full_scan:
+            opportunity_rows = opportunity_ordered_query.all()
+        else:
+            opportunity_rows = opportunity_ordered_query.limit(page_window).all()
+        opportunity_stats_rows = (
+            opportunity_query.with_entities(AdjustmentOpportunity.source_type, func.count(AdjustmentOpportunity.id))
+            .group_by(AdjustmentOpportunity.source_type)
+            .all()
+        )
+        opportunity_source_breakdown = {f"historical_{k}": int(v) for k, v in opportunity_stats_rows}
     opportunity_response = _to_adjustment_opportunity_response(
         db,
         payload,

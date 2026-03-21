@@ -940,6 +940,10 @@ class SearchItem(BaseModel):
     adjustment_year: int | None = None
     adjustment_vacancy_count: int | None = None
     adjustment_merge_vacancy_count: int | None = None
+    history_backed: bool | None = None
+    long_track: bool | None = None
+    reference_link_count: int | None = None
+    min_score_required: int | None = None
     school_name: str | None
     department_name: str | None = None
     title: str
