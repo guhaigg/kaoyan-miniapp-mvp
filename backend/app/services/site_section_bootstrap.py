@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -52,6 +53,12 @@ _SECTION_RULES: list[tuple[str, str, list[str]]] = [
     ("admissions", "announcement", ["研究生招生", "招生信息", "招生工作", "招生简章", "复试", "录取", "推免"]),
     ("notice", "announcement", ["通知公告", "公告通知", "通知", "公告"]),
 ]
+_DETAIL_URL_PATTERNS = [
+    r"/page\.htm(?:l)?$",
+    r"/info/\d+/\d+\.htm(?:l)?$",
+    r"/c\d+[a-z]?\d+/page\.htm(?:l)?$",
+    r"/[a-z0-9_-]{0,12}\d{4,}\.htm(?:l)?$",
+]
 
 
 @dataclass(slots=True)
@@ -77,8 +84,28 @@ def _origin(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def _is_same_host(base_url: str, target_url: str) -> bool:
-    return (urlparse(base_url).netloc or "").lower() == (urlparse(target_url).netloc or "").lower()
+def _host_scope(host: str) -> str:
+    labels = [label for label in host.lower().split(".") if label]
+    if len(labels) >= 3 and labels[-2:] in (["edu", "cn"], ["ac", "cn"]):
+        return ".".join(labels[-3:])
+    if len(labels) >= 2:
+        return ".".join(labels[-2:])
+    return host.lower()
+
+
+def _is_same_site(base_url: str, target_url: str) -> bool:
+    base_host = (urlparse(base_url).netloc or "").lower()
+    target_host = (urlparse(target_url).netloc or "").lower()
+    if not base_host or not target_host:
+        return False
+    return _host_scope(base_host) == _host_scope(target_host)
+
+
+def looks_like_detail_page_url(url: str) -> bool:
+    path = (urlparse(url).path or "").lower()
+    if not path or path.endswith("/"):
+        return False
+    return any(re.search(pattern, path) for pattern in _DETAIL_URL_PATTERNS)
 
 
 def _normalize_label(text: str, fallback_url: str) -> str:
@@ -230,7 +257,7 @@ def _discover_entry_pages(*, homepage_urls: list[str], max_extra_pages: int) -> 
             if not href:
                 continue
             absolute_url = _normalize_url(urljoin(homepage_url, href))
-            if not absolute_url or not _is_same_host(homepage_url, absolute_url):
+            if not absolute_url or not _is_same_site(homepage_url, absolute_url):
                 continue
             score = _entry_score(str(item.get("text") or ""), absolute_url)
             if score <= 0:
@@ -245,7 +272,7 @@ def _discover_candidate_sections(seed_url: str) -> list[CandidateSection]:
     candidates: dict[str, CandidateSection] = {}
 
     page_match = _classify_section(page_title or "", seed_url)
-    if page_match is not None:
+    if page_match is not None and not looks_like_detail_page_url(seed_url):
         section_type, discovery_category, score = page_match
         candidates[seed_url] = CandidateSection(
             url=seed_url,
@@ -260,7 +287,9 @@ def _discover_candidate_sections(seed_url: str) -> list[CandidateSection]:
         if not href or href.startswith("javascript:") or href.startswith("#"):
             continue
         absolute_url = _normalize_url(urljoin(seed_url, href))
-        if not absolute_url or not _is_same_host(seed_url, absolute_url):
+        if not absolute_url or not _is_same_site(seed_url, absolute_url):
+            continue
+        if looks_like_detail_page_url(absolute_url):
             continue
         text = str(item.get("text") or "").strip()
         match = _classify_section(text, absolute_url)

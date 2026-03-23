@@ -2394,6 +2394,63 @@ def test_ensure_announcement_search_bootstrap_queues_existing_site_sections():
         assert job.query["school_name"] == "已建资产大学"
 
 
+def test_ensure_announcement_search_bootstrap_rebuilds_when_existing_sections_are_detail_pages(monkeypatch):
+    captured: dict[str, object] = {}
+
+    with SessionLocal() as db:
+        school = School(name="坏资产大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="坏资产大学官网",
+            source_type="official",
+            base_url="https://web.bad.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            SiteSection(
+                school_id=school.id,
+                source_id=source.id,
+                name="2026年博士研究生招生办法",
+                section_type="admissions",
+                section_url="https://web.bad.edu.cn/yjspyzx/dd/20/c19513a843040/page.htm",
+                discovery_category="announcement",
+                list_selector_config={},
+                detail_selector_config={},
+                enabled=1,
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_docs",
+        lambda school_name: [],
+    )
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_search",
+        lambda school_name: ["https://yjsc.bad.edu.cn/17205/list.htm"],
+    )
+
+    def _fake_bootstrap_site_sections(db, **kwargs):
+        captured.update(kwargs)
+        return {"job_ids": ["job-1"]}
+
+    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "坏资产大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert captured["homepage_url"] == "https://yjsc.bad.edu.cn/17205/list.htm"
+    assert "https://web.bad.edu.cn/yjspyzx/main.htm" in captured["seed_urls"]
+    assert "https://yjsc.bad.edu.cn/17205/" in captured["seed_urls"]
+
+
 def test_ensure_announcement_search_bootstrap_uses_site_origin_as_homepage(monkeypatch):
     captured: dict[str, object] = {}
 

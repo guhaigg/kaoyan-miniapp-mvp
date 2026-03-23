@@ -1,6 +1,7 @@
 from app.db import SessionLocal
 from app.models import Content, ContentFile, CrawlError, CrawlJob, School, SiteSection, SiteSectionLink, Source
 from app.services.crawler import crawl_engine
+from app.services.site_section_bootstrap import bootstrap_site_sections
 
 
 def _admin_headers() -> dict[str, str]:
@@ -47,6 +48,53 @@ def test_site_section_create_and_discover_job_creation(client):
         job = db.query(CrawlJob).filter(CrawlJob.id == payload["job_ids"][0]).one()
         assert job.query["site_section_id"] == section_id
         assert job.query["job_kind"] == "site_section_discovery"
+
+
+def test_bootstrap_site_sections_accepts_sibling_subdomain_and_skips_detail_pages(monkeypatch):
+    pages = {
+        "https://web.example.edu.cn/main.htm": (
+            """
+            <html><body>
+              <a href="https://yjs.example.edu.cn/">研究生院</a>
+            </body></html>
+            """,
+            "学校主页",
+        ),
+        "https://yjs.example.edu.cn/": (
+            """
+            <html><body>
+              <a href="https://yjs.example.edu.cn/17205/list.htm">博士研究生招生信息</a>
+              <a href="https://yjs.example.edu.cn/ea/79/c17243a846457/page.htm">【博士招生】资格审核结果查询</a>
+            </body></html>
+            """,
+            "研究生院",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    with SessionLocal() as db:
+        result = bootstrap_site_sections(
+            db,
+            school_name="跨子域大学",
+            homepage_url="https://web.example.edu.cn/main.htm",
+            department_name=None,
+            department_type="graduate_school",
+            seed_urls=[],
+            enabled=True,
+            queue_discovery=False,
+            max_sections=8,
+        )
+        urls = [item.section_url for item in result["items"]]
+    assert "https://yjs.example.edu.cn/17205/list.htm" in urls
+    assert "https://yjs.example.edu.cn/ea/79/c17243a846457/page.htm" not in urls
 
 
 def test_site_section_discovery_creates_html_jobs_and_pdf_records(client, monkeypatch):

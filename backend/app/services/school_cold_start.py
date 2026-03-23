@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse, quote
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models import CrawlJob, School, SiteSection, utcnow
+from ..models import CrawlJob, School, SiteSection, SiteSectionLink, utcnow
 from .crawler import _extract_title, _fetch_with_retry
 from .site_section_bootstrap import bootstrap_site_sections
 
@@ -45,6 +46,12 @@ _SEARCH_QUERIES = (
     "{school_name} 研究生招生",
     "{school_name} 招生信息网",
 )
+_DETAIL_SECTION_URL_PATTERNS = [
+    r"/page\.htm(?:l)?$",
+    r"/info/\d+/\d+\.htm(?:l)?$",
+    r"/c\d+[a-z]?\d+/page\.htm(?:l)?$",
+    r"/[a-z0-9_-]{0,12}\d{4,}\.htm(?:l)?$",
+]
 
 
 def _docs_data_dir() -> Path:
@@ -71,6 +78,32 @@ def _parent_url(url: str) -> str | None:
     if not parent_path:
         return None
     return f"{parsed.scheme}://{parsed.netloc}{parent_path if parent_path.endswith('/') else parent_path + '/'}"
+
+
+def _looks_like_detail_section_url(url: str) -> bool:
+    path = (urlparse(url).path or "").lower()
+    if not path or path.endswith("/"):
+        return False
+    return any(re.search(pattern, path) for pattern in _DETAIL_SECTION_URL_PATTERNS)
+
+
+def _derive_recovery_seed_urls_from_section_url(url: str) -> list[str]:
+    normalized = _normalize_url(url)
+    if not normalized:
+        return []
+    parsed = urlparse(normalized)
+    if not parsed.scheme or not parsed.netloc:
+        return []
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    seeds: list[str] = [normalized]
+    if segments:
+        root_prefix = f"{parsed.scheme}://{parsed.netloc}/{segments[0]}/"
+        seeds.extend([urljoin(root_prefix, "main.htm"), root_prefix])
+    parent = _parent_url(normalized)
+    if parent:
+        seeds.append(parent)
+    seeds.append(_url_origin(normalized))
+    return _dedupe_texts(seeds)
 
 
 @lru_cache(maxsize=1)
@@ -231,7 +264,12 @@ def _resolve_bootstrap_entrypoint(seed_urls: list[str], expanded_seed_urls: list
     if not ordered:
         return "", []
     primary_seed = _normalize_url(seed_urls[0] if seed_urls else ordered[0])
-    homepage_url = _url_origin(primary_seed) or _normalize_url(ordered[0])
+    parsed_primary = urlparse(primary_seed)
+    primary_path = (parsed_primary.path or "").lower()
+    if primary_path.endswith(("main.htm", "index.htm", "list.htm")) or primary_path.endswith("/"):
+        homepage_url = primary_seed
+    else:
+        homepage_url = _url_origin(primary_seed) or _normalize_url(ordered[0])
     extra_seed_urls: list[str] = []
     seen: set[str] = {homepage_url}
     for candidate in [primary_seed, *ordered]:
@@ -322,30 +360,53 @@ def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[
             .all()
         )
 
+    reusable_sections = existing_sections
+    recovery_seed_urls: list[str] = []
     if existing_sections:
-        section_ids = {section.id for section in existing_sections}
+        link_counts = {
+            section_id: count
+            for section_id, count in (
+                db.query(SiteSectionLink.site_section_id, func.count(SiteSectionLink.id))
+                .filter(SiteSectionLink.site_section_id.in_([section.id for section in existing_sections]))
+                .group_by(SiteSectionLink.site_section_id)
+                .all()
+            )
+        }
+        reusable_sections = [
+            section
+            for section in existing_sections
+            if not (_looks_like_detail_section_url(section.section_url) and int(link_counts.get(section.id, 0) or 0) == 0)
+        ]
+        if not reusable_sections:
+            for section in existing_sections:
+                recovery_seed_urls.extend(_derive_recovery_seed_urls_from_section_url(section.section_url))
+
+    if reusable_sections:
+        section_ids = {section.id for section in reusable_sections}
         pending_jobs = _find_pending_discovery_jobs(db, normalized_school_name, section_ids)
         if pending_jobs:
             return {
                 "state": "in_progress",
                 "school_name": normalized_school_name,
                 "message": f"已自动启动 {normalized_school_name} 的公告补抓，正在拉取官网栏目，请稍后自动刷新。",
-                "candidate_urls": [section.section_url for section in existing_sections[:5]],
+                "candidate_urls": [section.section_url for section in reusable_sections[:5]],
                 "job_ids": [job.id for job in pending_jobs],
             }
 
-        job_ids = _queue_existing_section_jobs(db, school_name=normalized_school_name, sections=existing_sections)
+        job_ids = _queue_existing_section_jobs(db, school_name=normalized_school_name, sections=reusable_sections)
         return {
             "state": "queued",
             "school_name": normalized_school_name,
             "message": f"已发现 {normalized_school_name} 的现有栏目资产，正在补抓最新公告，请稍后自动刷新。",
-            "candidate_urls": [section.section_url for section in existing_sections[:5]],
+            "candidate_urls": [section.section_url for section in reusable_sections[:5]],
             "job_ids": job_ids,
         }
 
     seed_urls = _discover_seed_urls_from_docs(normalized_school_name)
     if not seed_urls:
         seed_urls = _discover_seed_urls_from_search(normalized_school_name)
+    if recovery_seed_urls:
+        seed_urls = _dedupe_texts([*seed_urls, *recovery_seed_urls])
     expanded_seed_urls = _expand_seed_urls(seed_urls)
     if not expanded_seed_urls:
         return {
