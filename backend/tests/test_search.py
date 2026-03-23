@@ -93,6 +93,66 @@ def test_announcement_search_school_filter_matches_extra_school_name_when_school
     assert payload["items"][0]["title"] == "辽宁师范大学研究生招生通知"
 
 
+def test_announcement_search_full_school_name_does_not_match_other_schools_with_same_city_prefix(client, monkeypatch):
+    with SessionLocal() as db:
+        school = School(name="上海应用技术大学", aliases=[])
+        db.add(school)
+        db.flush()
+        db.add(
+            Content(
+                category="announcement",
+                title="上海应用技术大学信息公开网",
+                body="这是上海应用技术大学的信息公开内容。",
+                summary="上海应用技术大学信息公开内容",
+                school_id=school.id,
+                source_type="crawler",
+                source_url="https://info.sit.edu.cn/",
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        "app.routers.search.ensure_announcement_search_bootstrap",
+        lambda db, school_name: {
+            "school_name": school_name,
+            "state": "queued",
+            "message": f"已自动启动 {school_name} 的公告补抓。",
+            "job_ids": ["job-1"],
+        },
+    )
+
+    response = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "上海师范大学"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["items"] == []
+    assert payload["cold_start"]["state"] == "queued"
+    assert payload["cold_start"]["school_name"] == "上海师范大学"
+
+
+def test_announcement_search_returns_graceful_cold_start_message_when_bootstrap_raises(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.search.ensure_announcement_search_bootstrap",
+        lambda db, school_name: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    response = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "上海师范大学"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["cold_start"]["state"] == "no_candidate"
+    assert "补抓暂时失败" in payload["cold_start"]["message"]
+    assert payload["cold_start"]["school_name"] == "上海师范大学"
+
+
 def test_adjustment_search_can_find_content_promoted_by_classifier(client):
     response = client.post(
         "/api/v1/content",

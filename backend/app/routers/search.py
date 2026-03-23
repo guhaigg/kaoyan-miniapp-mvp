@@ -108,6 +108,13 @@ def _build_exact_school_terms(value: str) -> list[str]:
     return _dedupe_terms([raw, compact])
 
 
+def _should_use_exact_school_filter(value: str) -> bool:
+    normalized = re.sub(r"\s+", "", str(value or "").strip())
+    if not normalized:
+        return False
+    return any(normalized.endswith(suffix) for suffix in SCHOOL_SUFFIXES)
+
+
 def _build_keyword_terms(value: str) -> list[str]:
     raw = value.strip()
     compact = re.sub(r"\s+", "", raw)
@@ -189,8 +196,10 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
         query = query.join(School, isouter=True)
     if payload.school_name:
         raw_school_name = payload.school_name.strip()
-        terms = _dedupe_terms(
-            [*(_build_school_search_terms(raw_school_name)), normalize_school_name(raw_school_name)]
+        terms = (
+            _build_exact_school_terms(raw_school_name)
+            if _should_use_exact_school_filter(raw_school_name)
+            else _dedupe_terms([*(_build_school_search_terms(raw_school_name)), normalize_school_name(raw_school_name)])
         )
         extra_school_name_expr = cast(func.json_extract(Content.extra, "$.school_name"), Text)
         query = query.filter(
@@ -1750,7 +1759,17 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         source_breakdown = {k: int(v) for k, v in stats_rows}
     cold_start = None
     if total == 0 and effective_payload.page == 1 and str(effective_payload.school_name or "").strip():
-        cold_start = ensure_announcement_search_bootstrap(db, str(effective_payload.school_name or "").strip())
+        requested_school_name = str(effective_payload.school_name or "").strip()
+        try:
+            cold_start = ensure_announcement_search_bootstrap(db, requested_school_name)
+        except Exception:
+            cold_start = {
+                "state": "no_candidate",
+                "school_name": requested_school_name,
+                "message": f"{requested_school_name} 的陌生院校补抓暂时失败，请稍后重试。",
+                "candidate_urls": [],
+                "job_ids": [],
+            }
 
     refresh_job_id = None
     if effective_payload.refresh:
