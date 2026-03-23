@@ -152,8 +152,22 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
     if payload.school_name or payload.keywords:
         query = query.join(School, isouter=True)
     if payload.school_name:
-        terms = _build_exact_school_terms(payload.school_name.strip())
-        query = query.filter(or_(*[School.name.ilike(f"%{term}%") for term in terms]))
+        raw_school_name = payload.school_name.strip()
+        terms = _dedupe_terms(
+            [*(_build_school_search_terms(raw_school_name)), normalize_school_name(raw_school_name)]
+        )
+        extra_school_name_expr = cast(func.json_extract(Content.extra, "$.school_name"), Text)
+        query = query.filter(
+            or_(
+                *[
+                    or_(
+                        School.name.ilike(f"%{term}%"),
+                        extra_school_name_expr.ilike(f"%{term}%"),
+                    )
+                    for term in terms
+                ]
+            )
+        )
     if payload.keywords:
         keyword_terms = _build_keyword_terms(payload.keywords.strip())
         department_name_expr = cast(func.json_extract(Content.extra, "$.department_name"), Text)
@@ -746,8 +760,8 @@ def _to_response(
     release_timings = load_release_timing_for_search(db, [row.school.name if row.school else "" for row in items])
     serialized = []
     for row in items:
-        school_name = row.school.name if row.school else None
         extra = dict(row.extra or {})
+        school_name = row.school.name if row.school else (str(extra.get("school_name") or "").strip() or None)
         display_title, display_summary, display_published_at = resolve_content_display_fields(
             title=row.title,
             summary=row.summary,

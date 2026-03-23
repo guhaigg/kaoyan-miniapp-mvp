@@ -65,6 +65,33 @@ def test_search_announcements_and_adjustments(client):
     assert denied_adjustments.status_code == 401
 
 
+def test_announcement_search_school_filter_matches_extra_school_name_when_school_fk_is_missing(client):
+    with SessionLocal() as db:
+        db.add(
+            Content(
+                category="announcement",
+                title="辽宁师范大学研究生招生通知",
+                body="这里是最新招生安排。",
+                summary="最新招生安排",
+                school_id=None,
+                source_type="manual",
+                source_url="https://example.com/lnnu-announcement",
+                extra={"school_name": "辽宁师范大学", "tags": ["招生简章"]},
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "辽宁师范大学"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["school_name"] == "辽宁师范大学"
+    assert payload["items"][0]["title"] == "辽宁师范大学研究生招生通知"
+
+
 def test_adjustment_search_can_find_content_promoted_by_classifier(client):
     response = client.post(
         "/api/v1/content",
