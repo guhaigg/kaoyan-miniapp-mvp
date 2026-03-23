@@ -167,6 +167,140 @@ def test_site_section_discovery_creates_html_jobs_and_pdf_records(client, monkey
     assert links_resp.json()["total"] == 2
 
 
+def test_site_section_discovery_accepts_shnu_legacy_detail_urls_outside_list_prefix(client, monkeypatch):
+    create_resp = client.post(
+        "/api/v1/site-sections",
+        json={
+            "name": "上海师范大学教育学院通知",
+            "section_type": "notice",
+            "section_url": "http://web.shnu.edu.cn/yjspyzx/19513/list.htm",
+            "school_name": "上海师范大学",
+            "department_name": "教育学院",
+            "list_selector_config": {
+                "allowed_path_prefixes": ["/yjspyzx/19513/"],
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert create_resp.status_code == 200
+    section_id = create_resp.json()["id"]
+
+    monkeypatch.setattr(
+        "app.services.crawler.httpx.get",
+        lambda *args, **kwargs: _DummyResponse(
+            """
+            <html>
+              <body>
+                <a href="/yjspyzx/19512/list.htm">更多>></a>
+                <table class="ArticleList">
+                  <tr><td><a href="/yjspyzx/ec/d6/c19513a847062/page.htm">教育学院2026年学术型博士研究生招生进入综合考核考生名单（增补）</a></td></tr>
+                  <tr><td><a href="/yjspyzx/dd/20/c19513a843040/page.htm">上海师范大学教育学院2026年博士研究生招生办法</a></td></tr>
+                </table>
+                <ul class="wp_paging">
+                  <li><a class="next" href="/yjspyzx/19513/list2.htm"><span>下一页>></span></a></li>
+                  <li><a class="last" href="/yjspyzx/19513/list11.htm"><span>尾页</span></a></li>
+                </ul>
+              </body>
+            </html>
+            """
+        ),
+    )
+
+    discover_resp = client.post(
+        "/api/v1/site-sections/discover",
+        json={"school_name": "上海师范大学", "department_name": "教育学院"},
+        headers=_admin_headers(),
+    )
+    assert discover_resp.status_code == 200
+
+    processed = crawl_engine.process_job_batch()
+    assert processed == 1
+
+    with SessionLocal() as db:
+        links = (
+            db.query(SiteSectionLink)
+            .filter(SiteSectionLink.site_section_id == section_id)
+            .order_by(SiteSectionLink.link_url.asc())
+            .all()
+        )
+        assert [link.link_url for link in links] == [
+            "http://web.shnu.edu.cn/yjspyzx/dd/20/c19513a843040/page.htm",
+            "http://web.shnu.edu.cn/yjspyzx/ec/d6/c19513a847062/page.htm",
+        ]
+        assert all(link.status == "enqueued" for link in links)
+        child_jobs = (
+            db.query(CrawlJob)
+            .filter(CrawlJob.id.in_([link.crawl_job_id for link in links if link.crawl_job_id]))
+            .all()
+        )
+        assert len(child_jobs) == 2
+        assert all(job.query["job_kind"] == "detail_fetch" for job in child_jobs)
+
+
+def test_site_section_discovery_accepts_shnu_subdomain_detail_urls_outside_list_prefix(client, monkeypatch):
+    create_resp = client.post(
+        "/api/v1/site-sections",
+        json={
+            "name": "上海师范大学博士招生信息",
+            "section_type": "admissions",
+            "section_url": "https://yjsc.shnu.edu.cn/17205/list.htm",
+            "school_name": "上海师范大学",
+            "department_name": "研究生院",
+            "department_type": "graduate_school",
+            "list_selector_config": {
+                "allowed_path_prefixes": ["/17205/"],
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert create_resp.status_code == 200
+    section_id = create_resp.json()["id"]
+
+    monkeypatch.setattr(
+        "app.services.crawler.httpx.get",
+        lambda *args, **kwargs: _DummyResponse(
+            """
+            <html>
+              <body class="main">
+                <nav>
+                  <a href="/17192/list.htm">招生工作</a>
+                  <a href="/17206/list.htm">硕士研究生招生信息</a>
+                </nav>
+                <table class="ArticleList">
+                  <tr><td><a href="/eb/aa/c17205a846762/page.htm">【博士招生】上海师范大学2026年博士研究生招生综合考核考生须知</a></td></tr>
+                  <tr><td><a href="/ea/79/c17205a846457/page.htm">【博士招生】上海师范大学2026年博士研究生招生报考资格审核结果查询</a></td></tr>
+                </table>
+                <a class="next" href="/17205/list2.htm">下一页>></a>
+              </body>
+            </html>
+            """
+        ),
+    )
+
+    discover_resp = client.post(
+        "/api/v1/site-sections/discover",
+        json={"school_name": "上海师范大学", "department_name": "研究生院"},
+        headers=_admin_headers(),
+    )
+    assert discover_resp.status_code == 200
+
+    processed = crawl_engine.process_job_batch()
+    assert processed == 1
+
+    with SessionLocal() as db:
+        links = (
+            db.query(SiteSectionLink)
+            .filter(SiteSectionLink.site_section_id == section_id)
+            .order_by(SiteSectionLink.link_url.asc())
+            .all()
+        )
+        assert [link.link_url for link in links] == [
+            "https://yjsc.shnu.edu.cn/ea/79/c17205a846457/page.htm",
+            "https://yjsc.shnu.edu.cn/eb/aa/c17205a846762/page.htm",
+        ]
+        assert all(link.status == "enqueued" for link in links)
+
+
 def test_site_section_discovery_failure_writes_crawl_error(client, monkeypatch):
     create_resp = client.post(
         "/api/v1/site-sections",

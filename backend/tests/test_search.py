@@ -2451,7 +2451,7 @@ def test_ensure_announcement_search_bootstrap_rebuilds_when_existing_sections_ar
     assert "https://yjsc.bad.edu.cn/17205/" in captured["seed_urls"]
 
 
-def test_ensure_announcement_search_bootstrap_uses_site_origin_as_homepage(monkeypatch):
+def test_ensure_announcement_search_bootstrap_uses_list_seed_as_homepage(monkeypatch):
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
@@ -2471,10 +2471,10 @@ def test_ensure_announcement_search_bootstrap_uses_site_origin_as_homepage(monke
 
     assert result is not None
     assert result["state"] == "queued"
-    assert captured["homepage_url"] == "https://lnnu.edu.cn"
+    assert captured["homepage_url"] == "https://lnnu.edu.cn/yjs/tzgg/list.htm"
     assert captured["seed_urls"] == [
-        "https://lnnu.edu.cn/yjs/tzgg/list.htm",
         "https://lnnu.edu.cn/yjs/tzgg/",
+        "https://lnnu.edu.cn",
     ]
 
 
@@ -2531,8 +2531,8 @@ def test_ensure_announcement_search_bootstrap_accepts_matching_search_candidates
 
     assert result is not None
     assert result["state"] == "queued"
-    assert captured["homepage_url"] == "https://lnnu.edu.cn"
-    assert captured["seed_urls"] == ["https://lnnu.edu.cn/yjs/"]
+    assert captured["homepage_url"] == "https://lnnu.edu.cn/yjs/"
+    assert captured["seed_urls"] == ["https://lnnu.edu.cn"]
 
 
 def test_search_announcements_excludes_non_detail_and_test_rows(client):

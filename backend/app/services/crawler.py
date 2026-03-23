@@ -73,6 +73,7 @@ _DEFAULT_EXCLUDE_URL_SUFFIXES = [
 ]
 _DEFAULT_LIST_CSS_SELECTOR = ", ".join(
     [
+        ".ArticleList a[href]",
         ".article-list a[href]",
         ".news-list a[href]",
         ".notice-list a[href]",
@@ -84,6 +85,7 @@ _DEFAULT_LIST_CSS_SELECTOR = ", ".join(
 )
 _DEFAULT_LIST_XPATH_SELECTOR = " | ".join(
     [
+        "//table[contains(@class, 'ArticleList')]//a[@href]",
         "//div[contains(@class, 'article-list')]//a[@href]",
         "//ul[contains(@class, 'news-list')]//a[@href]",
         "//ul[contains(@class, 'notice-list')]//a[@href]",
@@ -237,6 +239,18 @@ def _to_optional_string(value: Any) -> str | None:
     return text or None
 
 
+def _derive_auto_include_url_regexes(section_url: str) -> list[str]:
+    path = (urlparse(section_url).path or "").strip().lower()
+    match = re.search(r"/(?P<column_id>\d+)/list\d*\.htm(?:l)?$", path)
+    if not match:
+        return []
+    column_id = match.group("column_id")
+    return [
+        rf"/c{column_id}[a-z]?\d+/page\.htm(?:l)?$",
+        rf"/info/{column_id}/\d+\.htm(?:l)?$",
+    ]
+
+
 def _has_manual_selector(raw_config: dict[str, Any]) -> bool:
     return bool(_to_optional_string(raw_config.get("css_selector")) or _to_optional_string(raw_config.get("xpath_selector")))
 
@@ -315,6 +329,10 @@ def build_site_section_list_selector_config(section: SiteSection, overrides: dic
             pass
     if "fallback_to_all_links" in raw_config:
         config["fallback_to_all_links"] = bool(raw_config.get("fallback_to_all_links"))
+
+    for pattern in _derive_auto_include_url_regexes(str(getattr(section, "section_url", "") or "")):
+        if pattern not in config["include_url_regexes"]:
+            config["include_url_regexes"].append(pattern)
     return config
 
 
@@ -363,6 +381,33 @@ def _path_allowed(path: str, prefixes: list[str]) -> bool:
     return any(path.startswith(prefix) for prefix in prefixes)
 
 
+def _matches_include_rules(*, url_text: str, normalized_text: str, config: dict[str, Any]) -> tuple[bool, bool]:
+    matched = False
+    has_rules = False
+
+    include_url_keywords = config.get("include_url_keywords") or []
+    if include_url_keywords:
+        has_rules = True
+        matched = matched or _matches_keyword_list(url_text, include_url_keywords)
+
+    include_text_keywords = config.get("include_text_keywords") or []
+    if include_text_keywords:
+        has_rules = True
+        matched = matched or _matches_keyword_list(normalized_text, include_text_keywords)
+
+    include_url_regexes = config.get("include_url_regexes") or []
+    if include_url_regexes:
+        has_rules = True
+        matched = matched or _matches_regex_list(url_text, include_url_regexes)
+
+    include_text_regexes = config.get("include_text_regexes") or []
+    if include_text_regexes:
+        has_rules = True
+        matched = matched or _matches_regex_list(normalized_text, include_text_regexes)
+
+    return has_rules, matched
+
+
 def _link_matches_selector_config(*, section_url: str, absolute_url: str, text: str, config: dict[str, Any]) -> bool:
     parsed_target = urlparse(absolute_url)
     parsed_section = urlparse(section_url)
@@ -376,9 +421,6 @@ def _link_matches_selector_config(*, section_url: str, absolute_url: str, text: 
 
     allowed_hosts = [host.lower() for host in config.get("allowed_hosts") or []]
     if allowed_hosts and target_host not in allowed_hosts:
-        return False
-
-    if not _path_allowed(target_path, config.get("allowed_path_prefixes") or []):
         return False
 
     min_text_length = int(config.get("min_text_length") or 0)
@@ -399,20 +441,16 @@ def _link_matches_selector_config(*, section_url: str, absolute_url: str, text: 
     if any(target_path.lower().endswith(suffix) for suffix in suffixes):
         return False
 
-    include_url_keywords = config.get("include_url_keywords") or []
-    if include_url_keywords and not _matches_keyword_list(url_text, include_url_keywords):
+    has_include_rules, matched_include_rules = _matches_include_rules(
+        url_text=url_text,
+        normalized_text=normalized_text,
+        config=config,
+    )
+
+    if not _path_allowed(target_path, config.get("allowed_path_prefixes") or []) and not matched_include_rules:
         return False
 
-    include_text_keywords = config.get("include_text_keywords") or []
-    if include_text_keywords and not _matches_keyword_list(normalized_text, include_text_keywords):
-        return False
-
-    include_url_regexes = config.get("include_url_regexes") or []
-    if include_url_regexes and not _matches_regex_list(url_text, include_url_regexes):
-        return False
-
-    include_text_regexes = config.get("include_text_regexes") or []
-    if include_text_regexes and not _matches_regex_list(normalized_text, include_text_regexes):
+    if has_include_rules and not matched_include_rules:
         return False
 
     return True
