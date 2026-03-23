@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 from sqlalchemy import or_
+from sqlalchemy.orm import selectinload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +42,75 @@ def _can_refetch(row: Content) -> bool:
     return bool(source_url) and source_url.startswith(("http://", "https://")) and not _is_pdf_url(source_url)
 
 
+def _repair_row_by_snapshot(row: Content) -> list[str]:
+    if not row.snapshots:
+        return []
+
+    snapshot = max(
+        row.snapshots,
+        key=lambda item: item.created_at or utcnow(),
+    )
+    raw_html = str(snapshot.raw_html or "").strip()
+    raw_text = str(snapshot.raw_text or "").strip()
+    extracted_body = ""
+    extraction_method = None
+    readability_title = None
+    outbound_links: list[dict[str, str]] = []
+    source_url = str(row.source_url or "").strip()
+
+    if raw_html:
+        extracted_body, extraction_method, readability_title = _extract_detail_body(raw_html, detail_selector_config=None)
+        if source_url:
+            outbound_links = _extract_outbound_links(raw_html, base_url=source_url, current_url=source_url)
+
+    body = str(extracted_body or raw_text or "").strip()
+    if not body:
+        return []
+
+    title = readability_title or (_extract_title(raw_html) if raw_html else None) or row.title
+    summary = summarize_text(body)
+    extra = dict(row.extra or {})
+
+    if raw_html and source_url and _looks_like_link_notice(body=body, raw_html=raw_html, outbound_links=outbound_links):
+        body, summary = _build_link_notice_content(title, outbound_links)
+        extra["notice_kind"] = "link_notice"
+        extra["outbound_links"] = outbound_links
+
+    display_title, display_summary, display_published_at = resolve_content_display_fields(
+        title=title,
+        summary=None,
+        published_at=row.published_at,
+        body=body,
+    )
+    display_summary = display_summary or summary
+
+    changed_fields: list[str] = []
+    if body != row.body:
+        row.body = body
+        changed_fields.append("body")
+    if display_title and display_title != row.title:
+        row.title = display_title
+        changed_fields.append("title")
+    if display_summary != row.summary:
+        row.summary = display_summary
+        changed_fields.append("summary")
+    if display_published_at != row.published_at:
+        row.published_at = display_published_at
+        changed_fields.append("published_at")
+
+    if extraction_method:
+        extra["detail_extraction_method"] = extraction_method
+    extra["tags"] = _build_content_tags(display_title, display_summary, body)
+    repair_meta = dict(extra.get("repair_meta") or {})
+    repair_meta["last_snapshot_repair_at"] = utcnow().isoformat()
+    repair_meta["last_snapshot_repair_content_snapshot_id"] = snapshot.id
+    extra["repair_meta"] = repair_meta
+    row.extra = extra
+    if changed_fields:
+        changed_fields.append("extra")
+    return changed_fields
+
+
 def _repair_row_by_refetch(row: Content) -> list[str]:
     source_url = str(row.source_url or "").strip()
     response = _fetch_with_retry(source_url)
@@ -62,10 +132,11 @@ def _repair_row_by_refetch(row: Content) -> list[str]:
 
     display_title, display_summary, display_published_at = resolve_content_display_fields(
         title=title,
-        summary=summary,
+        summary=None,
         published_at=row.published_at,
         body=body,
     )
+    display_summary = display_summary or summary
 
     changed_fields: list[str] = []
     if body != row.body:
@@ -102,7 +173,7 @@ def main() -> int:
     args = parser.parse_args()
 
     with SessionLocal() as db:
-        query = db.query(Content).filter(Content.category == "announcement")
+        query = db.query(Content).options(selectinload(Content.snapshots)).filter(Content.category == "announcement")
         if args.source_url.strip():
             query = query.filter(Content.source_url == args.source_url.strip())
         else:
@@ -125,10 +196,14 @@ def main() -> int:
 
         scanned = 0
         body_repaired = 0
+        snapshot_repaired = 0
         refetch_repaired = 0
         unresolved = 0
         skipped = 0
         refetch_failed = 0
+        unresolved_missing_title = 0
+        unresolved_missing_summary = 0
+        unresolved_missing_published_at = 0
 
         for row in query.all():
             scanned += 1
@@ -141,6 +216,11 @@ def main() -> int:
             if body_changes:
                 body_repaired += 1
 
+            if _needs_repair(row):
+                snapshot_changes = _repair_row_by_snapshot(row)
+                if snapshot_changes:
+                    snapshot_repaired += 1
+
             if _needs_repair(row) and not args.skip_refetch and _can_refetch(row):
                 try:
                     refetch_changes = _repair_row_by_refetch(row)
@@ -152,6 +232,12 @@ def main() -> int:
 
             if _needs_repair(row):
                 unresolved += 1
+                if looks_like_placeholder_content_title(row.title):
+                    unresolved_missing_title += 1
+                if not str(row.summary or "").strip():
+                    unresolved_missing_summary += 1
+                if row.published_at is None:
+                    unresolved_missing_published_at += 1
 
         if args.dry_run:
             db.rollback()
@@ -163,10 +249,14 @@ def main() -> int:
             [
                 f"scanned={scanned}",
                 f"body_repaired={body_repaired}",
+                f"snapshot_repaired={snapshot_repaired}",
                 f"refetch_repaired={refetch_repaired}",
                 f"unresolved={unresolved}",
                 f"refetch_failed={refetch_failed}",
                 f"skipped={skipped}",
+                f"unresolved_missing_title={unresolved_missing_title}",
+                f"unresolved_missing_summary={unresolved_missing_summary}",
+                f"unresolved_missing_published_at={unresolved_missing_published_at}",
                 f"dry_run={args.dry_run}",
             ]
         )

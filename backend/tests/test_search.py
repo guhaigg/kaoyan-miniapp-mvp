@@ -2,10 +2,11 @@ from datetime import datetime
 
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
-from app.models import AdjustmentOpportunity, Content, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School
+from app.models import AdjustmentOpportunity, Content, ContentSnapshot, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 from app.routers.search import _build_adjustment_detail_from_opportunity
+from scripts.repair_stale_announcement_content import _repair_row_by_snapshot
 
 
 def _register_and_login(client, username: str) -> str:
@@ -2176,6 +2177,62 @@ def test_search_announcements_recovers_stale_content_fields_from_body(client):
     assert item["title"] == "摘要修复大学关于2024年同等学力申硕学员现场确认暨开学典礼的通知"
     assert item["summary"].startswith("根据《摘要修复大学同等学力人员申请硕士学位工作实施办法》")
     assert item["published_at"].startswith("2024-08-30")
+
+
+def test_repair_stale_announcement_script_uses_snapshots_before_refetch():
+    source_url = "https://example.com/stale/snapshot-3019.htm"
+    with SessionLocal() as db:
+        school = School(name="快照修复大学", aliases=[])
+        db.add(school)
+        db.flush()
+
+        content = Content(
+            category="announcement",
+            title="3019.htm",
+            body="详情请查看原文",
+            summary=None,
+            school_id=school.id,
+            source_url=source_url,
+            source_type="crawler",
+            published_at=None,
+            region=None,
+            major=None,
+            extra={},
+        )
+        db.add(content)
+        db.flush()
+        db.add(
+            ContentSnapshot(
+                content_id=content.id,
+                raw_html=(
+                    "<html><head><title>快照修复大学关于2024年同等学力申硕学员现场确认暨开学典礼的通知</title></head>"
+                    "<body><article><h1>快照修复大学关于2024年同等学力申硕学员现场确认暨开学典礼的通知</h1>"
+                    "<div>发布时间：2024-08-30</div>"
+                    "<p>根据《快照修复大学同等学力人员申请硕士学位工作实施办法》的相关规定，"
+                    "现就2024年同等学力申硕第一批次学员现场确认等事宜通知如下。</p>"
+                    "</article></body></html>"
+                ),
+                raw_text=(
+                    "快照修复大学关于2024年同等学力申硕学员现场确认暨开学典礼的通知 "
+                    "发布时间：2024-08-30 根据《快照修复大学同等学力人员申请硕士学位工作实施办法》的相关规定，"
+                    "现就2024年同等学力申硕第一批次学员现场确认等事宜通知如下。"
+                ),
+                snapshot_meta={},
+            )
+        )
+        db.commit()
+        db.refresh(content)
+
+        changed_fields = _repair_row_by_snapshot(content)
+        db.commit()
+        repaired = db.query(Content).filter(Content.source_url == source_url).one()
+
+    assert "title" in changed_fields
+    assert "summary" in changed_fields
+    assert "published_at" in changed_fields
+    assert repaired.title == "快照修复大学关于2024年同等学力申硕学员现场确认暨开学典礼的通知"
+    assert repaired.summary.startswith("根据《快照修复大学同等学力人员申请硕士学位工作实施办法》")
+    assert repaired.published_at.isoformat().startswith("2024-08-30")
 
 
 def test_search_cache_skips_refresh_and_page_beyond_limit():
