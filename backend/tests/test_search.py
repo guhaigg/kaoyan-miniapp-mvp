@@ -2230,6 +2230,43 @@ def test_search_announcements_returns_cold_start_metadata_for_unknown_school(cli
     assert payload["cold_start"]["job_ids"] == ["job-1"]
 
 
+def test_search_announcements_excludes_school_bound_rows_when_body_does_not_match_school_name(client, monkeypatch):
+    with SessionLocal() as db:
+        school = School(name="辽宁师范大学", aliases=[])
+        db.add(school)
+        db.flush()
+        db.add(
+            Content(
+                category="announcement",
+                title="东北财经大学2026年全国硕士研究生招生章程",
+                body="东北财经大学研究生院发布最新招生安排。",
+                summary="东北财经大学研究生院发布最新招生安排。",
+                school_id=school.id,
+                source_type="crawler",
+                source_url="http://graduate.dufe.edu.cn/zsgz/bszs/",
+                extra={"school_name": "辽宁师范大学"},
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        "app.routers.search.ensure_announcement_search_bootstrap",
+        lambda db, school_name: {
+            "state": "queued",
+            "school_name": school_name,
+            "message": f"已自动启动 {school_name} 的公告补抓。",
+            "candidate_urls": [],
+            "job_ids": ["job-1"],
+        },
+    )
+
+    response = client.post("/api/v1/search/announcements", json={"school_name": "辽宁师范大学"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["cold_start"]["state"] == "queued"
+
+
 def test_search_announcements_skips_zero_result_cache_when_cold_start_is_needed(client, monkeypatch):
     search_response_cache.clear()
     calls: list[str] = []

@@ -55,6 +55,7 @@ SCHOOL_SUFFIXES = (
     "农业大学",
     "中医药大学",
 )
+EXPLICIT_SCHOOL_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]{2,40}?(?:大学|研究院|研究所))")
 DEPARTMENT_HINT_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|研究院|研究所|中心))")
 SCHOOL_TIER_FILTER_MAP = {
     "普本": ["普本", "普通本科", "普通本科院校", "双非"],
@@ -136,6 +137,39 @@ def _extract_department_hints(*texts: str | None) -> list[str]:
             if normalized and not normalized.endswith("大学"):
                 values.append(normalized)
     return _dedupe_terms(values)
+
+
+def _extract_explicit_school_mentions(*texts: str | None) -> list[str]:
+    values: list[str] = []
+    for text in texts:
+        content = str(text or "").strip()
+        if not content:
+            continue
+        for match in EXPLICIT_SCHOOL_PATTERN.findall(content):
+            normalized = str(match).strip(" ，,、;；:：")
+            if normalized:
+                values.append(normalized)
+    return _dedupe_terms(values)
+
+
+def _row_conflicts_with_requested_school(
+    row: Content,
+    requested_school_name: str,
+    known_school_names: set[str],
+) -> bool:
+    requested = normalize_school_name(requested_school_name)
+    if not requested:
+        return False
+    mentions = _extract_explicit_school_mentions(row.title, row.summary, row.body)
+    if not mentions:
+        return False
+    for mention in mentions:
+        normalized = normalize_school_name(mention)
+        if not normalized or normalized == requested:
+            continue
+        if normalized in known_school_names or mention.endswith(("大学", "研究院", "研究所")):
+            return True
+    return False
 
 
 def _build_major_terms(value: str) -> list[str]:
@@ -1678,15 +1712,42 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
     base_query = _apply_common_filters(base_query, effective_payload)
     base_query = _apply_announcement_quality_filters(base_query)
 
-    total = base_query.count()
-    rows = (
-        base_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
-        .offset((effective_payload.page - 1) * effective_payload.page_size)
-        .limit(effective_payload.page_size)
-        .all()
-    )
-    stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
-    source_breakdown = {k: int(v) for k, v in stats_rows}
+    ordered_query = base_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
+    if str(effective_payload.school_name or "").strip() and any(
+        str(effective_payload.school_name or "").strip().endswith(suffix) for suffix in SCHOOL_SUFFIXES
+    ):
+        known_school_names = {
+            normalize_school_name(name)
+            for (name,) in db.query(School.name).all()
+            if normalize_school_name(name)
+        }
+        candidate_rows = ordered_query.all()
+        filtered_rows = [
+            row
+            for row in candidate_rows
+            if not _row_conflicts_with_requested_school(
+                row,
+                str(effective_payload.school_name or "").strip(),
+                known_school_names,
+            )
+        ]
+        total = len(filtered_rows)
+        offset = (effective_payload.page - 1) * effective_payload.page_size
+        rows = filtered_rows[offset : offset + effective_payload.page_size]
+        source_breakdown: dict[str, int] = defaultdict(int)
+        for row in filtered_rows:
+            source_breakdown[row.source_type] += 1
+        source_breakdown = dict(source_breakdown)
+    else:
+        total = base_query.count()
+        rows = (
+            ordered_query
+            .offset((effective_payload.page - 1) * effective_payload.page_size)
+            .limit(effective_payload.page_size)
+            .all()
+        )
+        stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
+        source_breakdown = {k: int(v) for k, v in stats_rows}
     cold_start = None
     if total == 0 and effective_payload.page == 1 and str(effective_payload.school_name or "").strip():
         cold_start = ensure_announcement_search_bootstrap(db, str(effective_payload.school_name or "").strip())
