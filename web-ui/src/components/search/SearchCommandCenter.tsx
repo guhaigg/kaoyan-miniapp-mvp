@@ -96,7 +96,7 @@ function InlineInput({
       }}
       inputMode={inputMode}
       placeholder={placeholder}
-      className={`rounded-xl border border-white/5 bg-white/[0.05] px-3 py-2 text-xs text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-400/20 focus:ring-1 focus:ring-cyan-500/40 ${widthClass ?? "w-28"}`}
+      className={`rounded-xl border border-white/10 bg-white/[0.08] px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all focus:border-cyan-400/35 focus:bg-white/[0.11] focus:ring-1 focus:ring-cyan-500/40 ${widthClass ?? "w-28"}`}
     />
   );
 }
@@ -135,6 +135,10 @@ export default function SearchCommandCenter({
     tab === "adjustments"
       ? "输入院校、专业名或专业代码..."
       : "输入院校、学院或招生关键词...";
+  const helperText =
+    tab === "adjustments"
+      ? "学校、专业、地区和快筛都在这一条里完成，不再弹出抽屉。"
+      : "公告检索只保留真正生效的条件：学校限定和主搜索词。";
 
   function updatePopoverFilter(id: PopoverId, value: string) {
     const filterPatch: Partial<SearchCommandCenterFilters> = {
@@ -164,7 +168,7 @@ export default function SearchCommandCenter({
               type="button"
               onClick={() => setTab(item.id as SearchTab)}
               className={`relative rounded-full px-6 py-2.5 text-sm font-bold transition-colors ${
-                tab === item.id ? "text-white" : "text-slate-400 hover:text-white"
+                tab === item.id ? "text-white" : "text-slate-300 hover:text-white"
               }`}
             >
               {tab === item.id ? (
@@ -181,7 +185,7 @@ export default function SearchCommandCenter({
 
       <div className="overflow-visible rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(10,15,26,0.88),rgba(8,12,20,0.84))] shadow-[0_24px_80px_rgba(0,0,0,0.32)] backdrop-blur-2xl transition-colors hover:border-white/15">
         <div className="flex items-center gap-2 p-2">
-          <Search className="ml-3 shrink-0 text-slate-400" size={20} />
+          <Search className="ml-3 shrink-0 text-slate-300" size={20} />
           <input
             type="text"
             value={keyword}
@@ -193,13 +197,13 @@ export default function SearchCommandCenter({
               }
             }}
             placeholder={searchPlaceholder}
-            className="min-w-0 flex-1 bg-transparent py-3 text-base text-white outline-none placeholder:text-slate-600 md:text-lg"
+            className="min-w-0 flex-1 bg-transparent py-3 text-base text-white outline-none placeholder:text-slate-500 md:text-lg"
           />
           {keyword ? (
             <button
               type="button"
               onClick={() => setKeyword("")}
-              className="rounded-full p-2 text-slate-500 transition-colors hover:text-white"
+              className="rounded-full p-2 text-slate-400 transition-colors hover:text-white"
             >
               <X size={16} />
             </button>
@@ -207,14 +211,14 @@ export default function SearchCommandCenter({
           <button
             type="button"
             onClick={() => onSearch()}
-            className="rounded-[1.35rem] bg-white px-6 py-3 text-sm font-extrabold text-black transition-all hover:bg-cyan-400 hover:text-white active:scale-[0.98]"
+            className="rounded-[1.35rem] border border-cyan-400/20 bg-cyan-500 px-6 py-3 text-sm font-extrabold text-slate-950 shadow-[0_0_24px_rgba(6,182,212,0.18)] transition-all hover:bg-cyan-400 hover:shadow-[0_0_32px_rgba(34,211,238,0.24)] active:scale-[0.98]"
           >
             检索
           </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 border-t border-white/5 bg-white/[0.02] px-5 py-3">
-          <span className="mr-1 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+          <span className="mr-1 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
             精准过滤
           </span>
 
@@ -237,7 +241,7 @@ export default function SearchCommandCenter({
                 className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
                   openPopover === item.id || item.value !== "不限"
                     ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                    : "border-transparent bg-white/[0.05] text-slate-400 hover:bg-white/[0.08] hover:text-white"
+                    : "border-transparent bg-white/[0.08] text-slate-300 hover:bg-white/[0.12] hover:text-white"
                 }`}
               >
                 {item.label}: {item.value}
@@ -347,13 +351,11 @@ export default function SearchCommandCenter({
           ) : null}
         </div>
 
-        <div className="flex items-center justify-between px-5 pb-4 pt-1 text-[11px] text-slate-500">
+        <div className="flex items-center justify-between px-5 pb-4 pt-1 text-[11px] text-slate-400">
           <span>
-            {tab === "adjustments"
-              ? "学校、专业、地区和快筛都在这一条里完成，不再弹出抽屉。"
-              : "公告检索保持轻量，只保留院校限定和主关键词。"}
+            {helperText}
           </span>
-          <span>{activeFilterCount > 0 ? `已启用 ${activeFilterCount} 个过滤条件` : "当前未叠加过滤条件"}</span>
+          <span className="text-slate-400">{activeFilterCount > 0 ? `已启用 ${activeFilterCount} 个过滤条件` : "当前未叠加过滤条件"}</span>
         </div>
       </div>
     </div>

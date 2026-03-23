@@ -542,14 +542,20 @@ function SearchPageContent() {
           )
         ) : searchResult ? (
           <>
-            <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-300">
+            <div
+              className={
+                queryType === "announcements"
+                  ? "border-b border-white/6 px-1 pb-3 text-sm text-slate-300"
+                  : "rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-300"
+              }
+            >
               <div className="flex flex-wrap items-center gap-3">
                 <span>
                   共 <span className="text-white">{searchResult.total}</span> 条
                 </span>
                 <span className="text-slate-500">/</span>
                 <span>
-                  当前显示 <span className="text-cyan-300">{filteredItems.length}</span> 条
+                  {queryType === "announcements" ? "本页" : "当前显示"} <span className="text-cyan-300">{filteredItems.length}</span> 条
                 </span>
                 <span className="text-slate-500">/</span>
                 <span>
@@ -573,7 +579,7 @@ function SearchPageContent() {
                   {activeInlineFilters.map((label) => (
                     <span
                       key={label}
-                      className="inline-flex rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-slate-300"
+                      className="inline-flex rounded-full bg-white/[0.10] px-3 py-1 text-[11px] font-medium text-slate-200"
                     >
                       {label}
                     </span>
@@ -581,7 +587,7 @@ function SearchPageContent() {
                   <button
                     type="button"
                     onClick={resetAllFilters}
-                    className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold text-slate-300 transition-colors hover:bg-white/[0.08]"
+                    className="rounded-full border border-white/12 bg-white/[0.06] px-3 py-1 text-[11px] font-semibold text-slate-200 transition-colors hover:bg-white/[0.12]"
                   >
                     清空
                   </button>
@@ -1471,57 +1477,12 @@ function buildAnnouncementFeedItem(
     title: item.title,
     subtitle:
       [item.department_name, item.school_name].filter(Boolean).join(" · ") ||
-      item.summary ||
-      "来源院校与学院待补充",
-    content:
-      item.category === "adjustment" && item.historical_adjustment
-        ? [
-            item.summary || "系统已命中调剂历史样本。",
-            item.historical_adjustment.initial_score_min !== null
-              ? `初试 ${item.historical_adjustment.initial_score_min}-${item.historical_adjustment.initial_score_max ?? item.historical_adjustment.initial_score_min}`
-              : null,
-            item.historical_adjustment.adjustment_score_min !== null
-              ? `调剂 ${item.historical_adjustment.adjustment_score_min}-${item.historical_adjustment.adjustment_score_max ?? item.historical_adjustment.adjustment_score_min}`
-              : null,
-            item.historical_adjustment.national_line_zone_a !== null
-              ? `A/B线 ${item.historical_adjustment.national_line_zone_a}/${item.historical_adjustment.national_line_zone_b}`
-              : null,
-            item.historical_adjustment.sample_count > 0
-              ? `样本 ${item.historical_adjustment.sample_count}`
-              : null,
-            getPrimaryMentorLabel(item),
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        : item.summary || "暂无摘要，点击查看源站原文。",
+      "来源信息待补充",
+    content: buildAnnouncementSnippet(item),
     badges: [
       ...(item.notice_kind === "link_notice" ? [{ label: "链接型公告", tone: "sky" as const }] : []),
       ...(item.pdf_parse_status === "needs_ocr"
         ? [{ label: "扫描件待查看", tone: "amber" as const }]
-        : []),
-      ...(item.category === "adjustment" && item.adjustment_has_vacancy
-        ? [{ label: "有缺额信号", tone: "amber" as const }]
-        : []),
-      ...(item.category === "adjustment" && item.adjustment_study_modes.includes("fulltime")
-        ? [{ label: "全日制", tone: "sky" as const }]
-        : []),
-      ...(item.category === "adjustment" && item.adjustment_study_modes.includes("parttime")
-        ? [{ label: "非全日制", tone: "sky" as const }]
-        : []),
-      ...(item.category === "adjustment" && item.adjustment_major_codes.length > 0
-        ? [{ label: `专业代码 ${item.adjustment_major_codes[0]}`, tone: "sky" as const }]
-        : []),
-      ...(item.category === "adjustment" && item.historical_adjustment?.outlook_label
-        ? [{ label: item.historical_adjustment.outlook_label, tone: "amber" as const }]
-        : []),
-      ...(item.category === "adjustment" && item.historical_adjustment?.min_score !== null
-        ? [{ label: `历史最低 ${item.historical_adjustment?.min_score}`, tone: "sky" as const }]
-        : []),
-      ...(getMentorWarningCount(item) > 0
-        ? [{ label: `本学校预警 ${getMentorWarningCount(item)}`, tone: "amber" as const }]
-        : []),
-      ...(getMentorWarningCount(item) === 0
-        ? getMentorPresenceLabels(item).map((label) => ({ label, tone: "sky" as const }))
         : []),
     ],
     publishTime: item.published_at || item.updated_at,
@@ -1529,37 +1490,39 @@ function buildAnnouncementFeedItem(
     isUrgent: /紧急|截止|补录|缺额/i.test(
       `${item.title} ${item.summary || ""} ${item.major || ""}`,
     ),
-    tags:
-      item.tags && item.tags.length > 0
-        ? item.tags
-        : [
-            item.category === "adjustment" ? "调剂动态" : "最新公告",
-            item.school_name || "未知院校",
-            item.region || "区域待补充",
-            item.major || "专业待补充",
-          ],
-    metricLabel:
-      item.category === "adjustment" && item.historical_adjustment
-        ? "调剂线 / 初试区间"
-        : "院校 / 专业",
-    metricPrimary:
-      item.category === "adjustment" && item.historical_adjustment
-        ? formatScoreRange(
-            item.historical_adjustment.adjustment_score_min,
-            item.historical_adjustment.adjustment_score_max,
-          )
-        : item.school_name || "—",
-    metricSecondary:
-      item.category === "adjustment" && item.historical_adjustment
-        ? formatScoreRange(
-            item.historical_adjustment.initial_score_min,
-            item.historical_adjustment.initial_score_max,
-          )
-        : item.major || item.region || null,
-    warningLabel:
-      getMentorWarningCount(item) > 0 ? `导师预警 ${getMentorWarningCount(item)}` : null,
+    tags: buildAnnouncementTags(item),
+    metricLabel: "来源院校",
+    metricPrimary: item.school_name || "—",
+    metricSecondary: item.department_name || item.region || null,
+    warningLabel: null,
     bookmark,
   };
+}
+
+function buildAnnouncementSnippet(item: SearchItem) {
+  const summary = String(item.summary || "").replace(/\s+/g, " ").trim();
+  if (summary) {
+    return summary.length > 96 ? `${summary.slice(0, 96).trimEnd()}...` : summary;
+  }
+  if (item.notice_kind === "link_notice") {
+    return "该公告为链接型通知，正文在原站或原文件中，请直接进入原文核验。";
+  }
+  if (item.pdf_parse_status === "needs_ocr") {
+    return "当前内容主要来自扫描件，系统已保留原文件入口，建议直接打开原文件查看。";
+  }
+  return "摘要暂未抽取完成，建议直接打开原文查看完整公告。";
+}
+
+function buildAnnouncementTags(item: SearchItem) {
+  const explicitTags = item.tags.filter(Boolean).slice(0, 3);
+  if (explicitTags.length > 0) {
+    return explicitTags;
+  }
+  return [
+    item.department_name || null,
+    item.notice_kind === "link_notice" ? "原站跳转" : null,
+    item.pdf_parse_status === "needs_ocr" ? "扫描件" : null,
+  ].filter((value): value is string => Boolean(value));
 }
 
 function buildAdjustmentFeedItem(
@@ -1643,19 +1606,6 @@ function getMentorWarningCount(source: {
 }) {
   const { school, department } = getMentorScopeSignals(source);
   return school?.warning_count ?? department?.warning_count ?? 0;
-}
-
-function getPrimaryMentorLabel(source: {
-  mentor_radar: SearchItem["mentor_radar"];
-  mentor_department_radar?: SearchItem["mentor_radar"];
-  mentor_school_radar?: SearchItem["mentor_radar"];
-}) {
-  const warningCount = getMentorWarningCount(source);
-  if (warningCount > 0) {
-    return `本学校预警 ${warningCount}`;
-  }
-  const labels = getMentorPresenceLabels(source);
-  return labels[0] || null;
 }
 
 function formatStudyModeLabel(studyMode: string | null | undefined, structuredModes: string[] = []) {

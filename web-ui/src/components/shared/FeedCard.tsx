@@ -235,13 +235,13 @@ function CardBody({
           ? tags.map((tag, index) => (
               <span
                 key={`${item.id}-${tag}-${index}`}
-                className="rounded-md border border-white/5 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-300"
+                className="rounded-full bg-white/[0.10] px-2 py-1 text-[10px] font-medium text-slate-200"
               >
                 {tag}
               </span>
             ))
           : (
-            <span className="rounded-md border border-white/5 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-500">
+            <span className="rounded-full bg-white/[0.08] px-2 py-1 text-[10px] font-medium text-slate-400">
               待补充
             </span>
           )}
@@ -259,7 +259,7 @@ function CardBody({
         ))}
       </div>
 
-      <p className="line-clamp-3 text-sm leading-6 text-slate-400">{item.content}</p>
+      <p className="line-clamp-3 text-sm leading-6 text-slate-300">{item.content}</p>
 
       <div className="mt-4 flex-1" />
 
@@ -270,10 +270,9 @@ function CardBody({
             <span>{item.type === "adjustment" ? "调剂情报" : "公告正文"}</span>
           </div>
           <div className="h-3 w-px bg-white/10" />
-          <div className="text-[10px] text-slate-500">{copied ? "链接已复制" : "点击查看详情"}</div>
+          <div className="text-[10px] text-slate-400">{copied ? "链接已复制" : "点击查看详情"}</div>
         </div>
-        <div className="flex items-center gap-1 text-[11px] font-medium text-slate-400 transition-colors group-hover:text-slate-200">
-          查看
+        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:border-cyan-400/30 group-hover:bg-cyan-500/10 group-hover:text-cyan-100">
           <ArrowUpRight size={14} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
         </div>
       </div>
