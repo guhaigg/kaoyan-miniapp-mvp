@@ -226,6 +226,14 @@ function SearchPageContent() {
       effectiveQueryType === "adjustments" ? effectiveIntent.major : effectiveFilters.major.trim();
     const effectiveResolvedKeywords =
       effectiveQueryType === "adjustments" ? effectiveIntent.keywords : effectiveKeywords.trim();
+    const effectiveAnnouncementSchoolName =
+      effectiveQueryType === "announcements" ? effectiveResolvedSchoolName.trim() : "";
+    const effectiveAnnouncementKeywords =
+      effectiveQueryType !== "announcements"
+        ? ""
+        : effectiveAnnouncementSchoolName && normalizeLooseText(effectiveAnnouncementSchoolName) === normalizeLooseText(effectiveKeywords)
+          ? ""
+          : effectiveKeywords.trim();
     const coldStartRetryKey = ["announcements", effectiveResolvedSchoolName || effectiveFilters.schoolName.trim(), effectiveKeywords.trim()].join("|");
     if (!requestOptions?.autoRetry && coldStartRetryKey !== "announcements||") {
       coldStartRetryRef.current[coldStartRetryKey] = 0;
@@ -239,9 +247,8 @@ function SearchPageContent() {
       const payload =
         effectiveQueryType === "announcements"
           ? await announcementMutation.mutateAsync({
-              keywords: effectiveKeywords.trim() || undefined,
-              school_name:
-                effectiveFilters.schoolName.trim() || (isSchoolLikeQuery(effectiveKeywords.trim()) ? effectiveKeywords.trim() : undefined),
+              keywords: effectiveAnnouncementKeywords || undefined,
+              school_name: effectiveAnnouncementSchoolName || undefined,
               page,
               page_size: 12,
               refresh: Boolean(requestOptions?.refresh),
@@ -1826,6 +1833,10 @@ function buildEmptyStateDetail(
 function isSchoolLikeQuery(value: string) {
   if (!value) return false;
   return /(大学|学院|研究院|研究所|师范|医科|理工|科技大学|工业大学|农业大学|中医药大学)$/.test(value);
+}
+
+function normalizeLooseText(value: string) {
+  return value.replace(/\s+/g, "").trim();
 }
 
 function isMajorCodeLikeQuery(value: string) {
