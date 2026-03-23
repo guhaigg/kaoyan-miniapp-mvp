@@ -2324,6 +2324,63 @@ def test_ensure_announcement_search_bootstrap_uses_site_origin_as_homepage(monke
     ]
 
 
+def test_ensure_announcement_search_bootstrap_rejects_unmatched_search_candidates(monkeypatch):
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_docs", lambda school_name: [])
+
+    def _fake_fetch(url: str):
+        if url.startswith("https://www.sogou.com/web?query="):
+            return _DummyResponse("<html><body>http://yjs.zjou.edu.cn/y</body></html>")
+        if url in {"http://yjs.zjou.edu.cn/y", "http://yjs.zjou.edu.cn"}:
+            return _DummyResponse("<html><head><title>浙江海洋大学研究生院</title></head><body>欢迎访问</body></html>")
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "从未收录测试大学")
+
+    assert result is not None
+    assert result["state"] == "no_candidate"
+    assert result["candidate_urls"] == []
+    assert result["job_ids"] == []
+
+
+def test_ensure_announcement_search_bootstrap_accepts_matching_search_candidates(monkeypatch):
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_docs", lambda school_name: [])
+
+    def _fake_fetch(url: str):
+        if url.startswith("https://www.sogou.com/web?query="):
+            return _DummyResponse("<html><body>https://lnnu.edu.cn/yjs/</body></html>")
+        if url in {"https://lnnu.edu.cn/yjs/", "https://lnnu.edu.cn"}:
+            return _DummyResponse("<html><head><title>辽宁师范大学研究生院</title></head><body>辽宁师范大学</body></html>")
+        raise AssertionError(f"unexpected url: {url}")
+
+    def _fake_bootstrap_site_sections(db, **kwargs):
+        captured.update(kwargs)
+        return {"job_ids": ["job-1"]}
+
+    monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
+    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "辽宁师范大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert captured["homepage_url"] == "https://lnnu.edu.cn"
+    assert captured["seed_urls"] == ["https://lnnu.edu.cn/yjs/"]
+
+
 def test_search_announcements_excludes_non_detail_and_test_rows(client):
     headers = {"X-Admin-Token": "test-admin-token"}
     valid = client.post(

@@ -10,11 +10,14 @@ from urllib.parse import urljoin, urlparse, quote
 from sqlalchemy.orm import Session
 
 from ..models import CrawlJob, School, SiteSection, utcnow
-from .crawler import _fetch_with_retry
+from .crawler import _extract_title, _fetch_with_retry
 from .site_section_bootstrap import bootstrap_site_sections
 
 _SEARCH_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_SPACE_RE = re.compile(r"\s+")
 _HOST_HINTS = ("yjs", "yjsy", "yjsc", "yz", "zhaosheng", "graduate", "grad", "grs", "master")
+_SCHOOL_SUFFIXES = ("大学", "学院", "研究院", "研究所")
 _DENY_HOST_KEYWORDS = (
     "baidu.com",
     "sogou.com",
@@ -101,6 +104,28 @@ def _discover_seed_urls_from_docs(school_name: str) -> list[str]:
     return list(_load_school_seed_map().get(school_name.strip(), []))
 
 
+def _dedupe_texts(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _build_school_validation_terms(school_name: str) -> list[str]:
+    raw = str(school_name or "").strip()
+    compact = re.sub(r"\s+", "", raw)
+    terms = [raw, compact]
+    for suffix in _SCHOOL_SUFFIXES:
+        if compact.endswith(suffix) and len(compact) > len(suffix) + 1:
+            terms.append(compact[: -len(suffix)])
+    return [term for term in _dedupe_texts(terms) if len(term) >= 2]
+
+
 def _extract_candidate_urls_from_search_result(raw_html: str) -> list[str]:
     urls: list[str] = []
     for match in _SEARCH_URL_RE.findall(raw_html):
@@ -138,6 +163,31 @@ def _score_candidate_url(url: str) -> int:
     return score
 
 
+def _candidate_page_matches_school_name(candidate_url: str, school_name: str) -> bool:
+    terms = _build_school_validation_terms(school_name)
+    if not terms:
+        return False
+
+    probe_urls = _dedupe_texts([candidate_url, _url_origin(candidate_url)])
+    for probe_url in probe_urls:
+        try:
+            response = _fetch_with_retry(probe_url)
+        except Exception:
+            continue
+        raw_html = response.text or ""
+        title = _extract_title(raw_html) or ""
+        normalized_html = _SPACE_RE.sub(" ", _HTML_TAG_RE.sub(" ", raw_html))
+        haystacks = [
+            title,
+            re.sub(r"\s+", "", title),
+            normalized_html[:4000],
+            re.sub(r"\s+", "", normalized_html[:4000]),
+        ]
+        if any(term in haystack for term in terms for haystack in haystacks if haystack):
+            return True
+    return False
+
+
 def _discover_seed_urls_from_search(school_name: str) -> list[str]:
     candidates: dict[str, int] = {}
     for template in _SEARCH_QUERIES:
@@ -151,6 +201,8 @@ def _discover_seed_urls_from_search(school_name: str) -> list[str]:
         for candidate_url in _extract_candidate_urls_from_search_result(raw_html):
             score = _score_candidate_url(candidate_url)
             if score <= 0:
+                continue
+            if not _candidate_page_matches_school_name(candidate_url, school_name):
                 continue
             candidates[candidate_url] = max(score, candidates.get(candidate_url, 0))
 
