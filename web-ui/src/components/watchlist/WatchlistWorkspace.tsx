@@ -54,7 +54,6 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
   const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
-  const [selectedSectionLabel, setSelectedSectionLabel] = useState("");
   const [entryFilter, setEntryFilter] = useState<EntryFilterKey>("all");
   const [entryQuery, setEntryQuery] = useState("");
   const canManageScopeTargets = Boolean(portalAuth?.isPremium || portalAuth?.isAdmin);
@@ -114,6 +113,9 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
   const deleteMonitorTargetMutation = useDeleteMonitorTargetMutation();
 
   const watchEntries = buildWatchEntries(subscriptionsQuery.data?.items || [], monitorTargetsQuery.data?.items || []);
+  const schoolSuggestions = schoolSuggestionsQuery.data?.items || [];
+  const departmentSuggestions = departmentSuggestionsQuery.data?.items || [];
+  const sectionSuggestions = sectionLookupQuery.data?.items || [];
   const filteredEntries = watchEntries.filter((item) => {
     if (entryFilter !== "all" && getEntryFilterKey(item) !== entryFilter) {
       return false;
@@ -147,7 +149,6 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
     setSelectedSchoolId(null);
     setSelectedDepartmentId(null);
     setSelectedSectionId(null);
-    setSelectedSectionLabel("");
   }
 
   function handleScopeSchoolInputChange(nextValue: string) {
@@ -155,20 +156,17 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
     setSelectedSchoolId(null);
     setSelectedDepartmentId(null);
     setSelectedSectionId(null);
-    setSelectedSectionLabel("");
   }
 
   function handleScopeDepartmentInputChange(nextValue: string) {
     setScopeDepartmentName(nextValue);
     setSelectedDepartmentId(null);
     setSelectedSectionId(null);
-    setSelectedSectionLabel("");
   }
 
   function handleScopeSectionInputChange(nextValue: string) {
     setScopeSectionName(nextValue);
     setSelectedSectionId(null);
-    setSelectedSectionLabel("");
   }
 
   function selectSchoolSuggestion(item: SchoolSuggestItem) {
@@ -176,7 +174,6 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
     setScopeSchoolName(item.name);
     setSelectedDepartmentId(null);
     setSelectedSectionId(null);
-    setSelectedSectionLabel("");
   }
 
   function selectDepartmentSuggestion(item: MonitorScopeDepartmentItem) {
@@ -189,12 +186,10 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
       setScopeSchoolName(item.school_name);
     }
     setSelectedSectionId(null);
-    setSelectedSectionLabel("");
   }
 
   function selectSectionSuggestion(item: MonitorScopeSectionItem) {
     setSelectedSectionId(item.id);
-    setSelectedSectionLabel(buildSectionLabel(item));
     setScopeSectionName(item.name);
     if (item.school_id) {
       setSelectedSchoolId(item.school_id);
@@ -220,6 +215,21 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
       const schoolName = scopeSchoolName.trim();
       const departmentName = scopeDepartmentName.trim();
       const sectionName = scopeSectionName.trim();
+      const matchedSchool = selectedSchoolId
+        ? null
+        : findExactNameMatch(schoolName, schoolSuggestions, (item) => item.name);
+      const matchedDepartment = selectedDepartmentId
+        ? null
+        : findExactNameMatch(departmentName, departmentSuggestions, (item) => item.name);
+      const matchedSection = selectedSectionId
+        ? null
+        : findExactNameMatch(sectionName, sectionSuggestions, (item) => item.name);
+
+      const resolvedSchoolId =
+        selectedSchoolId || matchedSection?.school_id || matchedDepartment?.school_id || matchedSchool?.id || undefined;
+      const resolvedDepartmentId =
+        selectedDepartmentId || matchedSection?.department_id || matchedDepartment?.id || undefined;
+      const resolvedSectionId = selectedSectionId || matchedSection?.id || undefined;
 
       if (watchType === "school" && !schoolName) {
         setMessage("请输入学校名称");
@@ -238,12 +248,12 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
         setMessage("");
         await createMonitorTargetMutation.mutateAsync({
           scope_type: watchType,
-          school_id: selectedSchoolId || undefined,
-          school_name: selectedSchoolId ? undefined : schoolName || undefined,
-          department_id: selectedDepartmentId || undefined,
-          department_name: selectedDepartmentId ? undefined : departmentName || undefined,
-          site_section_id: selectedSectionId || undefined,
-          site_section_name: selectedSectionId ? undefined : sectionName || undefined,
+          school_id: resolvedSchoolId,
+          school_name: resolvedSchoolId ? undefined : schoolName || undefined,
+          department_id: resolvedDepartmentId,
+          department_name: resolvedDepartmentId ? undefined : departmentName || undefined,
+          site_section_id: resolvedSectionId,
+          site_section_name: resolvedSectionId ? undefined : sectionName || undefined,
           check_interval_minutes: 60,
         });
         resetScopeDraft();
@@ -379,19 +389,17 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
             placeholder="学校名称，例如：电子科技大学"
             className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-cyan-400"
           />
-          {selectedSchoolId ? (
-            <div className="rounded-2xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3 text-xs text-cyan-100">
-              已锁定学校：{scopeSchoolName}
-            </div>
-          ) : null}
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs leading-6 text-slate-400">
+            候选列表只是提速和纠偏，不需要先点选；直接输入后添加，后端也会自动尝试解析学校、学院和栏目。
+          </div>
           {schoolSuggestionsQuery.isLoading ? (
             <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-slate-300">
               正在匹配学校候选...
             </div>
           ) : null}
-          {schoolSuggestionsQuery.data?.items.length ? (
+          {schoolSuggestions.length ? (
             <div className="max-h-40 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/25 p-2">
-              {schoolSuggestionsQuery.data.items.map((item) => {
+              {schoolSuggestions.map((item) => {
                 const active = selectedSchoolId === item.id;
                 return (
                   <button
@@ -417,19 +425,14 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                 placeholder={watchType === "department" ? "学院名称，例如：计算机学院" : "学院名称，可选"}
                 className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-cyan-400"
               />
-              {selectedDepartmentId ? (
-                <div className="rounded-2xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3 text-xs text-cyan-100">
-                  已锁定学院：{scopeDepartmentName}
-                </div>
-              ) : null}
               {departmentSuggestionsQuery.isLoading ? (
                 <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-slate-300">
                   正在匹配学院候选...
                 </div>
               ) : null}
-              {departmentSuggestionsQuery.data?.items.length ? (
+              {departmentSuggestions.length ? (
                 <div className="max-h-40 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/25 p-2">
-                  {departmentSuggestionsQuery.data.items.map((item) => {
+                  {departmentSuggestions.map((item) => {
                     const active = selectedDepartmentId === item.id;
                     return (
                       <button
@@ -461,19 +464,14 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                 placeholder="栏目名称或关键词，例如：通知公告 / 招生动态"
                 className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-cyan-400"
               />
-              {selectedSectionLabel ? (
-                <div className="rounded-2xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3 text-xs text-cyan-100">
-                  已选择栏目：{selectedSectionLabel}
-                </div>
-              ) : null}
               {sectionLookupQuery.isLoading ? (
                 <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-slate-300">
                   正在匹配栏目候选...
                 </div>
               ) : null}
-              {sectionLookupQuery.data?.items.length ? (
+              {sectionSuggestions.length ? (
                 <div className="max-h-44 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/25 p-2">
-                  {sectionLookupQuery.data.items.map((item) => {
+                  {sectionSuggestions.map((item) => {
                     const active = selectedSectionId === item.id;
                     return (
                       <button
@@ -503,7 +501,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
             onClick={handleCreateSubscription}
             className="w-full rounded-2xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-400 disabled:opacity-70"
           >
-            添加关注
+            {createMonitorTargetMutation.isPending ? "正在加入..." : "直接添加关注"}
           </button>
         </div>
       ) : (
@@ -520,7 +518,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
             onClick={handleCreateSubscription}
             className="rounded-2xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-400 disabled:opacity-70"
           >
-            添加
+            {createSubscriptionMutation.isPending ? "加入中..." : "添加"}
           </button>
         </div>
       )}
@@ -855,7 +853,8 @@ function WatchEntryCard({
   onDelete: () => void;
 }) {
   const icon = item.kind === "monitor" ? <Radar size={14} /> : <Star size={14} />;
-  const title = item.kind === "monitor" ? item.display_label : item.display_label || item.value;
+  const title = buildWatchEntryTitle(item);
+  const detail = buildWatchEntryDetail(item);
   const timestampLabel =
     item.kind === "monitor"
       ? item.last_hit_at || item.last_checked_at || item.created_at
@@ -874,14 +873,8 @@ function WatchEntryCard({
             <span className="text-slate-500">•</span>
             <span className="text-slate-400">{new Date(timestampLabel).toLocaleString("zh-CN", { hour12: false })}</span>
           </div>
-          <div className="mt-2 truncate text-base font-semibold text-white">{title}</div>
-          <div className="mt-2 text-xs leading-6 text-slate-400">
-            {item.kind === "monitor"
-              ? [item.school_name, item.department_name, item.site_section_name, `范围：站内公告`].filter(Boolean).join(" · ")
-              : [`类别：${item.category}`, item.target_university, item.target_department_name, item.target_major_name || item.target_major_code]
-                  .filter(Boolean)
-                  .join(" · ")}
-          </div>
+          <div className="mt-2 break-words text-base font-semibold leading-6 text-white">{title}</div>
+          {detail ? <div className="mt-2 text-xs leading-6 text-slate-400">{detail}</div> : null}
         </div>
         <button
           type="button"
@@ -982,12 +975,69 @@ function isScopeWatchType(type: string) {
   return type === "school" || type === "department" || type === "section";
 }
 
-function buildSectionLabel(item: {
-  name: string;
-  school_name?: string | null;
-  department_name?: string | null;
-}) {
-  return [item.school_name, item.department_name, item.name].filter(Boolean).join(" · ");
+function findExactNameMatch<T>(
+  rawValue: string,
+  items: T[],
+  getName: (item: T) => string | null | undefined,
+) {
+  const normalized = rawValue.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  return items.find((item) => (getName(item) || "").trim().toLowerCase() === normalized) || null;
+}
+
+function buildWatchEntryTitle(item: WatchEntry) {
+  if (item.kind === "monitor") {
+    return [item.school_name, item.department_name, item.site_section_name].filter(Boolean).join(" · ") || item.display_label || monitorScopeLabel(item.scope_type);
+  }
+
+  if (item.subscription_type === "radar") {
+    return (
+      item.display_label ||
+      [item.target_university, item.target_department_name, item.target_major_name || item.target_major_code]
+        .filter(Boolean)
+        .join(" · ") ||
+      item.value
+    );
+  }
+
+  if (item.subscription_type === "school") {
+    return item.target_university || item.display_label || item.value;
+  }
+
+  if (item.subscription_type === "major") {
+    return item.target_major_name || item.target_major_code || item.display_label || item.value;
+  }
+
+  return item.display_label || item.value;
+}
+
+function buildWatchEntryDetail(item: WatchEntry) {
+  if (item.kind === "monitor") {
+    if (item.scope_type === "school") {
+      return "锁定该学校的站内公告";
+    }
+    if (item.scope_type === "department") {
+      return "锁定该学院的站内公告";
+    }
+    if (item.scope_type === "section") {
+      return [selectedSectionSummary(item), "精准盯住栏目更新"].filter(Boolean).join(" · ");
+    }
+    return "站内公告监控";
+  }
+
+  const categoryLabel =
+    item.category === "announcement" ? "范围：公告" : item.category === "adjustment" ? "范围：调剂" : "范围：全量";
+  const details =
+    item.subscription_type === "school"
+      ? [categoryLabel]
+      : [categoryLabel, item.target_university, item.target_department_name, item.target_major_name || item.target_major_code];
+  return details.filter(Boolean).join(" · ");
+}
+
+function selectedSectionSummary(item: MonitorTargetItem) {
+  return [item.school_name, item.department_name, item.site_section_name].filter(Boolean).join(" · ");
 }
 
 function buildWatchEntries(subscriptions: SubscriptionItem[], monitorTargets: MonitorTargetItem[]) {

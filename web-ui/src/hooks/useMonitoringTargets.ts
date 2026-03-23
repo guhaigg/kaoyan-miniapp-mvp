@@ -9,6 +9,7 @@ import {
   searchMonitorScopeDepartments,
   searchMonitorScopeSections,
 } from "@/api/monitoring";
+import { type MonitorTargetItem, type MonitorTargetListResponse } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 
 export function useMonitorTargetsQuery(enabled: boolean) {
@@ -23,10 +24,19 @@ export function useMonitorTargetsQuery(enabled: boolean) {
 export function useAddMonitorTargetMutation() {
   const queryClient = useQueryClient();
   const userId = useAppStore((state) => state.portalAuth?.userId);
+  const queryKey = ["portal", "monitor-targets", userId] as const;
   return useMutation({
     mutationFn: createMonitorTarget,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["portal", "monitor-targets", userId] });
+    onSuccess: (item: MonitorTargetItem) => {
+      queryClient.setQueryData<MonitorTargetListResponse | undefined>(queryKey, (current) => {
+        const existingItems = current?.items || [];
+        const deduped = existingItems.filter((entry) => entry.id !== item.id);
+        return {
+          total: deduped.length + 1,
+          items: [item, ...deduped],
+        };
+      });
+      void queryClient.invalidateQueries({ queryKey });
     },
   });
 }
@@ -34,10 +44,21 @@ export function useAddMonitorTargetMutation() {
 export function useDeleteMonitorTargetMutation() {
   const queryClient = useQueryClient();
   const userId = useAppStore((state) => state.portalAuth?.userId);
+  const queryKey = ["portal", "monitor-targets", userId] as const;
   return useMutation({
     mutationFn: removeMonitorTarget,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["portal", "monitor-targets", userId] });
+    onSuccess: (_result, targetId: string) => {
+      queryClient.setQueryData<MonitorTargetListResponse | undefined>(queryKey, (current) => {
+        if (!current) {
+          return current;
+        }
+        const items = current.items.filter((item) => item.id !== targetId);
+        return {
+          total: items.length,
+          items,
+        };
+      });
+      void queryClient.invalidateQueries({ queryKey });
     },
   });
 }
