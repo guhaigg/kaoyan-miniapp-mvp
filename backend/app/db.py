@@ -2,6 +2,7 @@ from typing import Generator
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .config import get_settings
 
@@ -11,7 +12,16 @@ class Base(DeclarativeBase):
 
 
 settings = get_settings()
-engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
+engine_kwargs = {
+    "future": True,
+    "pool_pre_ping": True,
+}
+if settings.database_url.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+    if settings.database_url in {"sqlite://", "sqlite:///:memory:"}:
+        engine_kwargs["poolclass"] = StaticPool
+        engine_kwargs["pool_pre_ping"] = False
+engine = create_engine(settings.database_url, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
