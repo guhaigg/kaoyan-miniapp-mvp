@@ -178,11 +178,13 @@ jobs:
             (
               cd backend
               ./.venv/bin/python scripts/repair_stale_announcement_content.py
+              ./.venv/bin/python scripts/repair_broken_monitor_targets.py
             )
           elif [ -x ".venv/bin/python" ]; then
             (
               cd backend
               ../.venv/bin/python scripts/repair_stale_announcement_content.py
+              ../.venv/bin/python scripts/repair_broken_monitor_targets.py
             )
           fi
 

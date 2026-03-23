@@ -30,6 +30,7 @@ from ..schemas import (
     MonitorScopeSectionItem,
     MonitorScopeSectionListResponse,
 )
+from ..services.monitor_target_repair import infer_monitor_target_context
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
@@ -53,19 +54,20 @@ def _build_target_display_label(
     return label or site_section_name or department_name or school_name or scope_type
 
 
-def _to_target_item(item: PortalUserMonitorTarget) -> MonitorTargetItem:
-    school_name = item.school.name if item.school else None
-    department_name = item.department.name if item.department else None
-    site_section_name = item.site_section.name if item.site_section else None
+def _to_target_item(db: Session, item: PortalUserMonitorTarget) -> MonitorTargetItem:
+    context = infer_monitor_target_context(db, item)
+    school_name = context.get("school_name")
+    department_name = context.get("department_name")
+    site_section_name = context.get("site_section_name")
     return MonitorTargetItem(
         id=item.id,
         user_id=item.user_id,
         scope_type=item.scope_type,
-        school_id=item.school_id,
+        school_id=context.get("school_id"),
         school_name=school_name,
-        department_id=item.department_id,
+        department_id=context.get("department_id"),
         department_name=department_name,
-        site_section_id=item.site_section_id,
+        site_section_id=context.get("site_section_id"),
         site_section_name=site_section_name,
         display_label=_build_target_display_label(
             scope_type=item.scope_type,
@@ -359,7 +361,7 @@ def create_monitor_target(payload: MonitorTargetCreateRequest, request: Request,
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="monitor target already exists")
     db.refresh(item)
     audit_event(db, request, "monitoring.target.create", None, {"target_id": item.id, "portal_user_id": user.id})
-    return _to_target_item(item)
+    return _to_target_item(db, item)
 
 
 @router.get("/targets", response_model=MonitorTargetListResponse)
@@ -379,7 +381,7 @@ def list_monitor_targets(request: Request, db: Session = Depends(get_db)) -> Mon
         .order_by(PortalUserMonitorTarget.created_at.desc())
         .all()
     )
-    return MonitorTargetListResponse(total=len(rows), items=[_to_target_item(x) for x in rows])
+    return MonitorTargetListResponse(total=len(rows), items=[_to_target_item(db, x) for x in rows])
 
 
 @router.get("/scope-sections", response_model=MonitorScopeSectionListResponse)
@@ -516,7 +518,7 @@ def update_monitor_target(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="monitor target already exists")
     db.refresh(target)
     audit_event(db, request, "monitoring.target.update", None, {"target_id": target.id, "portal_user_id": user.id})
-    return _to_target_item(target)
+    return _to_target_item(db, target)
 
 
 @router.post("/targets/{target_id}/keywords", response_model=MonitorKeywordItem)

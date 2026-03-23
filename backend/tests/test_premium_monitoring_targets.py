@@ -5,8 +5,9 @@ from fastapi.routing import APIRoute
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import Department, PortalUser, School, SiteSection
+from app.models import Content, Department, PortalUser, PortalUserMonitorHit, PortalUserMonitorTarget, School, SiteSection
 from app.services.account_access import ENTITLEMENT_SOURCE_ADMIN_GRANT, upsert_premium_entitlement
+from app.services.monitor_target_repair import repair_broken_monitor_targets
 
 
 def _extract_payload(response):
@@ -223,6 +224,123 @@ def test_target_list_only_contains_current_user_items(client):
     item_ids = {item.get("id") for item in items}
     assert own["id"] in item_ids
     assert other["id"] not in item_ids
+
+
+def test_target_list_infers_school_name_from_hits_for_legacy_broken_rows(client):
+    _require_monitoring_api()
+
+    user_id, headers = _privileged_user_headers(client, "targets_legacy_infer_user")
+    school_id, _department_id, _section_id = _ensure_asset_ids()
+
+    with SessionLocal() as db:
+        broken = PortalUserMonitorTarget(
+            user_id=user_id,
+            scope_type="school",
+            school_id=None,
+            department_id=None,
+            site_section_id=None,
+            status="active",
+            check_interval_minutes=60,
+        )
+        db.add(broken)
+        db.flush()
+        broken_id = broken.id
+
+        content = Content(
+            school_id=school_id,
+            category="announcement",
+            title="电子科技大学关于复试的通知",
+            body="学校发布了新的复试公告",
+            summary="复试公告",
+            source_url=f"https://example.com/legacy-monitor/{broken_id}",
+            source_type="manual",
+            extra={"school_id": school_id, "school_name": "电子科技大学"},
+        )
+        db.add(content)
+        db.flush()
+
+        hit = PortalUserMonitorHit(
+            user_id=user_id,
+            monitor_target_id=broken.id,
+            content_id=content.id,
+            matched_keywords=[],
+            match_score=1,
+            pushed_inapp=0,
+            pushed_bark=0,
+        )
+        db.add(hit)
+        db.commit()
+
+    items = _list_targets(client, headers)
+    matched = next(item for item in items if item["id"] == broken_id)
+    assert matched["school_name"] == "电子科技大学"
+    assert matched["display_label"] == "电子科技大学"
+
+
+def test_repair_broken_monitor_targets_soft_deletes_unrecoverable_rows():
+    school_id, _department_id, _section_id = _ensure_asset_ids()
+
+    with SessionLocal() as db:
+        user = PortalUser(username="repair_monitor_target_user", password_hash="hash", nickname="repair", status="active")
+        db.add(user)
+        db.flush()
+
+        recoverable = PortalUserMonitorTarget(
+            user_id=user.id,
+            scope_type="school",
+            school_id=None,
+            department_id=None,
+            site_section_id=None,
+            status="active",
+            check_interval_minutes=60,
+        )
+        broken = PortalUserMonitorTarget(
+            user_id=user.id,
+            scope_type="school",
+            school_id=None,
+            department_id=None,
+            site_section_id=None,
+            status="active",
+            check_interval_minutes=60,
+        )
+        db.add_all([recoverable, broken])
+        db.flush()
+
+        content = Content(
+            school_id=school_id,
+            category="announcement",
+            title="电子科技大学最新通知",
+            body="这里有一条有效的学校公告",
+            summary="有效公告",
+            source_url=f"https://example.com/repair-monitor/{recoverable.id}",
+            source_type="manual",
+            extra={"school_id": school_id, "school_name": "电子科技大学"},
+        )
+        db.add(content)
+        db.flush()
+
+        db.add(
+            PortalUserMonitorHit(
+                user_id=user.id,
+                monitor_target_id=recoverable.id,
+                content_id=content.id,
+                matched_keywords=[],
+                match_score=1,
+                pushed_inapp=0,
+                pushed_bark=0,
+            )
+        )
+        db.commit()
+
+        stats = repair_broken_monitor_targets(db)
+        db.refresh(recoverable)
+        db.refresh(broken)
+
+        assert stats["repaired"] >= 1
+        assert stats["removed"] >= 1
+        assert recoverable.school_id == school_id
+        assert recoverable.status == "active"
+        assert broken.status == "deleted"
 
 
 def test_target_status_can_update_from_active_to_paused(client):
