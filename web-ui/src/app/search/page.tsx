@@ -86,6 +86,9 @@ function SearchPageContent() {
 
   const filteredItems = useMemo(() => {
     if (!searchResult) return [];
+    if (queryType !== "adjustments") {
+      return searchResult.items;
+    }
     const filtered = searchResult.items.filter((item) => {
       const text = [item.school_name, item.title, item.summary, item.major, item.city, item.school_tier].filter(Boolean).join(" ");
       const matchesTier =
@@ -93,9 +96,6 @@ function SearchPageContent() {
       const matchesMode = matchesStudyMode(filters.type, text, item.adjustment_study_modes);
       return matchesTier && matchesMode;
     });
-    if (queryType !== "adjustments") {
-      return filtered;
-    }
     return [...filtered].sort((left, right) => {
       const urgencyDelta = Number(isAdjustmentUrgent(right)) - Number(isAdjustmentUrgent(left));
       if (urgencyDelta !== 0) return urgencyDelta;
@@ -125,8 +125,9 @@ function SearchPageContent() {
   const currentPage = searchResult?.page || 1;
   const totalPages = searchResult ? Math.max(1, Math.ceil(searchResult.total / searchResult.page_size)) : 1;
   const hasLocalFilters =
-    filters.level !== "不限" ||
-    filters.type !== "all";
+    queryType === "adjustments" &&
+    (filters.level !== "不限" ||
+      filters.type !== "all");
   const activeServerQuickFilters = [
     filters.historyBackedOnly ? "有历史样本" : null,
     filters.longTrackOnly ? "连续活跃" : null,
@@ -135,13 +136,17 @@ function SearchPageContent() {
   ].filter(Boolean) as string[];
   const activeInlineFilters = [
     filters.schoolName.trim() ? `院校 ${filters.schoolName.trim()}` : null,
-    filters.major.trim() ? `专业 ${filters.major.trim()}` : null,
-    filters.region !== "不限" ? `地区 ${filters.region}` : null,
-    filters.city.trim() ? `城市 ${filters.city.trim()}` : null,
-    filters.year.trim() ? `年份 ${filters.year.trim()}` : null,
-    filters.level !== "不限" ? filters.level : null,
-    filters.type !== "all" ? (filters.type === "fulltime" ? "全日制" : "非全日制") : null,
-    filters.score.trim() ? `分数 ${filters.score.trim()}` : null,
+    ...(queryType === "adjustments"
+      ? [
+          filters.major.trim() ? `专业 ${filters.major.trim()}` : null,
+          filters.region !== "不限" ? `地区 ${filters.region}` : null,
+          filters.city.trim() ? `城市 ${filters.city.trim()}` : null,
+          filters.year.trim() ? `年份 ${filters.year.trim()}` : null,
+          filters.level !== "不限" ? filters.level : null,
+          filters.type !== "all" ? (filters.type === "fulltime" ? "全日制" : "非全日制") : null,
+          filters.score.trim() ? `分数 ${filters.score.trim()}` : null,
+        ]
+      : []),
     ...(queryType === "adjustments" ? activeServerQuickFilters : []),
   ].filter(Boolean) as string[];
   const hasServerQuickFilters = activeServerQuickFilters.length > 0;
@@ -1933,8 +1938,6 @@ function parseSearchStateFromParams(
     return null;
   }
 
-  const tab = searchParams.get("tab");
-  const queryType = tab === "announcements" ? "announcements" : "adjustments";
   const filters: SearchCommandCenterFilters = {
     ...DEFAULT_SEARCH_FILTERS,
     schoolName: readSearchParam(searchParams, ["school", "schoolName"]),
@@ -1951,6 +1954,7 @@ function parseSearchStateFromParams(
     hideMentorWarnings: parseBooleanParam(readSearchParam(searchParams, ["safe", "hideMentorWarnings", "exclude_mentor_warnings"])),
   };
   const keywords = readSearchParam(searchParams, ["q", "keyword", "keywords"]);
+  const queryType = resolveQueryTypeFromParams(searchParams, filters, keywords);
   const shouldSearch = hasSearchIntent(keywords, filters);
 
   return {
@@ -2001,6 +2005,38 @@ function parseScoreParam(value: string) {
 
 function parseBooleanParam(value: string) {
   return /^(1|true|yes|on)$/i.test(value);
+}
+
+function resolveQueryTypeFromParams(
+  searchParams: Pick<URLSearchParams, "get">,
+  filters: SearchCommandCenterFilters,
+  keywords: string,
+): "announcements" | "adjustments" {
+  const tab = searchParams.get("tab");
+  if (tab === "announcements" || tab === "adjustments") {
+    return tab;
+  }
+
+  const hasAdjustmentOnlySignals = Boolean(
+    filters.major.trim() ||
+      filters.region !== "不限" ||
+      filters.city.trim() ||
+      filters.year.trim() ||
+      filters.level !== "不限" ||
+      filters.type !== "all" ||
+      filters.score.trim() ||
+      filters.historyBackedOnly ||
+      filters.longTrackOnly ||
+      filters.referenceLinksOnly ||
+      filters.hideMentorWarnings ||
+      isMajorCodeLikeQuery(keywords.trim()),
+  );
+
+  if (hasAdjustmentOnlySignals) {
+    return "adjustments";
+  }
+
+  return "announcements";
 }
 
 function hasSearchIntent(keywords: string, filters: SearchCommandCenterFilters) {

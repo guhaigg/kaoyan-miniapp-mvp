@@ -2032,6 +2032,45 @@ def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):
     assert payload["items"][0]["tags"] == ["复试线", "招生简章"]
 
 
+def test_search_announcements_matches_department_name_and_tags_from_extra(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "武汉大学关于复试安排的说明",
+            "body": "请考生按要求完成复试准备。",
+            "summary": "公告正文未直接写出学院名和标签词。",
+            "school_name": "武汉大学",
+            "source_type": "crawler",
+            "source_url": "https://example.com/whu-announcement-extra-search",
+            "extra": {
+                "department_name": "数学与统计学院",
+                "tags": ["复试线", "报名须知"],
+            },
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+
+    department_search = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "武汉大学", "keywords": "统计学院"},
+    )
+    assert department_search.status_code == 200
+    department_payload = department_search.json()
+    assert department_payload["total"] == 1
+    assert department_payload["items"][0]["department_name"] == "数学与统计学院"
+
+    tag_search = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "武汉大学", "keywords": "复试线"},
+    )
+    assert tag_search.status_code == 200
+    tag_payload = tag_search.json()
+    assert tag_payload["total"] == 1
+    assert tag_payload["items"][0]["tags"] == ["复试线", "报名须知"]
+
+
 def test_content_upsert_dedupes_by_fingerprint_when_source_url_changes(client):
     first = client.post(
         "/api/v1/content",

@@ -402,3 +402,100 @@ def test_scope_only_section_target_matches_site_section_id(client):
         assert payload["site_section_id"] == section_id
         assert payload["site_section_name"] == "材料学院通知公告"
         assert payload["department_name"] == "材料学院"
+
+
+def test_manual_content_resolves_department_name_to_department_id_for_scope_match(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_manual_department_scope")
+    target_id = _create_monitor_target_and_keyword(
+        user_id,
+        school_name="苏州大学",
+        department_name="计算机科学与技术学院",
+        scope_type="department",
+        keyword=None,
+    )
+    school_id, department_id, _section_id = _ensure_scope_assets(
+        school_name="苏州大学",
+        department_name="计算机科学与技术学院",
+    )
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "苏州大学计算机学院通知",
+            "body": "这是手工录入的学院公告",
+            "school_name": "苏州大学",
+            "source_type": "manual",
+            "source_url": "https://example.com/manual-department-scope",
+            "extra": {
+                "department_name": "计算机科学与技术学院",
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert ingest_resp.status_code == 200
+    content_id = ingest_resp.json()["id"]
+
+    with SessionLocal() as db:
+        hits = db.query(HIT_MODEL).filter(HIT_MODEL.user_id == user_id).all()
+        assert len(hits) == 1
+        assert str(hits[0].monitor_target_id) == target_id
+        assert str(hits[0].content_id) == content_id
+        assert hits[0].hit_reason == "scope_match:department"
+
+        content = db.query(app_models.Content).filter(app_models.Content.id == content_id).one()
+        extra = dict(content.extra or {})
+        assert str(content.school_id or "") == school_id
+        assert str(extra.get("school_id") or "") == school_id
+        assert str(extra.get("department_id") or "") == department_id
+        assert extra.get("department_name") == "计算机科学与技术学院"
+
+
+def test_manual_content_resolves_site_section_name_to_site_section_id_for_scope_match(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_manual_section_scope")
+    _create_monitor_target_and_keyword(
+        user_id,
+        school_name="云南大学",
+        department_name="信息学院",
+        site_section_name="信息学院通知公告",
+        scope_type="section",
+        keyword=None,
+    )
+    school_id, department_id, section_id = _ensure_scope_assets(
+        school_name="云南大学",
+        department_name="信息学院",
+        site_section_name="信息学院通知公告",
+    )
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "云南大学信息学院手工公告",
+            "body": "这是手工录入的栏目公告",
+            "school_name": "云南大学",
+            "source_type": "manual",
+            "source_url": "https://example.com/manual-section-scope",
+            "extra": {
+                "department_name": "信息学院",
+                "site_section_name": "信息学院通知公告",
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert ingest_resp.status_code == 200
+    content_id = ingest_resp.json()["id"]
+
+    with SessionLocal() as db:
+        hits = db.query(HIT_MODEL).filter(HIT_MODEL.user_id == user_id).all()
+        assert len(hits) == 1
+        assert str(hits[0].content_id) == content_id
+        assert str(hits[0].site_section_id or "") == section_id
+        assert hits[0].hit_reason == "scope_match:section"
+
+        content = db.query(app_models.Content).filter(app_models.Content.id == content_id).one()
+        extra = dict(content.extra or {})
+        assert str(content.school_id or "") == school_id
+        assert str(extra.get("department_id") or "") == department_id
+        assert str(extra.get("site_section_id") or "") == section_id
+        assert extra.get("site_section_name") == "信息学院通知公告"

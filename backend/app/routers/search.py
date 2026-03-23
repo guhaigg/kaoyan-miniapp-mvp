@@ -5,7 +5,7 @@ from uuid import uuid4
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import and_, func, or_
+from sqlalchemy import Text, and_, cast, func, or_
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -155,6 +155,8 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
         query = query.filter(or_(*[School.name.ilike(f"%{term}%") for term in terms]))
     if payload.keywords:
         keyword_terms = _build_keyword_terms(payload.keywords.strip())
+        department_name_expr = cast(func.json_extract(Content.extra, "$.department_name"), Text)
+        tag_exprs = [cast(func.json_extract(Content.extra, f"$.tags[{index}]"), Text) for index in range(8)]
         query = query.filter(
             and_(
                 *[
@@ -164,6 +166,8 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
                         Content.major.ilike(f"%{term}%"),
                         Content.region.ilike(f"%{term}%"),
                         School.name.ilike(f"%{term}%"),
+                        department_name_expr.ilike(f"%{term}%"),
+                        *[tag_expr.ilike(f"%{term}%") for tag_expr in tag_exprs],
                     )
                     for term in keyword_terms
                 ]

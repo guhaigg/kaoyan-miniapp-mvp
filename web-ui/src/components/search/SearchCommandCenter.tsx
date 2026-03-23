@@ -115,19 +115,21 @@ export default function SearchCommandCenter({
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.schoolName.trim()) count += 1;
-    if (filters.major.trim()) count += 1;
-    if (filters.region !== "不限") count += 1;
-    if (filters.city.trim()) count += 1;
-    if (filters.year.trim()) count += 1;
-    if (filters.level !== "不限") count += 1;
-    if (filters.type !== "all") count += 1;
-    if (filters.score.trim()) count += 1;
-    if (filters.historyBackedOnly) count += 1;
-    if (filters.longTrackOnly) count += 1;
-    if (filters.referenceLinksOnly) count += 1;
-    if (filters.hideMentorWarnings) count += 1;
+    if (tab === "adjustments") {
+      if (filters.major.trim()) count += 1;
+      if (filters.region !== "不限") count += 1;
+      if (filters.city.trim()) count += 1;
+      if (filters.year.trim()) count += 1;
+      if (filters.level !== "不限") count += 1;
+      if (filters.type !== "all") count += 1;
+      if (filters.score.trim()) count += 1;
+      if (filters.historyBackedOnly) count += 1;
+      if (filters.longTrackOnly) count += 1;
+      if (filters.referenceLinksOnly) count += 1;
+      if (filters.hideMentorWarnings) count += 1;
+    }
     return count;
-  }, [filters]);
+  }, [filters, tab]);
 
   const searchPlaceholder =
     tab === "adjustments"
@@ -218,9 +220,9 @@ export default function SearchCommandCenter({
 
           {(
             [
-              { id: "region", label: "地区", value: filters.region || "不限" },
               ...(tab === "adjustments"
                 ? [
+                    { id: "region", label: "地区", value: filters.region || "不限" },
                     { id: "year", label: "年份", value: filters.year || "不限" },
                     { id: "level", label: "院校层次", value: filters.level || "不限" },
                     { id: "type", label: "学习方式", value: mapStudyModeLabel(filters.type) },

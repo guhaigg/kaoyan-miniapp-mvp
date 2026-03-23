@@ -5,7 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import Content, ContentSnapshot, NotificationOutbox, School, utcnow
+from ..models import Content, ContentSnapshot, Department, NotificationOutbox, School, SiteSection, utcnow
 from ..schemas import ContentIn
 from .nlp import extract_adjustment_meta, extract_domain_tags, infer_content_category
 from .premium_monitoring import evaluate_content_for_premium_monitoring
@@ -27,6 +27,105 @@ def _resolve_school(db: Session, school_name: str | None) -> School | None:
     db.add(school)
     db.flush()
     return school
+
+
+def _resolve_school_by_id(db: Session, school_id: str | None) -> School | None:
+    text = str(school_id or "").strip()
+    if not text:
+        return None
+    return db.query(School).filter(School.id == text).one_or_none()
+
+
+def _resolve_department(
+    db: Session,
+    *,
+    school: School | None,
+    department_id: str | None,
+    department_name: str | None,
+) -> Department | None:
+    department_id_text = str(department_id or "").strip()
+    if department_id_text:
+        department = db.query(Department).filter(Department.id == department_id_text).one_or_none()
+        if department is not None:
+            return department
+
+    name = str(department_name or "").strip()
+    if not name:
+        return None
+
+    query = db.query(Department).filter(Department.name == name)
+    if school is not None:
+        query = query.filter(Department.school_id == school.id)
+    rows = query.order_by(Department.updated_at.desc()).limit(2).all()
+    if len(rows) != 1:
+        return None
+    return rows[0]
+
+
+def _resolve_site_section(
+    db: Session,
+    *,
+    school: School | None,
+    department: Department | None,
+    site_section_id: str | None,
+    site_section_name: str | None,
+) -> SiteSection | None:
+    site_section_id_text = str(site_section_id or "").strip()
+    if site_section_id_text:
+        section = db.query(SiteSection).filter(SiteSection.id == site_section_id_text).one_or_none()
+        if section is not None:
+            return section
+
+    name = str(site_section_name or "").strip()
+    if not name:
+        return None
+
+    query = db.query(SiteSection).filter(SiteSection.name == name)
+    if school is not None:
+        query = query.filter(SiteSection.school_id == school.id)
+    if department is not None:
+        query = query.filter(SiteSection.department_id == department.id)
+    rows = query.order_by(SiteSection.updated_at.desc()).limit(2).all()
+    if len(rows) != 1:
+        return None
+    return rows[0]
+
+
+def _normalize_scope_extra(db: Session, *, school: School | None, incoming_extra: dict) -> tuple[School | None, dict]:
+    normalized_extra = dict(incoming_extra)
+    resolved_school = school or _resolve_school_by_id(db, normalized_extra.get("school_id"))
+    department = _resolve_department(
+        db,
+        school=resolved_school,
+        department_id=normalized_extra.get("department_id"),
+        department_name=normalized_extra.get("department_name"),
+    )
+    section = _resolve_site_section(
+        db,
+        school=resolved_school,
+        department=department,
+        site_section_id=normalized_extra.get("site_section_id"),
+        site_section_name=normalized_extra.get("site_section_name"),
+    )
+
+    if section is not None:
+        normalized_extra["site_section_id"] = section.id
+        normalized_extra["site_section_name"] = section.name
+        if resolved_school is None and section.school_id:
+            resolved_school = db.query(School).filter(School.id == section.school_id).one_or_none()
+        if department is None and section.department_id:
+            department = db.query(Department).filter(Department.id == section.department_id).one_or_none()
+
+    if department is not None:
+        normalized_extra["department_id"] = department.id
+        normalized_extra["department_name"] = department.name
+        if resolved_school is None and department.school_id:
+            resolved_school = db.query(School).filter(School.id == department.school_id).one_or_none()
+
+    if resolved_school is not None:
+        normalized_extra["school_id"] = resolved_school.id
+
+    return resolved_school, normalized_extra
 
 
 def _normalize_fingerprint_part(value: str | None, *, strip_all_spaces: bool = False) -> str:
@@ -112,6 +211,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     else:
         incoming_extra.pop("adjustment_meta", None)
     school = _resolve_school(db, payload.school_name)
+    school, incoming_extra = _normalize_scope_extra(db, school=school, incoming_extra=incoming_extra)
     content_fingerprint = _build_content_fingerprint(
         payload,
         school.name if school else payload.school_name,
@@ -134,6 +234,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     except IntegrityError:
         db.rollback()
         school = _resolve_school(db, payload.school_name)
+        school, incoming_extra = _normalize_scope_extra(db, school=school, incoming_extra=incoming_extra)
         existing = _find_existing_content(db, source_url=payload.source_url, content_fingerprint=content_fingerprint)
         if existing is None:
             raise
