@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Activity, BellRing, LogOut, Menu, Search, Target, Terminal, UserCircle } from "lucide-react";
+import { Activity, BellRing, LogOut, Menu, Search, Star, Target, Terminal, UserCircle } from "lucide-react";
 import { ApiError, logoutUser } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 
@@ -39,6 +39,7 @@ export default function Header() {
     { href: "/", label: "全网流", icon: Activity },
     { href: "/search", label: "数据检索", icon: Search },
     { href: "/radar", label: "胜率测算", icon: Target },
+    ...(portalAuth ? [{ href: "/watchlist", label: "关注库", icon: Star }] : []),
     ...(showAdminNav ? [{ href: "/admin", label: "监控台", icon: Terminal }] : []),
   ];
 
@@ -95,6 +96,12 @@ export default function Header() {
             ) : null}
             {portalAuth ? (
               <div className="hidden items-center gap-3 md:flex">
+                <Link
+                  href="/watchlist"
+                  className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-4 py-2 text-xs font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20"
+                >
+                  关注工作台
+                </Link>
                 <Link
                   href="/account"
                   className="group relative overflow-hidden rounded-full border border-white/20 bg-white/5 px-6 py-2 transition-all hover:border-cyan-400"

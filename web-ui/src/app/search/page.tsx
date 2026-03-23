@@ -1583,22 +1583,6 @@ function getMentorScopeSignals(source: {
   };
 }
 
-function getMentorPresenceLabels(source: {
-  mentor_radar: SearchItem["mentor_radar"];
-  mentor_department_radar?: SearchItem["mentor_radar"];
-  mentor_school_radar?: SearchItem["mentor_radar"];
-}) {
-  const { department, school } = getMentorScopeSignals(source);
-  const labels: string[] = [];
-  if ((department?.review_count || 0) > 0) {
-    labels.push(`本学院评价 ${department?.review_count}`);
-  }
-  if ((school?.review_count || 0) > 0) {
-    labels.push(`本学校评价 ${school?.review_count}`);
-  }
-  return labels;
-}
-
 function getMentorWarningCount(source: {
   mentor_radar: SearchItem["mentor_radar"];
   mentor_department_radar?: SearchItem["mentor_radar"];
