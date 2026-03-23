@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from fastapi.routing import APIRoute
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import Content, Department, PortalUser, PortalUserMonitorHit, PortalUserMonitorTarget, School, SiteSection
+from app.models import Content, Department, PortalUser, PortalUserMonitorHit, PortalUserMonitorTarget, School, SiteSection, utcnow
 from app.services.account_access import ENTITLEMENT_SOURCE_ADMIN_GRANT, upsert_premium_entitlement
 from app.services.monitor_target_repair import repair_broken_monitor_targets
 
@@ -224,6 +226,114 @@ def test_target_list_only_contains_current_user_items(client):
     item_ids = {item.get("id") for item in items}
     assert own["id"] in item_ids
     assert other["id"] not in item_ids
+
+
+def test_target_list_includes_recent_three_day_announcement_signal_summary(client):
+    _require_monitoring_api()
+
+    _user_id, headers = _privileged_user_headers(client, "targets_signal_summary_user")
+    school_id, department_id, section_id = _ensure_asset_ids()
+
+    _create_target(
+        client,
+        headers,
+        {"scope_type": "school", "school_id": school_id, "check_interval_minutes": 60},
+    )
+    _create_target(
+        client,
+        headers,
+        {
+            "scope_type": "department",
+            "school_id": school_id,
+            "department_id": department_id,
+            "check_interval_minutes": 60,
+        },
+    )
+    _create_target(
+        client,
+        headers,
+        {
+            "scope_type": "section",
+            "school_id": school_id,
+            "department_id": department_id,
+            "site_section_id": section_id,
+            "check_interval_minutes": 60,
+        },
+    )
+
+    now = utcnow()
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Content(
+                    school_id=school_id,
+                    category="announcement",
+                    title="电子科技大学校园公告",
+                    body="校园一般通知",
+                    summary="校园一般通知摘要",
+                    source_url="https://example.com/campus-general",
+                    source_type="crawler",
+                    published_at=now - timedelta(hours=12),
+                    extra={},
+                ),
+                Content(
+                    school_id=school_id,
+                    category="announcement",
+                    title="计算机学院2026年硕士研究生招生简章",
+                    body="这里是最新研究生招生安排",
+                    summary="最新招生安排",
+                    source_url="https://example.com/cs-admission",
+                    source_type="crawler",
+                    published_at=now - timedelta(hours=2),
+                    extra={
+                        "department_id": department_id,
+                        "department_name": "计算机学院",
+                        "site_section_id": section_id,
+                        "site_section_name": "计算机学院通知公告",
+                        "tags": ["招生简章"],
+                    },
+                ),
+                Content(
+                    school_id=school_id,
+                    category="announcement",
+                    title="过期公告",
+                    body="五天前的旧公告",
+                    summary="五天前的旧公告",
+                    source_url="https://example.com/stale",
+                    source_type="crawler",
+                    published_at=now - timedelta(days=5),
+                    extra={},
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.get("/api/v1/monitoring/targets", headers=headers)
+    assert response.status_code == 200, response.text
+    payload = _extract_payload(response)
+    overview = payload["recent_signal_overview"]
+    assert overview["window_days"] == 3
+    assert overview["tracked_target_count"] == 3
+    assert overview["active_target_count"] == 3
+    assert overview["recruitment_target_count"] == 3
+    assert overview["total_recent_announcements"] == 2
+    assert overview["total_recruitment_announcements"] == 1
+    assert overview["latest_announcement"]["title"] == "计算机学院2026年硕士研究生招生简章"
+
+    items = {item["scope_type"]: item for item in payload["items"]}
+    school_signal = items["school"]["recent_signal"]
+    assert school_signal["recent_announcement_count"] == 2
+    assert school_signal["recruitment_announcement_count"] == 1
+
+    department_signal = items["department"]["recent_signal"]
+    assert department_signal["recent_announcement_count"] == 1
+    assert department_signal["recruitment_announcement_count"] == 1
+    assert department_signal["latest_announcement"]["title"] == "计算机学院2026年硕士研究生招生简章"
+
+    section_signal = items["section"]["recent_signal"]
+    assert section_signal["recent_announcement_count"] == 1
+    assert section_signal["recruitment_announcement_count"] == 1
+    assert section_signal["latest_announcement"]["site_section_name"] == "计算机学院通知公告"
 
 
 def test_target_list_infers_school_name_from_hits_for_legacy_broken_rows(client):

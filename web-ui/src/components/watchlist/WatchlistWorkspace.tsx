@@ -113,6 +113,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
   const deleteMonitorTargetMutation = useDeleteMonitorTargetMutation();
 
   const watchEntries = buildWatchEntries(subscriptionsQuery.data?.items || [], monitorTargetsQuery.data?.items || []);
+  const recentSignalOverview = monitorTargetsQuery.data?.recent_signal_overview || null;
   const schoolSuggestions = schoolSuggestionsQuery.data?.items || [];
   const departmentSuggestions = departmentSuggestionsQuery.data?.items || [];
   const sectionSuggestions = sectionLookupQuery.data?.items || [];
@@ -585,6 +586,93 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
     </section>
   );
 
+  const recentSignalCard = (
+    <section
+      className={`rounded-[28px] border border-cyan-400/14 bg-[linear-gradient(180deg,rgba(8,16,27,0.96),rgba(5,10,18,0.98))] shadow-[0_18px_60px_rgba(0,0,0,0.28)] ${
+        mode === "page" ? "p-5" : "p-4"
+      }`}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">3 Day Signal</div>
+          <div className="mt-1 text-lg font-semibold text-white">近三日公告雷达</div>
+        </div>
+        <div className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-medium text-cyan-100">
+          {recentSignalOverview?.window_days || 3} 天窗
+        </div>
+      </div>
+
+      {monitorCount ? (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500">有更新</div>
+              <div className="mt-2 text-3xl font-semibold text-white">{recentSignalOverview?.active_target_count || 0}</div>
+              <div className="mt-1 text-xs text-slate-400">共 {recentSignalOverview?.tracked_target_count || monitorCount} 个范围关注</div>
+            </div>
+            <div className="rounded-[22px] border border-orange-400/15 bg-orange-500/10 p-4">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-orange-200/75">研招相关</div>
+              <div className="mt-2 text-3xl font-semibold text-orange-50">
+                {recentSignalOverview?.recruitment_target_count || 0}
+              </div>
+              <div className="mt-1 text-xs text-orange-100/70">
+                公告 {recentSignalOverview?.total_recruitment_announcements || 0} 条
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-[22px] border border-white/10 bg-black/25 p-4">
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-300">
+                近 3 日总公告 {recentSignalOverview?.total_recent_announcements || 0} 条
+              </span>
+              <span className="rounded-full border border-cyan-400/18 bg-cyan-500/10 px-3 py-1 text-cyan-100">
+                重点看学校级、学院级、栏目级关注
+              </span>
+            </div>
+            {recentSignalOverview?.latest_announcement ? (
+              <div className="mt-3 space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Latest Hit</div>
+                {recentSignalOverview.latest_announcement.source_url ? (
+                  <a
+                    href={recentSignalOverview.latest_announcement.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-sm font-medium leading-6 text-white transition-colors hover:text-cyan-200"
+                  >
+                    {recentSignalOverview.latest_announcement.title}
+                  </a>
+                ) : (
+                  <div className="text-sm font-medium leading-6 text-white">
+                    {recentSignalOverview.latest_announcement.title}
+                  </div>
+                )}
+                <div className="text-xs leading-6 text-slate-400">
+                  {[
+                    recentSignalOverview.latest_announcement.school_name,
+                    recentSignalOverview.latest_announcement.department_name,
+                    recentSignalOverview.latest_announcement.site_section_name,
+                    formatSignalTimestamp(recentSignalOverview.latest_announcement.published_at),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 text-xs leading-6 text-slate-400">
+                近 3 日还没有命中新公告，底层扫描会继续刷新这块情报板。
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] p-4 text-xs leading-6 text-slate-300">
+          先添加学校、学院或栏目级关注，这里才会开始汇总近 3 日最新公告和研招相关动态。
+        </div>
+      )}
+    </section>
+  );
+
   const accountCard = portalAuth ? (
     <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
       <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">Control Deck</div>
@@ -755,6 +843,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
 
             <div className="space-y-6 xl:sticky xl:top-28 xl:self-start">
               {composerCard}
+              {recentSignalCard}
               {realtimeCard}
               {accountCard}
             </div>
@@ -788,6 +877,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
         </div>
       </div>
       {composerCard}
+      {recentSignalCard}
       {realtimeCard}
 
       <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
@@ -855,6 +945,7 @@ function WatchEntryCard({
   const icon = item.kind === "monitor" ? <Radar size={14} /> : <Star size={14} />;
   const title = buildWatchEntryTitle(item);
   const detail = buildWatchEntryDetail(item);
+  const recentSignal = item.kind === "monitor" ? item.recent_signal : null;
   const timestampLabel =
     item.kind === "monitor"
       ? item.last_hit_at || item.last_checked_at || item.created_at
@@ -875,6 +966,7 @@ function WatchEntryCard({
           </div>
           <div className="mt-2 break-words text-base font-semibold leading-6 text-white">{title}</div>
           {detail ? <div className="mt-2 text-xs leading-6 text-slate-400">{detail}</div> : null}
+          {item.kind === "monitor" ? <RecentSignalPanel signal={recentSignal} /> : null}
         </div>
         <button
           type="button"
@@ -886,6 +978,68 @@ function WatchEntryCard({
         </button>
       </div>
     </article>
+  );
+}
+
+function RecentSignalPanel({
+  signal,
+}: {
+  signal?: MonitorTargetItem["recent_signal"];
+}) {
+  if (!signal) {
+    return null;
+  }
+
+  if (!signal.has_recent_announcements) {
+    return (
+      <div className="mt-3 rounded-[20px] border border-white/10 bg-black/20 px-4 py-3 text-xs leading-6 text-slate-400">
+        近 {signal.window_days} 日暂无新公告，当前仍会持续盯住下一条更新。
+      </div>
+    );
+  }
+
+  const latest = signal.latest_announcement;
+
+  return (
+    <div className="mt-3 rounded-[20px] border border-cyan-400/12 bg-cyan-500/[0.07] p-4">
+      <div className="flex flex-wrap gap-2">
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-200">
+          近 {signal.window_days} 日 {signal.recent_announcement_count} 条公告
+        </span>
+        <span
+          className={`rounded-full border px-3 py-1 text-[11px] font-medium ${
+            signal.has_recruitment_announcements
+              ? "border-orange-400/20 bg-orange-500/10 text-orange-100"
+              : "border-white/10 bg-white/5 text-slate-300"
+          }`}
+        >
+          研招相关 {signal.recruitment_announcement_count} 条
+        </span>
+      </div>
+
+      {latest ? (
+        <div className="mt-3 space-y-1.5">
+          <div className="text-[11px] uppercase tracking-[0.24em] text-cyan-200/80">Latest Notice</div>
+          {latest.source_url ? (
+            <a
+              href={latest.source_url}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-sm font-medium leading-6 text-white transition-colors hover:text-cyan-200"
+            >
+              {latest.title}
+            </a>
+          ) : (
+            <div className="text-sm font-medium leading-6 text-white">{latest.title}</div>
+          )}
+          <div className="text-xs leading-6 text-slate-300">
+            {[latest.department_name, latest.site_section_name, formatSignalTimestamp(latest.published_at)]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1038,6 +1192,13 @@ function buildWatchEntryDetail(item: WatchEntry) {
 
 function selectedSectionSummary(item: MonitorTargetItem) {
   return [item.school_name, item.department_name, item.site_section_name].filter(Boolean).join(" · ");
+}
+
+function formatSignalTimestamp(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+  return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
 
 function buildWatchEntries(subscriptions: SubscriptionItem[], monitorTargets: MonitorTargetItem[]) {

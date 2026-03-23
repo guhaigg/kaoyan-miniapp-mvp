@@ -34,6 +34,7 @@ export function useAddMonitorTargetMutation() {
         return {
           total: deduped.length + 1,
           items: [item, ...deduped],
+          recent_signal_overview: current?.recent_signal_overview,
         };
       });
       void queryClient.invalidateQueries({ queryKey });
@@ -56,6 +57,7 @@ export function useDeleteMonitorTargetMutation() {
         return {
           total: items.length,
           items,
+          recent_signal_overview: current.recent_signal_overview,
         };
       });
       void queryClient.invalidateQueries({ queryKey });

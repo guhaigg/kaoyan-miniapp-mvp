@@ -740,6 +740,37 @@ class MonitorTargetUpdateRequest(BaseModel):
     check_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
 
 
+class MonitorTargetRecentSignalItem(BaseModel):
+    content_id: str
+    title: str
+    summary: str | None
+    source_url: str | None
+    published_at: datetime | None
+    school_name: str | None
+    department_name: str | None
+    site_section_name: str | None
+    tags: list[str] = Field(default_factory=list)
+
+
+class MonitorTargetRecentSignalSummary(BaseModel):
+    window_days: int = 3
+    recent_announcement_count: int = 0
+    recruitment_announcement_count: int = 0
+    has_recent_announcements: bool = False
+    has_recruitment_announcements: bool = False
+    latest_announcement: MonitorTargetRecentSignalItem | None = None
+
+
+class MonitorTargetRecentSignalOverview(BaseModel):
+    window_days: int = 3
+    tracked_target_count: int = 0
+    active_target_count: int = 0
+    recruitment_target_count: int = 0
+    total_recent_announcements: int = 0
+    total_recruitment_announcements: int = 0
+    latest_announcement: MonitorTargetRecentSignalItem | None = None
+
+
 class MonitorTargetItem(BaseModel):
     id: str
     user_id: str
@@ -755,6 +786,7 @@ class MonitorTargetItem(BaseModel):
     check_interval_minutes: int
     last_checked_at: datetime | None
     last_hit_at: datetime | None
+    recent_signal: MonitorTargetRecentSignalSummary | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -762,6 +794,7 @@ class MonitorTargetItem(BaseModel):
 class MonitorTargetListResponse(BaseModel):
     total: int
     items: list[MonitorTargetItem]
+    recent_signal_overview: MonitorTargetRecentSignalOverview | None = None
 
 
 class MonitorScopeSectionItem(BaseModel):

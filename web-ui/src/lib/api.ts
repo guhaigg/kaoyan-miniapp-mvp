@@ -822,6 +822,37 @@ export type SubscriptionListResponse = {
 
 export type MonitorTargetScopeType = "school" | "department" | "section";
 
+export type MonitorTargetRecentSignalItem = {
+  content_id: string;
+  title: string;
+  summary?: string | null;
+  source_url?: string | null;
+  published_at?: string | null;
+  school_name?: string | null;
+  department_name?: string | null;
+  site_section_name?: string | null;
+  tags: string[];
+};
+
+export type MonitorTargetRecentSignalSummary = {
+  window_days: number;
+  recent_announcement_count: number;
+  recruitment_announcement_count: number;
+  has_recent_announcements: boolean;
+  has_recruitment_announcements: boolean;
+  latest_announcement?: MonitorTargetRecentSignalItem | null;
+};
+
+export type MonitorTargetRecentSignalOverview = {
+  window_days: number;
+  tracked_target_count: number;
+  active_target_count: number;
+  recruitment_target_count: number;
+  total_recent_announcements: number;
+  total_recruitment_announcements: number;
+  latest_announcement?: MonitorTargetRecentSignalItem | null;
+};
+
 export type MonitorTargetItem = {
   id: string;
   user_id: string;
@@ -837,6 +868,7 @@ export type MonitorTargetItem = {
   check_interval_minutes: number;
   last_checked_at?: string | null;
   last_hit_at?: string | null;
+  recent_signal?: MonitorTargetRecentSignalSummary | null;
   created_at: string;
   updated_at: string;
 };
@@ -844,6 +876,7 @@ export type MonitorTargetItem = {
 export type MonitorTargetListResponse = {
   total: number;
   items: MonitorTargetItem[];
+  recent_signal_overview?: MonitorTargetRecentSignalOverview | null;
 };
 
 export type MonitorScopeSectionItem = {

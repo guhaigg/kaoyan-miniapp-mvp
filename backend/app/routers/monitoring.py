@@ -31,6 +31,7 @@ from ..schemas import (
     MonitorScopeSectionListResponse,
 )
 from ..services.monitor_target_repair import infer_monitor_target_context
+from ..services.monitor_target_signals import build_monitor_target_recent_signals
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
@@ -54,7 +55,12 @@ def _build_target_display_label(
     return label or site_section_name or department_name or school_name or scope_type
 
 
-def _to_target_item(db: Session, item: PortalUserMonitorTarget) -> MonitorTargetItem:
+def _to_target_item(
+    db: Session,
+    item: PortalUserMonitorTarget,
+    *,
+    recent_signal: dict | None = None,
+) -> MonitorTargetItem:
     context = infer_monitor_target_context(db, item)
     school_name = context.get("school_name")
     department_name = context.get("department_name")
@@ -79,6 +85,7 @@ def _to_target_item(db: Session, item: PortalUserMonitorTarget) -> MonitorTarget
         check_interval_minutes=item.check_interval_minutes,
         last_checked_at=item.last_checked_at,
         last_hit_at=item.last_hit_at,
+        recent_signal=recent_signal,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -361,7 +368,8 @@ def create_monitor_target(payload: MonitorTargetCreateRequest, request: Request,
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="monitor target already exists")
     db.refresh(item)
     audit_event(db, request, "monitoring.target.create", None, {"target_id": item.id, "portal_user_id": user.id})
-    return _to_target_item(db, item)
+    signal_map, _overview = build_monitor_target_recent_signals(db, [item])
+    return _to_target_item(db, item, recent_signal=signal_map.get(item.id))
 
 
 @router.get("/targets", response_model=MonitorTargetListResponse)
@@ -381,7 +389,12 @@ def list_monitor_targets(request: Request, db: Session = Depends(get_db)) -> Mon
         .order_by(PortalUserMonitorTarget.created_at.desc())
         .all()
     )
-    return MonitorTargetListResponse(total=len(rows), items=[_to_target_item(db, x) for x in rows])
+    signal_map, overview = build_monitor_target_recent_signals(db, rows)
+    return MonitorTargetListResponse(
+        total=len(rows),
+        items=[_to_target_item(db, x, recent_signal=signal_map.get(x.id)) for x in rows],
+        recent_signal_overview=overview,
+    )
 
 
 @router.get("/scope-sections", response_model=MonitorScopeSectionListResponse)
@@ -518,7 +531,8 @@ def update_monitor_target(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="monitor target already exists")
     db.refresh(target)
     audit_event(db, request, "monitoring.target.update", None, {"target_id": target.id, "portal_user_id": user.id})
-    return _to_target_item(db, target)
+    signal_map, _overview = build_monitor_target_recent_signals(db, [target])
+    return _to_target_item(db, target, recent_signal=signal_map.get(target.id))
 
 
 @router.post("/targets/{target_id}/keywords", response_model=MonitorKeywordItem)
