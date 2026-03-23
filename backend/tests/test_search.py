@@ -5,6 +5,7 @@ from app.db import SessionLocal
 from app.models import AdjustmentOpportunity, Content, ContentSnapshot, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
+from app.services.content_repair import extract_content_published_at_from_body
 from app.routers.search import _build_adjustment_detail_from_opportunity
 from scripts.repair_stale_announcement_content import _repair_row_by_snapshot
 
@@ -2233,6 +2234,11 @@ def test_repair_stale_announcement_script_uses_snapshots_before_refetch():
     assert repaired.title == "快照修复大学关于2024年同等学力申硕学员现场确认暨开学典礼的通知"
     assert repaired.summary.startswith("根据《快照修复大学同等学力人员申请硕士学位工作实施办法》")
     assert repaired.published_at.isoformat().startswith("2024-08-30")
+
+
+def test_extract_content_published_at_from_body_supports_more_date_labels_and_top_dates():
+    assert extract_content_published_at_from_body("日期：2024-09-01 复试工作安排如下").isoformat().startswith("2024-09-01")
+    assert extract_content_published_at_from_body("2024-10-12 湖北大学同等学力申硕2024年秋季学期开课通知").isoformat().startswith("2024-10-12")
 
 
 def test_search_cache_skips_refresh_and_page_beyond_limit():

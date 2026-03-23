@@ -15,13 +15,19 @@ if str(ROOT) not in sys.path:
 
 from app.db import SessionLocal
 from app.models import Content, utcnow
-from app.services.content_repair import looks_like_placeholder_content_title, repair_content_fields_from_body, resolve_content_display_fields
+from app.services.content_repair import (
+    extract_content_published_at_from_body,
+    looks_like_placeholder_content_title,
+    repair_content_fields_from_body,
+    resolve_content_display_fields,
+)
 from app.services.content_summary import summarize_text
 from app.services.crawler import (
     _build_content_tags,
     _build_link_notice_content,
     _extract_detail_body,
     _extract_outbound_links,
+    _extract_text,
     _extract_title,
     _fetch_with_retry,
     _is_pdf_url,
@@ -57,9 +63,11 @@ def _repair_row_by_snapshot(row: Content) -> list[str]:
     readability_title = None
     outbound_links: list[dict[str, str]] = []
     source_url = str(row.source_url or "").strip()
+    raw_page_text = ""
 
     if raw_html:
         extracted_body, extraction_method, readability_title = _extract_detail_body(raw_html, detail_selector_config=None)
+        raw_page_text = _extract_text(raw_html)
         if source_url:
             outbound_links = _extract_outbound_links(raw_html, base_url=source_url, current_url=source_url)
 
@@ -83,6 +91,11 @@ def _repair_row_by_snapshot(row: Content) -> list[str]:
         body=body,
     )
     display_summary = display_summary or summary
+    if display_published_at is None:
+        display_published_at = (
+            extract_content_published_at_from_body(raw_text)
+            or extract_content_published_at_from_body(raw_page_text)
+        )
 
     changed_fields: list[str] = []
     if body != row.body:
@@ -115,6 +128,7 @@ def _repair_row_by_refetch(row: Content) -> list[str]:
     source_url = str(row.source_url or "").strip()
     response = _fetch_with_retry(source_url)
     raw_html = response.text or ""
+    raw_page_text = _extract_text(raw_html)
     extracted_body, extraction_method, readability_title = _extract_detail_body(raw_html, detail_selector_config=None)
     body = str(extracted_body or "").strip()
     if not body:
@@ -137,6 +151,8 @@ def _repair_row_by_refetch(row: Content) -> list[str]:
         body=body,
     )
     display_summary = display_summary or summary
+    if display_published_at is None:
+        display_published_at = extract_content_published_at_from_body(raw_page_text)
 
     changed_fields: list[str] = []
     if body != row.body:

@@ -12,7 +12,10 @@ PLACEHOLDER_CONTENT_TITLE_PATTERN = re.compile(r"^(?:[A-Za-z0-9_-]+|\d+)\.(?:s?h
 CONTENT_BODY_TITLE_PATTERN = re.compile(
     r"([\u4e00-\u9fa5A-Za-z0-9（）()《》“”·、\-—:：]{8,160}?(?:通知|公告|简章|章程|办法|须知|名单|安排|方案|信息))"
 )
-CONTENT_BODY_PUBLISHED_AT_PATTERN = re.compile(r"发布时间[:：]?\s*(\d{4})[.\-/年](\d{1,2})[.\-/月](\d{1,2})(?:日)?")
+CONTENT_BODY_LABELED_PUBLISHED_AT_PATTERN = re.compile(
+    r"(?:发布时间|发布时(?:间)?|发布日期|日期|时间|发文时间|更新(?:时间)?|发表于)[:：]?\s*(\d{4})[.\-/年](\d{1,2})[.\-/月](\d{1,2})(?:日)?"
+)
+CONTENT_BODY_TOP_DATE_PATTERN = re.compile(r"(?<!\d)(\d{4})[.\-/年](\d{1,2})[.\-/月](\d{1,2})(?:日)?(?!\d)")
 CONTENT_SUMMARY_CUE_PATTERN = re.compile(r"(根据《|根据|现将|现就|为做好|为进一步|经研究|一、|请申请人|请考生|各位考生)")
 
 
@@ -45,14 +48,18 @@ def extract_content_published_at_from_body(body: str | None) -> datetime | None:
     normalized = normalize_text_whitespace(body)
     if not normalized:
         return None
-    match = CONTENT_BODY_PUBLISHED_AT_PATTERN.search(normalized)
-    if not match:
-        return None
-    year, month, day = (int(part) for part in match.groups())
-    try:
-        return datetime(year, month, day, tzinfo=UTC)
-    except ValueError:
-        return None
+    search_windows = [normalized[:320], normalized[:160]]
+    for index, pattern in enumerate((CONTENT_BODY_LABELED_PUBLISHED_AT_PATTERN, CONTENT_BODY_TOP_DATE_PATTERN)):
+        window = search_windows[index] if index < len(search_windows) else normalized[:160]
+        match = pattern.search(window)
+        if not match:
+            continue
+        year, month, day = (int(part) for part in match.groups())
+        try:
+            return datetime(year, month, day, tzinfo=UTC)
+        except ValueError:
+            continue
+    return None
 
 
 def extract_content_summary_from_body(body: str | None, display_title: str | None) -> str | None:
@@ -62,7 +69,7 @@ def extract_content_summary_from_body(body: str | None, display_title: str | Non
     normalized = normalized.lstrip("\ufeff")
     if display_title and normalized.startswith(display_title):
         normalized = normalized[len(display_title):].strip(" -|：:")
-    published_match = CONTENT_BODY_PUBLISHED_AT_PATTERN.search(normalized)
+    published_match = CONTENT_BODY_LABELED_PUBLISHED_AT_PATTERN.search(normalized)
     if published_match:
         normalized = normalized[published_match.end():].strip(" -|：:")
     cue_match = CONTENT_SUMMARY_CUE_PATTERN.search(normalized)
