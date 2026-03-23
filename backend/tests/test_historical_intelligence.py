@@ -2,8 +2,10 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
+import scripts.backfill_adjustment_search_facets as backfill_adjustment_search_facets
 from app.db import SessionLocal
 from app.services.historical_intelligence import (
+    _annotate_adjustment_search_facets,
     build_adjustment_opportunities_from_archives,
     build_historical_profiles_from_archives,
     build_release_timing_profiles_from_archives,
@@ -20,6 +22,49 @@ def _write_xlsx(path: Path, sheet_name: str, header: list[str], rows: list[list[
     for row in rows:
         worksheet.append(row)
     workbook.save(path)
+
+
+def test_annotate_adjustment_search_facets_converts_score_floor_to_latest_national_line_year():
+    rows = [
+        {
+            "id": "row-2025-engineering-a",
+            "school_name_normalized": "精确大学",
+            "source_type": "stats",
+            "year": 2025,
+            "school_tier": "普本",
+            "department_name": None,
+            "department_name_normalized": None,
+            "major_code": "085400",
+            "major_name": "电子信息",
+            "major_name_normalized": "电子信息",
+            "study_mode": "fulltime",
+            "source_url": None,
+            "meta_json": {},
+            "region_name": "上海",
+            "initial_score_min": 260,
+            "adjustment_score_min": None,
+            "min_score": 260,
+        }
+    ]
+
+    annotated = _annotate_adjustment_search_facets(rows)
+
+    assert annotated[0]["min_score_required"] == 264
+    assert annotated[0]["has_history"] == 1
+    assert annotated[0]["is_long_track"] == 0
+
+
+def test_fast_backfill_strategy_is_exact_alias(monkeypatch):
+    called = {"value": False}
+
+    def fake_run_exact_backfill() -> int:
+        called["value"] = True
+        return 7
+
+    monkeypatch.setattr(backfill_adjustment_search_facets, "_run_exact_backfill", fake_run_exact_backfill)
+
+    assert backfill_adjustment_search_facets._run_fast_backfill() == 7
+    assert called["value"] is True
 
 
 def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path):
@@ -191,6 +236,7 @@ def test_build_historical_profiles_and_mentor_evaluations_from_archives(tmp_path
         row for row in opportunities if row["source_type"] == "stats" and row["source_dataset_key"] == "adjustment_stats_2025_full_raw"
     )
     assert stats_opportunity["min_score"] == 318
+    assert stats_opportunity["min_score_required"] == 321
     balance_opportunity = next(row for row in opportunities if row["source_type"] == "balance")
     assert balance_opportunity["vacancy_count"] == 5
     landing_opportunities = [row for row in opportunities if row["source_type"] == "landing"]

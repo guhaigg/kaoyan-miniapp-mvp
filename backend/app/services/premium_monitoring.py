@@ -137,8 +137,6 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
     if not target_rows:
         return
     keyword_rows = _query_active_rows(db, keyword_model)
-    if not keyword_rows:
-        return
 
     target_columns = _column_names(target_model)
     keyword_columns = _column_names(keyword_model)
@@ -172,6 +170,8 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
         keywords_by_target.setdefault(target_id, []).append(keyword)
 
     school_name = _as_text(getattr(getattr(content, "school", None), "name", None)) or _as_text(extra.get("school_name"))
+    department_name = _as_text(extra.get("department_name"))
+    site_section_name = _as_text(extra.get("site_section_name"))
     category = _as_text(getattr(content, "category", None))
     title = _as_text(getattr(content, "title", None))
     source_url = _as_text(getattr(content, "source_url", None))
@@ -192,15 +192,23 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
         if not target_id or not user_id:
             continue
 
-        matched_keywords = _collect_keyword_hits(
-            keywords_by_target.get(target_id, []),
-            content_text,
-            content_tags,
-            keyword_value_field=keyword_value_field,
-            keyword_mode_field=keyword_mode_field,
-        )
-        if not matched_keywords:
-            continue
+        target_keywords = keywords_by_target.get(target_id, [])
+        if target_keywords:
+            matched_keywords = _collect_keyword_hits(
+                target_keywords,
+                content_text,
+                content_tags,
+                keyword_value_field=keyword_value_field,
+                keyword_mode_field=keyword_mode_field,
+            )
+            if not matched_keywords:
+                continue
+            score = len(matched_keywords)
+            reason = f"contains:{','.join(matched_keywords)}"
+        else:
+            matched_keywords = []
+            score = 1
+            reason = f"scope_match:{_as_text(getattr(target, 'scope_type', None)).lower() or 'unknown'}"
 
         existing_hit = (
             db.query(hit_model)
@@ -214,8 +222,6 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
         if existing_hit is not None:
             continue
 
-        score = len(matched_keywords)
-        reason = f"contains:{','.join(matched_keywords)}"
         hit_payload: dict[str, Any] = {
             "user_id": user_id,
             hit_target_field: target_id,
@@ -233,11 +239,17 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
             hit_payload["pushed_bark"] = 0
         hit_row = hit_model(**hit_payload)
         db.add(hit_row)
+        if hasattr(target, "last_hit_at"):
+            setattr(target, "last_hit_at", utcnow())
         db.flush()
 
         if _find_existing_monitor_outbox(db, content_id=content_id, user_id=user_id) is not None:
             continue
 
+        target_school_name = _as_text(getattr(getattr(target, "school", None), "name", None))
+        target_department_name = _as_text(getattr(getattr(target, "department", None), "name", None))
+        target_site_section_name = _as_text(getattr(getattr(target, "site_section", None), "name", None))
+        scope_type = _as_text(getattr(target, "scope_type", None)).lower() or None
         outbox = NotificationOutbox(
             content_id=content_id,
             event_type="monitor.hit",
@@ -245,13 +257,17 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
                 "content_id": content_id,
                 "user_id": user_id,
                 "target_id": target_id,
+                "scope_type": scope_type,
                 "matched_keywords": matched_keywords,
                 "match_score": score,
                 "hit_reason": reason,
                 "title": title,
                 "source_url": source_url,
                 "category": category,
-                "school_name": school_name or None,
+                "school_name": school_name or target_school_name or None,
+                "department_name": department_name or target_department_name or None,
+                "site_section_id": site_section_id or None,
+                "site_section_name": site_section_name or target_site_section_name or None,
                 "major": major or None,
                 "region": region or None,
                 "tags": content_tags,

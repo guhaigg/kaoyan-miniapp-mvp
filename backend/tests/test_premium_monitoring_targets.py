@@ -193,6 +193,10 @@ def test_create_targets_for_school_department_section_scopes(client):
     assert school["scope_type"] == "school"
     assert department["scope_type"] == "department"
     assert section["scope_type"] == "section"
+    assert school["school_name"] == "电子科技大学"
+    assert department["display_label"] == "电子科技大学 · 计算机学院"
+    assert section["site_section_name"] == "计算机学院通知公告"
+    assert section["display_label"] == "电子科技大学 · 计算机学院 · 计算机学院通知公告"
 
 
 def test_target_list_only_contains_current_user_items(client):
@@ -303,3 +307,43 @@ def test_duplicate_target_behavior_is_idempotent_or_conflict(client):
         items = _list_targets(client, headers)
         same_scope_items = [x for x in items if x.get("scope_type") == "school" and x.get("school_id") == school_id]
         assert len(same_scope_items) >= 2
+
+
+def test_scope_sections_lookup_returns_filtered_candidates_for_premium_user(client):
+    _require_monitoring_api()
+    _user_id, headers = _privileged_user_headers(client, "targets_section_lookup_user")
+    _school_id, _department_id, section_id = _ensure_asset_ids()
+
+    response = client.get(
+        "/api/v1/monitoring/scope-sections",
+        params={"school_name": "电子科技大学", "department_name": "计算机学院", "section_name": "通知"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    payload = _extract_payload(response)
+    assert payload["total"] >= 1
+    matched = next((item for item in payload["items"] if item["id"] == section_id), None)
+    assert matched is not None
+    assert matched["school_name"] == "电子科技大学"
+    assert matched["department_name"] == "计算机学院"
+    assert matched["name"] == "计算机学院通知公告"
+
+
+def test_scope_departments_lookup_returns_school_scoped_candidates(client):
+    _require_monitoring_api()
+    _user_id, headers = _privileged_user_headers(client, "targets_department_lookup_user")
+    school_id, department_id, _section_id = _ensure_asset_ids()
+
+    response = client.get(
+        "/api/v1/monitoring/scope-departments",
+        params={"school_name": "电子科技大学", "department_name": "计算机"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    payload = _extract_payload(response)
+    assert payload["total"] >= 1
+    matched = next((item for item in payload["items"] if item["id"] == department_id), None)
+    assert matched is not None
+    assert matched["school_id"] == school_id
+    assert matched["school_name"] == "电子科技大学"
+    assert matched["name"] == "计算机学院"

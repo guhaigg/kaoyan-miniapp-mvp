@@ -1541,6 +1541,170 @@ def test_adjustment_search_broad_filters_use_denormalized_scan_fields(client):
     assert [item["school_name"] for item in payload["items"]] == ["甲大学"]
 
 
+def test_adjustment_search_broad_query_uses_full_historical_intelligence(client):
+    with SessionLocal() as db:
+        db.add(
+            AdjustmentOpportunity(
+                opportunity_key="broad-full-intelligence",
+                source_dataset_key="adjustment_stats_2025_full_raw",
+                source_type="stats",
+                year=2025,
+                school_name="深度大学",
+                school_name_normalized="深度大学",
+                school_code="10005",
+                region_name="上海",
+                school_tier="211",
+                department_name="信息学院",
+                department_name_normalized="信息学院",
+                major_code="085400",
+                major_name="电子信息",
+                major_name_normalized="电子信息",
+                study_mode="fulltime",
+                has_history=1,
+                is_long_track=0,
+                reference_link_count=2,
+                min_score_required=316,
+                vacancy_count=2,
+                min_score=312,
+                avg_score=324.0,
+                max_score=336,
+                verification_status="历史统计",
+                title="深度大学电子信息历史统计",
+                summary="用于验证 broad query 卡片走完整画像",
+                source_url="https://example.com/broad-full-intelligence",
+                meta_json={},
+            )
+        )
+        db.add_all(
+            [
+                HistoricalAdjustmentProfile(
+                    profile_key="broad-profile-1",
+                    year=2024,
+                    source_type="landing",
+                    source_dataset_key="adjustment_landing_2024_raw",
+                    school_name="深度大学",
+                    school_name_normalized="深度大学",
+                    school_code="10005",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name="信息学院",
+                    department_name_normalized="信息学院",
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    sample_count=5,
+                    vacancy_count=None,
+                    initial_score_min=315,
+                    initial_score_max=341,
+                    min_score=315,
+                    avg_score=328.0,
+                    max_score=341,
+                    meta_json={},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="broad-profile-2",
+                    year=2025,
+                    source_type="adjustment_stats",
+                    source_dataset_key="adjustment_stats_2025_full_raw",
+                    school_name="深度大学",
+                    school_name_normalized="深度大学",
+                    school_code="10005",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name="信息学院",
+                    department_name_normalized="信息学院",
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    sample_count=5,
+                    vacancy_count=None,
+                    initial_score_min=312,
+                    initial_score_max=336,
+                    min_score=312,
+                    avg_score=324.0,
+                    max_score=336,
+                    meta_json={},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="broad-profile-3",
+                    year=2025,
+                    source_type="future_program",
+                    source_dataset_key="admission_program_catalog_2026_raw",
+                    school_name="深度大学",
+                    school_name_normalized="深度大学",
+                    school_code="10005",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name="信息学院",
+                    department_name_normalized="信息学院",
+                    major_code="085400",
+                    major_name="电子信息",
+                    major_name_normalized="电子信息",
+                    study_mode="fulltime",
+                    sample_count=3,
+                    vacancy_count=3,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    meta_json={"source_url": "https://example.com/broad-program"},
+                ),
+                HistoricalAdjustmentProfile(
+                    profile_key="broad-profile-4",
+                    year=2025,
+                    source_type="notice_reference",
+                    source_dataset_key="adjustment_announcement_2025_raw",
+                    school_name="深度大学",
+                    school_name_normalized="深度大学",
+                    school_code="10005",
+                    region_name="上海",
+                    school_tier="211",
+                    department_name="信息学院",
+                    department_name_normalized="信息学院",
+                    major_code=None,
+                    major_name=None,
+                    major_name_normalized=None,
+                    study_mode=None,
+                    sample_count=2,
+                    vacancy_count=None,
+                    min_score=None,
+                    avg_score=None,
+                    max_score=None,
+                    meta_json={"reference_urls": ["https://example.com/broad-history-1", "https://example.com/broad-history-2"]},
+                ),
+            ]
+        )
+        db.commit()
+
+    token = _register_and_login(client, "adjustment_broad_full_intelligence_user")
+    search = client.post(
+        "/api/v1/search/adjustments",
+        json={"candidate_score": 340, "page_size": 10},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["school_name"] == "深度大学"
+    assert item["historical_adjustment"]["sample_years"] == [2025]
+    assert item["historical_adjustment"]["sample_count"] == 5
+    assert item["historical_adjustment"]["min_score"] == 316
+    assert item["historical_adjustment"]["future_program_count"] == 3
+    assert item["historical_adjustment"]["national_line_year"] == 2026
+    assert item["historical_adjustment"]["national_line_major_category"] == "工学"
+    assert item["school_intelligence"]["profile_count"] == 4
+    assert item["school_intelligence"]["active_years"] == [2024, 2025]
+    assert item["school_intelligence"]["future_program_count"] == 3
+    assert item["school_intelligence"]["confidence_label"] == "持续关注"
+    assert set(item["school_intelligence"]["reference_urls"]) == {
+        "https://example.com/broad-history-1",
+        "https://example.com/broad-history-2",
+        "https://example.com/broad-program",
+    }
+
+
 def test_adjustment_search_year_filter_applies_to_adjustment_content(client):
     for year in (2024, 2025):
         response = client.post(

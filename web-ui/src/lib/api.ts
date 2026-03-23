@@ -820,6 +820,72 @@ export type SubscriptionListResponse = {
   items: SubscriptionItem[];
 };
 
+export type MonitorTargetScopeType = "school" | "department" | "section";
+
+export type MonitorTargetItem = {
+  id: string;
+  user_id: string;
+  scope_type: MonitorTargetScopeType;
+  school_id?: string | null;
+  school_name?: string | null;
+  department_id?: string | null;
+  department_name?: string | null;
+  site_section_id?: string | null;
+  site_section_name?: string | null;
+  display_label: string;
+  status: string;
+  check_interval_minutes: number;
+  last_checked_at?: string | null;
+  last_hit_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MonitorTargetListResponse = {
+  total: number;
+  items: MonitorTargetItem[];
+};
+
+export type MonitorScopeSectionItem = {
+  id: string;
+  name: string;
+  section_type: string;
+  discovery_category: string;
+  section_url: string;
+  school_id?: string | null;
+  school_name?: string | null;
+  department_id?: string | null;
+  department_name?: string | null;
+};
+
+export type MonitorScopeSectionListResponse = {
+  total: number;
+  items: MonitorScopeSectionItem[];
+};
+
+export type MonitorScopeDepartmentItem = {
+  id: string;
+  name: string;
+  department_type: string;
+  school_id?: string | null;
+  school_name?: string | null;
+};
+
+export type MonitorScopeDepartmentListResponse = {
+  total: number;
+  items: MonitorScopeDepartmentItem[];
+};
+
+export type SchoolSuggestItem = {
+  id: string;
+  name: string;
+  province?: string | null;
+};
+
+export type SchoolSuggestResponse = {
+  items: SchoolSuggestItem[];
+};
+
 export type NotificationPayload = {
   content_id?: string;
   category?: string;
@@ -829,6 +895,9 @@ export type NotificationPayload = {
   tags?: string[];
   school_name?: string;
   department_name?: string;
+  site_section_id?: string;
+  site_section_name?: string;
+  scope_type?: string;
   major?: string;
   major_name?: string;
   major_code?: string;

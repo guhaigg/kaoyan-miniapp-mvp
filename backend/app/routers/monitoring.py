@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError, MultipleResultsFound
+from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
 from ..dependencies import audit_event, require_admin_request, require_premium_or_admin
@@ -25,6 +25,10 @@ from ..schemas import (
     MonitorTargetItem,
     MonitorTargetListResponse,
     MonitorTargetUpdateRequest,
+    MonitorScopeDepartmentItem,
+    MonitorScopeDepartmentListResponse,
+    MonitorScopeSectionItem,
+    MonitorScopeSectionListResponse,
 )
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
@@ -35,20 +39,70 @@ def _normalize_text(value: str | None) -> str | None:
     return text or None
 
 
+def _build_target_display_label(
+    *,
+    scope_type: str,
+    school_name: str | None,
+    department_name: str | None,
+    site_section_name: str | None,
+) -> str:
+    parts = [school_name, department_name]
+    if scope_type == "section":
+        parts.append(site_section_name)
+    label = " · ".join(part for part in parts if part)
+    return label or site_section_name or department_name or school_name or scope_type
+
+
 def _to_target_item(item: PortalUserMonitorTarget) -> MonitorTargetItem:
+    school_name = item.school.name if item.school else None
+    department_name = item.department.name if item.department else None
+    site_section_name = item.site_section.name if item.site_section else None
     return MonitorTargetItem(
         id=item.id,
         user_id=item.user_id,
         scope_type=item.scope_type,
         school_id=item.school_id,
+        school_name=school_name,
         department_id=item.department_id,
+        department_name=department_name,
         site_section_id=item.site_section_id,
+        site_section_name=site_section_name,
+        display_label=_build_target_display_label(
+            scope_type=item.scope_type,
+            school_name=school_name,
+            department_name=department_name,
+            site_section_name=site_section_name,
+        ),
         status=item.status,
         check_interval_minutes=item.check_interval_minutes,
         last_checked_at=item.last_checked_at,
         last_hit_at=item.last_hit_at,
         created_at=item.created_at,
         updated_at=item.updated_at,
+    )
+
+
+def _to_scope_section_item(item: SiteSection) -> MonitorScopeSectionItem:
+    return MonitorScopeSectionItem(
+        id=item.id,
+        name=item.name,
+        section_type=item.section_type,
+        discovery_category=item.discovery_category,
+        section_url=item.section_url,
+        school_id=item.school_id,
+        school_name=item.school.name if item.school else None,
+        department_id=item.department_id,
+        department_name=item.department.name if item.department else None,
+    )
+
+
+def _to_scope_department_item(item: Department) -> MonitorScopeDepartmentItem:
+    return MonitorScopeDepartmentItem(
+        id=item.id,
+        name=item.name,
+        department_type=item.department_type,
+        school_id=item.school_id,
+        school_name=item.school.name if item.school else None,
     )
 
 
@@ -119,12 +173,51 @@ def _resolve_department_id(
     query = db.query(Department).filter(Department.name == normalized_name)
     if school_id:
         query = query.filter(Department.school_id == school_id)
-    row = query.one_or_none()
+    try:
+        row = query.one_or_none()
+    except MultipleResultsFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="department name is ambiguous, please specify the school",
+        ) from exc
     if row is None:
         row = Department(name=normalized_name, aliases=[], department_type="college", school_id=school_id)
         db.add(row)
         db.flush()
     return row.id
+
+
+def _resolve_site_section_id(
+    db: Session,
+    *,
+    site_section_id: str | None,
+    site_section_name: str | None,
+    school_id: str | None,
+    department_id: str | None,
+) -> str | None:
+    normalized_name = _normalize_text(site_section_name)
+    if site_section_id:
+        row = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="site section not found")
+        return row.id
+    if normalized_name is None:
+        return None
+
+    query = db.query(SiteSection).filter(SiteSection.name == normalized_name)
+    if school_id:
+        query = query.filter(SiteSection.school_id == school_id)
+    if department_id:
+        query = query.filter(SiteSection.department_id == department_id)
+    rows = query.order_by(SiteSection.created_at.asc()).limit(2).all()
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="site section not found")
+    if len(rows) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="site section name is ambiguous, please narrow by school or department",
+        )
+    return rows[0].id
 
 
 def _ensure_scope_refs(
@@ -136,6 +229,7 @@ def _ensure_scope_refs(
     department_id: str | None,
     department_name: str | None,
     site_section_id: str | None,
+    site_section_name: str | None,
 ) -> tuple[str | None, str | None, str | None]:
     if scope_type not in {"school", "department", "section"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid scope_type")
@@ -146,6 +240,13 @@ def _ensure_scope_refs(
         department_id=department_id,
         department_name=department_name,
         school_id=school_id,
+    )
+    site_section_id = _resolve_site_section_id(
+        db,
+        site_section_id=site_section_id,
+        site_section_name=site_section_name,
+        school_id=school_id,
+        department_id=department_id,
     )
 
     if scope_type == "school":
@@ -228,6 +329,7 @@ def create_monitor_target(payload: MonitorTargetCreateRequest, request: Request,
         department_id=payload.department_id,
         department_name=payload.department_name,
         site_section_id=payload.site_section_id,
+        site_section_name=payload.site_section_name,
     )
     existed = _find_same_scope_target(
         db,
@@ -265,6 +367,11 @@ def list_monitor_targets(request: Request, db: Session = Depends(get_db)) -> Mon
     user = require_premium_or_admin(request, db)
     rows = (
         db.query(PortalUserMonitorTarget)
+        .options(
+            joinedload(PortalUserMonitorTarget.school),
+            joinedload(PortalUserMonitorTarget.department),
+            joinedload(PortalUserMonitorTarget.site_section),
+        )
         .filter(
             PortalUserMonitorTarget.user_id == user.id,
             PortalUserMonitorTarget.status != "deleted",
@@ -273,6 +380,63 @@ def list_monitor_targets(request: Request, db: Session = Depends(get_db)) -> Mon
         .all()
     )
     return MonitorTargetListResponse(total=len(rows), items=[_to_target_item(x) for x in rows])
+
+
+@router.get("/scope-sections", response_model=MonitorScopeSectionListResponse)
+def list_monitor_scope_sections(
+    request: Request,
+    db: Session = Depends(get_db),
+    school_name: str | None = Query(default=None),
+    department_name: str | None = Query(default=None),
+    section_name: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> MonitorScopeSectionListResponse:
+    require_premium_or_admin(request, db)
+
+    query = (
+        db.query(SiteSection)
+        .options(joinedload(SiteSection.school), joinedload(SiteSection.department))
+        .filter(SiteSection.enabled == 1)
+    )
+    if school_name:
+        query = query.join(School, SiteSection.school_id == School.id, isouter=True).filter(
+            School.name.ilike(f"%{school_name.strip()}%")
+        )
+    if department_name:
+        query = query.join(Department, SiteSection.department_id == Department.id, isouter=True).filter(
+            Department.name.ilike(f"%{department_name.strip()}%")
+        )
+    if section_name:
+        query = query.filter(SiteSection.name.ilike(f"%{section_name.strip()}%"))
+
+    rows = query.order_by(SiteSection.updated_at.desc()).limit(limit).all()
+    return MonitorScopeSectionListResponse(total=len(rows), items=[_to_scope_section_item(row) for row in rows])
+
+
+@router.get("/scope-departments", response_model=MonitorScopeDepartmentListResponse)
+def list_monitor_scope_departments(
+    request: Request,
+    db: Session = Depends(get_db),
+    school_name: str | None = Query(default=None),
+    department_name: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> MonitorScopeDepartmentListResponse:
+    require_premium_or_admin(request, db)
+
+    query = (
+        db.query(Department)
+        .options(joinedload(Department.school))
+        .filter(Department.enabled == 1)
+    )
+    if school_name:
+        query = query.join(School, Department.school_id == School.id, isouter=True).filter(
+            School.name.ilike(f"%{school_name.strip()}%")
+        )
+    if department_name:
+        query = query.filter(Department.name.ilike(f"%{department_name.strip()}%"))
+
+    rows = query.order_by(Department.updated_at.desc()).limit(limit).all()
+    return MonitorScopeDepartmentListResponse(total=len(rows), items=[_to_scope_department_item(row) for row in rows])
 
 
 @router.patch("/targets/{target_id}", response_model=MonitorTargetItem)
@@ -297,14 +461,28 @@ def update_monitor_target(
         or "department_id" in payload.model_fields_set
         or "department_name" in payload.model_fields_set
         or "site_section_id" in payload.model_fields_set
+        or "site_section_name" in payload.model_fields_set
     )
     if scope_changed:
         final_scope = payload.scope_type if payload.scope_type is not None else target.scope_type
-        final_school_id = payload.school_id if "school_id" in payload.model_fields_set else target.school_id
+        final_school_id = (
+            payload.school_id
+            if "school_id" in payload.model_fields_set
+            else (None if "school_name" in payload.model_fields_set else target.school_id)
+        )
         final_school_name = payload.school_name if "school_name" in payload.model_fields_set else None
-        final_department_id = payload.department_id if "department_id" in payload.model_fields_set else target.department_id
+        final_department_id = (
+            payload.department_id
+            if "department_id" in payload.model_fields_set
+            else (None if "department_name" in payload.model_fields_set else target.department_id)
+        )
         final_department_name = payload.department_name if "department_name" in payload.model_fields_set else None
-        final_site_section_id = payload.site_section_id if "site_section_id" in payload.model_fields_set else target.site_section_id
+        final_site_section_id = (
+            payload.site_section_id
+            if "site_section_id" in payload.model_fields_set
+            else (None if "site_section_name" in payload.model_fields_set else target.site_section_id)
+        )
+        final_site_section_name = payload.site_section_name if "site_section_name" in payload.model_fields_set else None
         final_school_id, final_department_id, final_site_section_id = _ensure_scope_refs(
             db,
             scope_type=final_scope,
@@ -313,6 +491,7 @@ def update_monitor_target(
             department_id=final_department_id,
             department_name=final_department_name,
             site_section_id=final_site_section_id,
+            site_section_name=final_site_section_name,
         )
         target.scope_type = final_scope
         target.school_id = final_school_id

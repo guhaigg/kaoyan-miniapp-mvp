@@ -723,6 +723,7 @@ class MonitorTargetCreateRequest(BaseModel):
     department_id: str | None = None
     department_name: str | None = Field(default=None, max_length=255)
     site_section_id: str | None = None
+    site_section_name: str | None = Field(default=None, max_length=255)
     status: Literal["active", "paused", "deleted"] | None = None
     check_interval_minutes: int = Field(default=60, ge=5, le=10080)
 
@@ -734,6 +735,7 @@ class MonitorTargetUpdateRequest(BaseModel):
     department_id: str | None = None
     department_name: str | None = Field(default=None, max_length=255)
     site_section_id: str | None = None
+    site_section_name: str | None = Field(default=None, max_length=255)
     status: Literal["active", "paused", "deleted"] | None = None
     check_interval_minutes: int | None = Field(default=None, ge=5, le=10080)
 
@@ -743,8 +745,12 @@ class MonitorTargetItem(BaseModel):
     user_id: str
     scope_type: str
     school_id: str | None
+    school_name: str | None
     department_id: str | None
+    department_name: str | None
     site_section_id: str | None
+    site_section_name: str | None
+    display_label: str
     status: str
     check_interval_minutes: int
     last_checked_at: datetime | None
@@ -756,6 +762,36 @@ class MonitorTargetItem(BaseModel):
 class MonitorTargetListResponse(BaseModel):
     total: int
     items: list[MonitorTargetItem]
+
+
+class MonitorScopeSectionItem(BaseModel):
+    id: str
+    name: str
+    section_type: str
+    discovery_category: str
+    section_url: str
+    school_id: str | None
+    school_name: str | None
+    department_id: str | None
+    department_name: str | None
+
+
+class MonitorScopeSectionListResponse(BaseModel):
+    total: int
+    items: list[MonitorScopeSectionItem]
+
+
+class MonitorScopeDepartmentItem(BaseModel):
+    id: str
+    name: str
+    department_type: str
+    school_id: str | None
+    school_name: str | None
+
+
+class MonitorScopeDepartmentListResponse(BaseModel):
+    total: int
+    items: list[MonitorScopeDepartmentItem]
 
 
 class MonitorKeywordCreateRequest(BaseModel):

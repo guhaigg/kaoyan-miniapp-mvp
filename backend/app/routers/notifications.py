@@ -10,6 +10,7 @@ from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..dependencies import enforce_rate_limit, get_portal_user_optional
 from ..services.notifications import notification_engine
+from ..services.sse_manager import SSE_DISCONNECT_SENTINEL, manager
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -39,29 +40,44 @@ async def stream_notifications(request: Request):
         user = _require_portal_user(request, db)
     enforce_rate_limit(request, f"notification_stream:{user.id}")
     settings = get_settings()
-    poll_interval = max(0.5, float(settings.notification_sse_poll_seconds))
+    keepalive_interval = max(0.5, float(settings.notification_sse_poll_seconds))
     shutdown_event = getattr(request.app.state, "shutdown_event", None)
+    queue = await manager.connect(user.id)
 
     async def event_generator():
         yield ": connected\n\n"
         try:
+            initial_items = await asyncio.to_thread(notification_engine.fetch_and_mark_user_deliveries, user.id, limit=20)
+            for item in initial_items:
+                yield _sse_encode("notice", item)
+
             while True:
                 if shutdown_event is not None and shutdown_event.is_set():
                     break
                 if await request.is_disconnected():
                     break
 
-                items = await asyncio.to_thread(notification_engine.fetch_and_mark_user_deliveries, user.id, limit=20)
-                if items:
-                    for item in items:
-                        yield _sse_encode("notice", item)
-                else:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=keepalive_interval)
+                except asyncio.TimeoutError:
                     ping_payload = {"ts": datetime.now(timezone.utc).isoformat()}
                     yield _sse_encode("ping", ping_payload)
+                    continue
 
-                await asyncio.sleep(poll_interval)
+                if item is SSE_DISCONNECT_SENTINEL:
+                    break
+                delivery_id = str(item.get("id") or "").strip() if isinstance(item, dict) else ""
+                if not delivery_id:
+                    continue
+                claimed = await asyncio.to_thread(notification_engine.mark_inapp_delivery_sent, user.id, delivery_id)
+                if not claimed:
+                    continue
+                yield _sse_encode("notice", item)
+
         except asyncio.CancelledError:
             return
+        finally:
+            manager.disconnect(user.id, queue)
 
     headers = {
         "Cache-Control": "no-cache",

@@ -14,6 +14,7 @@ from ..models import NotificationDelivery, NotificationOutbox, PortalUser, Porta
 from .account_access import get_active_admin_user_ids, resolve_portal_access
 from .historical_intelligence import normalize_major_code, normalize_major_name, normalize_school_name
 from .nlp import keyword_matches_content, normalize_tag
+from .sse_manager import manager as sse_manager
 
 with suppress(Exception):
     import ahocorasick  # type: ignore
@@ -260,13 +261,26 @@ class NotificationEngine:
                 try:
                     payload = dict(outbox.payload or {})
                     user_ids = self._resolve_outbox_user_ids(db, outbox=outbox, payload=payload)
-                    self._enqueue_deliveries(db, outbox_id=outbox.id, payload=payload, user_ids=user_ids)
+                    inapp_deliveries = self._enqueue_deliveries(
+                        db,
+                        outbox_id=outbox.id,
+                        payload=payload,
+                        user_ids=user_ids,
+                    )
 
                     outbox.status = "done"
                     outbox.processed_at = utcnow()
                     outbox.processing_started_at = None
                     outbox.last_error = None
+                    db.flush()
+                    dispatch_cutoff = utcnow()
+                    realtime_items = [
+                        (row.user_id, self._serialize_delivery_item(row))
+                        for row in inapp_deliveries
+                        if row.deliver_after <= dispatch_cutoff
+                    ]
                     db.commit()
+                    self._push_live_inapp_items(realtime_items)
                     processed += 1
                 except Exception as exc:
                     db.rollback()
@@ -327,23 +341,40 @@ class NotificationEngine:
             now = utcnow()
             items: list[dict[str, Any]] = []
             for row in rows:
-                row.status = "sent"
-                row.sent_at = now
-                row.attempts = (row.attempts or 0) + 1
-                items.append(
-                    {
-                        "id": row.id,
-                        "outbox_id": row.outbox_id,
-                        "created_at": row.created_at.isoformat(),
-                        "payload": row.payload or {},
-                    }
-                )
+                self._mark_delivery_sent_row(row, now=now)
+                items.append(self._serialize_delivery_item(row))
             db.commit()
             return items
 
-    def _enqueue_deliveries(self, db: Session, *, outbox_id: str, payload: dict[str, Any], user_ids: set[str]) -> None:
+    def mark_inapp_delivery_sent(self, user_id: str, delivery_id: str) -> bool:
+        with SessionLocal() as db:
+            row = (
+                db.query(NotificationDelivery)
+                .filter(
+                    NotificationDelivery.id == delivery_id,
+                    NotificationDelivery.user_id == user_id,
+                    NotificationDelivery.channel == "inapp",
+                    NotificationDelivery.status == "pending",
+                    NotificationDelivery.deliver_after <= utcnow(),
+                )
+                .one_or_none()
+            )
+            if row is None:
+                return False
+            self._mark_delivery_sent_row(row, now=utcnow())
+            db.commit()
+            return True
+
+    def _enqueue_deliveries(
+        self,
+        db: Session,
+        *,
+        outbox_id: str,
+        payload: dict[str, Any],
+        user_ids: set[str],
+    ) -> list[NotificationDelivery]:
         if not user_ids:
-            return
+            return []
 
         settings = get_settings()
         now = utcnow()
@@ -355,9 +386,10 @@ class NotificationEngine:
             .all()
         )
         user_map = {user.id: user for user in portal_users}
+        inapp_deliveries: list[NotificationDelivery] = []
 
         for user_id in user_ids:
-            self._ensure_delivery(
+            inapp_delivery = self._ensure_delivery(
                 db,
                 outbox_id=outbox_id,
                 user_id=user_id,
@@ -365,6 +397,8 @@ class NotificationEngine:
                 payload=payload,
                 deliver_after=inapp_deliver_after,
             )
+            if inapp_delivery is not None:
+                inapp_deliveries.append(inapp_delivery)
 
             user = user_map.get(user_id)
             if not settings.enable_bark_notifications or user is None:
@@ -380,6 +414,7 @@ class NotificationEngine:
                 payload=payload,
                 deliver_after=bark_deliver_after,
             )
+        return inapp_deliveries
 
     def _ensure_delivery(
         self,
@@ -390,7 +425,7 @@ class NotificationEngine:
         channel: str,
         payload: dict[str, Any],
         deliver_after,
-    ) -> None:
+    ) -> NotificationDelivery | None:
         exists = (
             db.query(NotificationDelivery.id)
             .filter(
@@ -401,17 +436,37 @@ class NotificationEngine:
             .first()
         )
         if exists:
-            return
-        db.add(
-            NotificationDelivery(
-                outbox_id=outbox_id,
-                user_id=user_id,
-                channel=channel,
-                payload=payload,
-                status="pending",
-                deliver_after=deliver_after,
-            )
+            return None
+        delivery = NotificationDelivery(
+            outbox_id=outbox_id,
+            user_id=user_id,
+            channel=channel,
+            payload=payload,
+            status="pending",
+            deliver_after=deliver_after,
         )
+        db.add(delivery)
+        return delivery
+
+    @staticmethod
+    def _serialize_delivery_item(row: NotificationDelivery) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "outbox_id": row.outbox_id,
+            "created_at": row.created_at.isoformat(),
+            "payload": row.payload or {},
+        }
+
+    @staticmethod
+    def _mark_delivery_sent_row(row: NotificationDelivery, *, now) -> None:
+        row.status = "sent"
+        row.sent_at = now
+        row.attempts = (row.attempts or 0) + 1
+
+    @staticmethod
+    def _push_live_inapp_items(items: list[tuple[str, dict[str, Any]]]) -> None:
+        for user_id, item in items:
+            sse_manager.push_to_user(user_id, item)
 
     def _lock_pending_rows(self, batch_size: int) -> list[str]:
         settings = get_settings()
@@ -580,6 +635,7 @@ class NotificationEngine:
 
     def reset_for_tests(self) -> None:
         self._matcher.reset()
+        sse_manager.reset()
 
 
 notification_engine = NotificationEngine()

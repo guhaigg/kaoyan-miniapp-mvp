@@ -6,7 +6,7 @@ from sqlalchemy import inspect
 from app import models as app_models
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import NotificationDelivery, NotificationOutbox, School
+from app.models import Department, NotificationDelivery, NotificationOutbox, School, SiteSection
 from app.services.notifications import notification_engine
 
 TARGET_MODEL = getattr(app_models, "PortalUserMonitorTarget", None)
@@ -39,12 +39,12 @@ def _column_names(model) -> set[str]:
     return {col.key for col in inspect(model).mapper.column_attrs}
 
 
-def _create_monitor_target_and_keyword(
-    user_id: str,
+def _ensure_scope_assets(
     *,
     school_name: str,
-    keyword: str,
-) -> str:
+    department_name: str | None = None,
+    site_section_name: str | None = None,
+) -> tuple[str, str | None, str | None]:
     with SessionLocal() as db:
         school = db.query(School).filter(School.name == school_name).one_or_none()
         if school is None:
@@ -52,11 +52,77 @@ def _create_monitor_target_and_keyword(
             db.add(school)
             db.flush()
 
+        department_id: str | None = None
+        if department_name:
+            department = (
+                db.query(Department)
+                .filter(Department.school_id == school.id, Department.name == department_name)
+                .one_or_none()
+            )
+            if department is None:
+                department = Department(
+                    school_id=school.id,
+                    name=department_name,
+                    aliases=[],
+                    department_type="college",
+                    enabled=1,
+                )
+                db.add(department)
+                db.flush()
+            department_id = department.id
+
+        section_id: str | None = None
+        if site_section_name:
+            section = (
+                db.query(SiteSection)
+                .filter(
+                    SiteSection.school_id == school.id,
+                    SiteSection.department_id == department_id,
+                    SiteSection.name == site_section_name,
+                )
+                .one_or_none()
+            )
+            if section is None:
+                section = SiteSection(
+                    school_id=school.id,
+                    department_id=department_id,
+                    name=site_section_name,
+                    section_type="notice",
+                    section_url=f"https://example.com/{school.id}/{department_id or 'none'}/section",
+                    discovery_category="announcement",
+                    enabled=1,
+                    list_selector_config={},
+                )
+                db.add(section)
+                db.flush()
+            section_id = section.id
+
+        db.commit()
+        return school.id, department_id, section_id
+
+
+def _create_monitor_target_and_keyword(
+    user_id: str,
+    *,
+    school_name: str,
+    keyword: str | None = None,
+    scope_type: str = "school",
+    department_name: str | None = None,
+    site_section_name: str | None = None,
+) -> str:
+    school_id, department_id, section_id = _ensure_scope_assets(
+        school_name=school_name,
+        department_name=department_name,
+        site_section_name=site_section_name,
+    )
+    with SessionLocal() as db:
         target_cols = _column_names(TARGET_MODEL)
         target_payload = {
             "user_id": user_id,
-            "school_id": school.id,
-            "scope_type": "school",
+            "school_id": school_id,
+            "department_id": department_id,
+            "site_section_id": section_id,
+            "scope_type": scope_type,
             "status": "active",
             "check_interval_minutes": 60,
         }
@@ -64,19 +130,20 @@ def _create_monitor_target_and_keyword(
         db.add(target)
         db.flush()
 
-        keyword_cols = _column_names(KEYWORD_MODEL)
-        keyword_payload = {
-            "user_id": user_id,
-            "monitor_target_id": target.id,
-            "target_id": target.id,
-            "keyword": keyword,
-            "value": keyword,
-            "match_mode": "contains",
-            "weight": 1,
-            "status": "active",
-        }
-        keyword_row = KEYWORD_MODEL(**{k: v for k, v in keyword_payload.items() if k in keyword_cols})
-        db.add(keyword_row)
+        if keyword:
+            keyword_cols = _column_names(KEYWORD_MODEL)
+            keyword_payload = {
+                "user_id": user_id,
+                "monitor_target_id": target.id,
+                "target_id": target.id,
+                "keyword": keyword,
+                "value": keyword,
+                "match_mode": "contains",
+                "weight": 1,
+                "status": "active",
+            }
+            keyword_row = KEYWORD_MODEL(**{k: v for k, v in keyword_payload.items() if k in keyword_cols})
+            db.add(keyword_row)
         db.commit()
         return target.id
 
@@ -252,3 +319,86 @@ def test_monitor_hit_generates_bark_delivery_when_enabled(client):
         )
         assert len(bark_rows) == 1
         assert bark_rows[0].status == "pending"
+
+
+def test_scope_only_school_target_generates_hit_without_keywords(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_scope_only")
+    target_id = _create_monitor_target_and_keyword(user_id, school_name="厦门大学", keyword=None)
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "厦门大学最新公告",
+            "body": "这里是最新招生公告正文",
+            "school_name": "厦门大学",
+            "source_url": "https://example.com/pm-hit-scope-only",
+        },
+        headers=_admin_headers(),
+    )
+    assert ingest_resp.status_code == 200
+    content_id = ingest_resp.json()["id"]
+
+    with SessionLocal() as db:
+        hits = db.query(HIT_MODEL).filter(HIT_MODEL.user_id == user_id).all()
+        assert len(hits) == 1
+        assert str(hits[0].content_id) == content_id
+        assert str(hits[0].monitor_target_id) == target_id
+        assert hits[0].matched_keywords == []
+        assert hits[0].match_score == 1
+        assert hits[0].hit_reason == "scope_match:school"
+
+        outboxes = _monitor_outboxes_for_user(db, user_id=user_id)
+        assert len(outboxes) == 1
+        payload = dict(outboxes[0].payload or {})
+        assert payload["target_id"] == target_id
+        assert payload["matched_keywords"] == []
+        assert payload["scope_type"] == "school"
+
+
+def test_scope_only_section_target_matches_site_section_id(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_section_scope")
+    _create_monitor_target_and_keyword(
+        user_id,
+        school_name="华南理工大学",
+        department_name="材料学院",
+        site_section_name="材料学院通知公告",
+        scope_type="section",
+        keyword=None,
+    )
+    _school_id, _department_id, section_id = _ensure_scope_assets(
+        school_name="华南理工大学",
+        department_name="材料学院",
+        site_section_name="材料学院通知公告",
+    )
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "材料学院招生公告",
+            "body": "栏目级命中测试",
+            "school_name": "华南理工大学",
+            "source_url": "https://example.com/pm-hit-section-scope",
+            "extra": {
+                "department_name": "材料学院",
+                "site_section_id": section_id,
+                "site_section_name": "材料学院通知公告",
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert ingest_resp.status_code == 200
+
+    with SessionLocal() as db:
+        hits = db.query(HIT_MODEL).filter(HIT_MODEL.user_id == user_id).all()
+        assert len(hits) == 1
+        assert str(hits[0].site_section_id or "") == section_id
+        assert hits[0].hit_reason == "scope_match:section"
+
+        outboxes = _monitor_outboxes_for_user(db, user_id=user_id)
+        assert len(outboxes) == 1
+        payload = dict(outboxes[0].payload or {})
+        assert payload["site_section_id"] == section_id
+        assert payload["site_section_name"] == "材料学院通知公告"
+        assert payload["department_name"] == "材料学院"

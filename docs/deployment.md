@@ -138,7 +138,7 @@ Trigger:
 
 Required GitHub Secrets:
 
-- `HK_HOST` (example: `45.192.110.219`)
+- `HK_HOST` (current production example: `38.76.215.159`)
 - `HK_USER` (example: `root`)
 - `HK_SSH_PRIVATE_KEY` (private key content)
 - `HK_SSH_PORT` (optional, default `22`)

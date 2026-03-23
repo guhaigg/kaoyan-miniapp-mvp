@@ -20,13 +20,13 @@ from ..schemas import (
     SearchResponse,
 )
 from ..services.historical_intelligence import (
+    build_school_intelligence_insight,
     build_search_insight,
     build_mentor_radar_insight,
     build_release_timing_insight,
     canonicalize_reference_url,
     load_mentor_review_excerpts,
     load_mentor_evaluations_for_search,
-    load_school_intelligence_for_search,
     load_profiles_for_search,
     load_release_timing_for_search,
     normalize_department_name,
@@ -418,6 +418,19 @@ def _build_mentor_review_scopes(
     return primary_reviews, department_reviews, school_reviews
 
 
+def _load_profile_intelligence_bundle(
+    db: Session,
+    school_names: list[str],
+) -> tuple[dict[str, list[HistoricalAdjustmentProfile]], dict[str, object]]:
+    historical_profiles = load_profiles_for_search(db, school_names)
+    school_intelligence = {}
+    for school_name_normalized, profiles in historical_profiles.items():
+        insight = build_school_intelligence_insight(profiles)
+        if insight is not None:
+            school_intelligence[school_name_normalized] = insight
+    return historical_profiles, school_intelligence
+
+
 def _build_adjustment_detail_from_content(
     db: Session,
     row: Content,
@@ -427,10 +440,12 @@ def _build_adjustment_detail_from_content(
     extra = dict(row.extra or {})
     department_name = str(extra.get("department_name") or "").strip() or None
     adjustment_meta = dict(extra.get("adjustment_meta") or {})
-    historical_profiles = load_profiles_for_search(db, [school_name] if school_name else [])
+    historical_profiles, school_intelligence = _load_profile_intelligence_bundle(
+        db,
+        [school_name] if school_name else [],
+    )
     mentor_evaluations = load_mentor_evaluations_for_search(db, [school_name] if school_name else [])
     release_timings = load_release_timing_for_search(db, [school_name] if school_name else [])
-    school_intelligence = load_school_intelligence_for_search(db, [school_name] if school_name else [])
 
     insight = None
     if school_name:
@@ -547,10 +562,9 @@ def _build_adjustment_detail_from_opportunity(
     display_departments = _resolve_adjustment_departments(db, row, merged["department_names"])
     resolved_department_name = display_departments[0] if len(display_departments) == 1 else row.department_name
     normalized_school_name = normalize_school_name(row.school_name)
-    historical_profiles = load_profiles_for_search(db, [row.school_name])
+    historical_profiles, school_intelligence = _load_profile_intelligence_bundle(db, [row.school_name])
     mentor_evaluations = load_mentor_evaluations_for_search(db, [row.school_name])
     release_timings = load_release_timing_for_search(db, [row.school_name])
-    school_intelligence = load_school_intelligence_for_search(db, [row.school_name])
     insight = build_search_insight(
         historical_profiles.get(normalized_school_name, []),
         major_codes=[row.major_code] if row.major_code else [],
@@ -704,17 +718,16 @@ def _to_response(
     access_limited: bool = False,
     preview_limit: int | None = None,
 ) -> SearchResponse:
-    historical_profiles = (
-        load_profiles_for_search(
+    historical_profiles, school_intelligence = (
+        _load_profile_intelligence_bundle(
             db,
             [row.school.name if row.school else "" for row in items],
         )
         if isinstance(payload, AdjustmentSearchRequest)
-        else {}
+        else ({}, {})
     )
     mentor_evaluations = load_mentor_evaluations_for_search(db, [row.school.name if row.school else "" for row in items])
     release_timings = load_release_timing_for_search(db, [row.school.name if row.school else "" for row in items])
-    school_intelligence = load_school_intelligence_for_search(db, [row.school.name if row.school else "" for row in items])
     serialized = []
     for row in items:
         school_name = row.school.name if row.school else None
@@ -1355,12 +1368,11 @@ def _to_adjustment_opportunity_response(
     authenticated: bool,
     lightweight: bool = False,
 ) -> SearchResponse:
-    school_names = [row.school_name for row in rows if row.school_name]
+    merged_rows = _merge_adjustment_opportunity_rows(rows)
+    school_names = [merged["primary"].school_name for merged in merged_rows if merged["primary"].school_name]
     mentor_evaluations = load_mentor_evaluations_for_search(db, school_names)
     release_timings = load_release_timing_for_search(db, school_names)
-    historical_profiles = {} if lightweight else load_profiles_for_search(db, school_names)
-    school_intelligence = {} if lightweight else load_school_intelligence_for_search(db, school_names)
-    merged_rows = _merge_adjustment_opportunity_rows(rows)
+    historical_profiles, school_intelligence = _load_profile_intelligence_bundle(db, school_names)
     serialized: list[SearchItem] = []
     for merged in merged_rows:
         row = merged["primary"]
@@ -1378,27 +1390,27 @@ def _to_adjustment_opportunity_response(
         release_timing_signal = build_release_timing_insight(release_timings.get(normalized_school_name))
         meta = dict(merged["meta_json"] or {})
         reference_urls = [str(url) for url in (merged["reference_urls"] or []) if str(url or "").strip()]
-        if lightweight:
+        school_profiles = historical_profiles.get(normalized_school_name, [])
+        insight = build_search_insight(
+            school_profiles,
+            major_codes=[row.major_code] if row.major_code else [],
+            major_name=row.major_name,
+            department_name=resolved_department_name,
+            study_modes=[row.study_mode] if row.study_mode else [],
+            candidate_score=payload.candidate_score,
+            reference_year=row.year,
+        )
+        if insight is None and lightweight:
             insight = _build_lightweight_adjustment_insight(
                 row,
                 candidate_score=payload.candidate_score,
             )
+        school_signal = school_intelligence.get(normalized_school_name)
+        if school_signal is None and lightweight:
             school_signal = _build_lightweight_school_intelligence(
                 row,
                 reference_urls=reference_urls,
             )
-        else:
-            school_profiles = historical_profiles.get(normalized_school_name, [])
-            insight = build_search_insight(
-                school_profiles,
-                major_codes=[row.major_code] if row.major_code else [],
-                major_name=row.major_name,
-                department_name=resolved_department_name,
-                study_modes=[row.study_mode] if row.study_mode else [],
-                candidate_score=payload.candidate_score,
-                reference_year=row.year,
-            )
-            school_signal = school_intelligence.get(normalized_school_name)
         source_url = (
             (row.source_url or "").strip()
             or

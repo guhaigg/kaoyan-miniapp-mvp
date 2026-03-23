@@ -170,6 +170,7 @@
 
 香港服务器线上状态已确认：
 
+- 当前生产机 IP：`38.76.215.159`
 - `kaoyan-backend.service`：运行中
 - `nginx.service`：运行中
 - `gewujl-backup.service`：非长期驻留型服务，通常配合定时器触发

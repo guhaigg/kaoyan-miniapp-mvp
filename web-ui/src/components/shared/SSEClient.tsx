@@ -5,6 +5,7 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useQueryClient } from "@tanstack/react-query";
 import { NotificationEventItem, notificationsStreamUrl } from "@/lib/api";
 import { mergeNoticeList, watchlistNoticeQueryKey } from "@/lib/notice-cache";
+import { claimNoticeToast } from "@/lib/notice-toast-gate";
 import { useDocumentVisibility } from "@/hooks/useDocumentVisibility";
 import { useAppStore } from "@/lib/store";
 
@@ -35,15 +36,31 @@ export default function SSEClient() {
     if (!userId || !token || !isDocumentVisible) {
       return;
     }
+    const activeUserId = userId;
+    const accessToken = token;
 
     const abortController = new AbortController();
     const streamUrl = notificationsStreamUrl();
+
+    async function handleNotice(item: NotificationEventItem) {
+      queryClient.setQueryData(
+        watchlistNoticeQueryKey(activeUserId),
+        (oldData: NotificationEventItem[] | undefined) => mergeNoticeList(oldData, [item]),
+      );
+
+      if (!(await claimNoticeToast(activeUserId, item.id))) {
+        return;
+      }
+
+      const toast = buildToastContent(item);
+      showToast(toast.toastTitle, toast.toastMessage, toast.toastType);
+    }
 
     void fetchEventSource(streamUrl, {
       method: "GET",
       headers: {
         Accept: "text/event-stream",
-        "X-User-Token": token,
+        "X-User-Token": accessToken,
       },
       signal: abortController.signal,
       credentials: "include",
@@ -63,13 +80,7 @@ export default function SSEClient() {
         try {
           const item = JSON.parse(event.data) as NotificationEventItem;
           if (!item?.id) return;
-
-          queryClient.setQueryData(
-            watchlistNoticeQueryKey(userId),
-            (oldData: NotificationEventItem[] | undefined) => mergeNoticeList(oldData, [item]),
-          );
-          const toast = buildToastContent(item);
-          showToast(toast.toastTitle, toast.toastMessage, toast.toastType);
+          void handleNotice(item);
         } catch (error) {
           console.error("Failed to parse SSE message", error);
         }

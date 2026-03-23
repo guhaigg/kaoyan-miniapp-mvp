@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 from datetime import timedelta
 
@@ -8,6 +9,7 @@ from app.models import PortalUserSubscription
 from app.models import utcnow
 from app.services.account_access import ENTITLEMENT_SOURCE_ADMIN_GRANT, upsert_premium_entitlement
 from app.services.notifications import notification_engine
+from app.services.sse_manager import manager as sse_manager
 
 
 def _access_token(client, username: str = "notify_user", *, premium: bool = False) -> str:
@@ -140,6 +142,188 @@ def test_radar_subscription_matches_same_school_and_major_code_only(client):
     pending_again = client.get("/api/v1/notifications/pending", headers=user_headers)
     assert pending_again.status_code == 200
     assert pending_again.json()["total"] == 0
+
+
+def test_process_outbox_batch_pushes_live_notice_to_connected_user_queue(client):
+    token = _access_token(client, username="sse_live_user", premium=True)
+    user_headers = {"X-User-Token": token}
+    admin_headers = {"X-Admin-Token": "test-admin-token"}
+
+    create_sub = client.post(
+        "/api/v1/subscriptions",
+        json={"subscription_type": "school", "value": "湖北大学", "category": "all"},
+        headers=user_headers,
+    )
+    assert create_sub.status_code == 200
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "湖北大学招生公告更新",
+            "body": "请关注复试和调剂安排。",
+            "summary": "关键时间节点已更新",
+            "school_name": "湖北大学",
+            "source_url": "https://example.com/notice-live-sse",
+        },
+        headers=admin_headers,
+    )
+    assert ingest_resp.status_code == 200
+
+    with SessionLocal() as db:
+        user = db.query(PortalUser).filter(PortalUser.username == "sse_live_user").one()
+        user_id = user.id
+
+    async def receive_live_item():
+        queue = await sse_manager.connect(user_id)
+        try:
+            processed = await asyncio.to_thread(notification_engine.process_outbox_batch)
+            assert processed == 1
+            return await asyncio.wait_for(queue.get(), timeout=1.0)
+        finally:
+            sse_manager.disconnect(user_id, queue)
+
+    item = asyncio.run(receive_live_item())
+    assert item["payload"]["title"] == "湖北大学招生公告更新"
+    assert item["payload"]["school_name"] == "湖北大学"
+
+    with SessionLocal() as db:
+        inapp_row = (
+            db.query(NotificationDelivery)
+            .filter(NotificationDelivery.user_id == user_id, NotificationDelivery.channel == "inapp")
+            .one()
+        )
+        assert inapp_row.status == "pending"
+
+
+def test_sse_manager_fans_out_to_multiple_connections_for_same_user():
+    user_id = "fanout-user"
+    first_payload = {"id": "notice-1", "payload": {"title": "第一条"}}
+    second_payload = {"id": "notice-2", "payload": {"title": "第二条"}}
+
+    async def receive_fanout_items():
+        first_queue = await sse_manager.connect(user_id)
+        second_queue = await sse_manager.connect(user_id)
+        try:
+            assert sse_manager.push_to_user(user_id, first_payload) is True
+            first_item = await asyncio.wait_for(first_queue.get(), timeout=1.0)
+            second_item = await asyncio.wait_for(second_queue.get(), timeout=1.0)
+
+            sse_manager.disconnect(user_id, first_queue)
+
+            assert sse_manager.push_to_user(user_id, second_payload) is True
+            second_followup = await asyncio.wait_for(second_queue.get(), timeout=1.0)
+            return first_item, second_item, second_followup
+        finally:
+            sse_manager.disconnect(user_id, first_queue)
+            sse_manager.disconnect(user_id, second_queue)
+
+    first_item, second_item, second_followup = asyncio.run(receive_fanout_items())
+    assert first_item == first_payload
+    assert second_item == first_payload
+    assert second_followup == second_payload
+
+
+def test_mark_inapp_delivery_sent_is_idempotent_for_live_notice(client):
+    token = _access_token(client, username="sse_claim_user", premium=True)
+    user_headers = {"X-User-Token": token}
+    admin_headers = {"X-Admin-Token": "test-admin-token"}
+
+    create_sub = client.post(
+        "/api/v1/subscriptions",
+        json={"subscription_type": "school", "value": "武汉大学", "category": "all"},
+        headers=user_headers,
+    )
+    assert create_sub.status_code == 200
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "武汉大学公告发布",
+            "body": "请查看最新招生简章。",
+            "summary": "SSE claim 测试",
+            "school_name": "武汉大学",
+            "source_url": "https://example.com/notice-live-claim",
+        },
+        headers=admin_headers,
+    )
+    assert ingest_resp.status_code == 200
+
+    with SessionLocal() as db:
+        user = db.query(PortalUser).filter(PortalUser.username == "sse_claim_user").one()
+        user_id = user.id
+
+    async def receive_live_item():
+        queue = await sse_manager.connect(user_id)
+        try:
+            processed = await asyncio.to_thread(notification_engine.process_outbox_batch)
+            assert processed == 1
+            return await asyncio.wait_for(queue.get(), timeout=1.0)
+        finally:
+            sse_manager.disconnect(user_id, queue)
+
+    item = asyncio.run(receive_live_item())
+    delivery_id = item["id"]
+
+    assert notification_engine.mark_inapp_delivery_sent(user_id, delivery_id) is True
+    assert notification_engine.mark_inapp_delivery_sent(user_id, delivery_id) is False
+
+    with SessionLocal() as db:
+        inapp_row = db.query(NotificationDelivery).filter(NotificationDelivery.id == delivery_id).one()
+        assert inapp_row.status == "sent"
+        assert inapp_row.sent_at is not None
+
+    pending_resp = client.get("/api/v1/notifications/pending", headers=user_headers)
+    assert pending_resp.status_code == 200
+    assert pending_resp.json()["total"] == 0
+
+
+def test_live_notice_is_skipped_after_pending_fetch_claims_same_delivery(client):
+    token = _access_token(client, username="sse_race_user", premium=True)
+    user_headers = {"X-User-Token": token}
+    admin_headers = {"X-Admin-Token": "test-admin-token"}
+
+    create_sub = client.post(
+        "/api/v1/subscriptions",
+        json={"subscription_type": "school", "value": "中南大学", "category": "all"},
+        headers=user_headers,
+    )
+    assert create_sub.status_code == 200
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "中南大学公告更新",
+            "body": "测试 SSE 首次补拉与实时队列去重。",
+            "summary": "SSE race 测试",
+            "school_name": "中南大学",
+            "source_url": "https://example.com/notice-live-race",
+        },
+        headers=admin_headers,
+    )
+    assert ingest_resp.status_code == 200
+
+    with SessionLocal() as db:
+        user = db.query(PortalUser).filter(PortalUser.username == "sse_race_user").one()
+        user_id = user.id
+
+    async def receive_live_item():
+        queue = await sse_manager.connect(user_id)
+        try:
+            processed = await asyncio.to_thread(notification_engine.process_outbox_batch)
+            assert processed == 1
+            return await asyncio.wait_for(queue.get(), timeout=1.0)
+        finally:
+            sse_manager.disconnect(user_id, queue)
+
+    item = asyncio.run(receive_live_item())
+    fetched = notification_engine.fetch_and_mark_user_deliveries(user_id, limit=20)
+
+    assert len(fetched) == 1
+    assert fetched[0]["id"] == item["id"]
+    assert notification_engine.mark_inapp_delivery_sent(user_id, item["id"]) is False
 
 
 def test_bark_delivery_flow(client, monkeypatch):

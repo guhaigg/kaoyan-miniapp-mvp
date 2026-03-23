@@ -2583,6 +2583,63 @@ def load_profiles_for_search(db: Session, school_names: list[str]) -> dict[str, 
     return grouped
 
 
+def build_school_intelligence_insight(
+    profiles: list[HistoricalAdjustmentProfile],
+) -> SchoolIntelligenceInsightResult | None:
+    if not profiles:
+        return None
+
+    active_years = sorted({int(row.year) for row in profiles if row.year})
+    source_types = sorted({str(row.source_type) for row in profiles if row.source_type})
+    future_program_count = sum(
+        max(0, int(row.vacancy_count or row.sample_count or 0))
+        for row in profiles
+        if row.source_type == "future_program"
+    )
+    reference_urls: list[str] = []
+    for row in profiles:
+        meta = row.meta_json or {}
+        raw_urls: list[str] = []
+        if isinstance(meta.get("reference_urls"), list):
+            raw_urls.extend([str(value or "").strip() for value in meta.get("reference_urls") or []])
+        raw_urls.extend(
+            [
+                str(meta.get("top_source_url") or "").strip(),
+                str(meta.get("source_url") or "").strip(),
+            ]
+        )
+        for url in raw_urls:
+            canonical = canonicalize_reference_url(url)
+            if canonical and canonical not in reference_urls:
+                reference_urls.append(canonical)
+    profile_count = len(profiles)
+
+    if len(active_years) >= 3 or profile_count >= 40:
+        confidence_label = "连续活跃"
+    elif len(active_years) >= 2 or profile_count >= 15:
+        confidence_label = "持续关注"
+    else:
+        confidence_label = "样本有限"
+
+    year_text = " / ".join(str(value) for value in active_years[:4]) if active_years else "暂无年份"
+    source_text = " / ".join(source_types[:3]) if source_types else "暂无来源"
+    signal_detail = f"历史覆盖 {year_text}，累计 {profile_count} 组画像，来源 {source_text}"
+    if future_program_count > 0:
+        signal_detail += f"，2026 招生专业 {future_program_count} 个"
+    if reference_urls:
+        signal_detail += f"，可回溯链接 {len(reference_urls)} 条"
+
+    return SchoolIntelligenceInsightResult(
+        profile_count=profile_count,
+        active_years=active_years,
+        source_types=source_types,
+        future_program_count=future_program_count,
+        reference_urls=reference_urls[:3],
+        confidence_label=confidence_label,
+        signal_detail=signal_detail,
+    )
+
+
 def load_mentor_evaluations_for_search(db: Session, school_names: list[str]) -> dict[str, list[MentorEvaluation]]:
     normalized_names = sorted({normalize_school_name(name) for name in school_names if normalize_school_name(name)})
     if not normalized_names:
@@ -2601,69 +2658,12 @@ def load_mentor_evaluations_for_search(db: Session, school_names: list[str]) -> 
 def load_school_intelligence_for_search(
     db: Session, school_names: list[str]
 ) -> dict[str, SchoolIntelligenceInsightResult]:
-    normalized_names = sorted({normalize_school_name(name) for name in school_names if normalize_school_name(name)})
-    if not normalized_names:
-        return {}
-    rows = (
-        db.query(HistoricalAdjustmentProfile)
-        .filter(HistoricalAdjustmentProfile.school_name_normalized.in_(normalized_names))
-        .all()
-    )
-    grouped: dict[str, list[HistoricalAdjustmentProfile]] = defaultdict(list)
-    for row in rows:
-        grouped[row.school_name_normalized].append(row)
-
+    grouped = load_profiles_for_search(db, school_names)
     result: dict[str, SchoolIntelligenceInsightResult] = {}
     for school_name_normalized, profiles in grouped.items():
-        active_years = sorted({int(row.year) for row in profiles if row.year})
-        source_types = sorted({str(row.source_type) for row in profiles if row.source_type})
-        future_program_count = sum(
-            max(0, int(row.vacancy_count or row.sample_count or 0))
-            for row in profiles
-            if row.source_type == "future_program"
-        )
-        reference_urls: list[str] = []
-        for row in profiles:
-            meta = row.meta_json or {}
-            raw_urls: list[str] = []
-            if isinstance(meta.get("reference_urls"), list):
-                raw_urls.extend([str(value or "").strip() for value in meta.get("reference_urls") or []])
-            raw_urls.extend(
-                [
-                    str(meta.get("top_source_url") or "").strip(),
-                    str(meta.get("source_url") or "").strip(),
-                ]
-            )
-            for url in raw_urls:
-                    canonical = canonicalize_reference_url(url)
-                    if canonical and canonical not in reference_urls:
-                        reference_urls.append(canonical)
-        profile_count = len(profiles)
-
-        if len(active_years) >= 3 or profile_count >= 40:
-            confidence_label = "连续活跃"
-        elif len(active_years) >= 2 or profile_count >= 15:
-            confidence_label = "持续关注"
-        else:
-            confidence_label = "样本有限"
-
-        year_text = " / ".join(str(value) for value in active_years[:4]) if active_years else "暂无年份"
-        source_text = " / ".join(source_types[:3]) if source_types else "暂无来源"
-        signal_detail = f"历史覆盖 {year_text}，累计 {profile_count} 组画像，来源 {source_text}"
-        if future_program_count > 0:
-            signal_detail += f"，2026 招生专业 {future_program_count} 个"
-        if reference_urls:
-            signal_detail += f"，可回溯链接 {len(reference_urls)} 条"
-
-        result[school_name_normalized] = SchoolIntelligenceInsightResult(
-            profile_count=profile_count,
-            active_years=active_years,
-            source_types=source_types,
-            future_program_count=future_program_count,
-            reference_urls=reference_urls[:3],
-            confidence_label=confidence_label,
-            signal_detail=signal_detail,
-        )
+        insight = build_school_intelligence_insight(profiles)
+        if insight is not None:
+            result[school_name_normalized] = insight
     return result
 
 

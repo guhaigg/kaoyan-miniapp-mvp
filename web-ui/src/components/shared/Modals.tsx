@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BellRing, Star, X } from "lucide-react";
 import {
   ApiError,
+  MonitorScopeDepartmentItem,
+  MonitorScopeSectionItem,
+  MonitorTargetItem,
   NotificationEventItem,
+  SchoolSuggestItem,
+  SubscriptionItem,
   logoutUser,
 } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
@@ -15,6 +20,14 @@ import {
   useDeleteSubscriptionMutation,
   useSubscriptionsQuery,
 } from "@/hooks/useSubscriptions";
+import {
+  useAddMonitorTargetMutation,
+  useMonitorScopeDepartmentsQuery,
+  useDeleteMonitorTargetMutation,
+  useMonitorScopeSectionsQuery,
+  useSchoolSuggestionsQuery,
+  useMonitorTargetsQuery,
+} from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
 
 export default function Modals() {
@@ -28,22 +41,138 @@ export default function Modals() {
   } = useAppStore();
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
-  const [watchType, setWatchType] = useState<"school" | "major" | "keyword" | "region">("school");
+  const [watchType, setWatchType] = useState<"school" | "department" | "section" | "major" | "keyword" | "region">("school");
   const [watchValue, setWatchValue] = useState("");
-  const canSubscribeSchool = Boolean(portalAuth?.isPremium || portalAuth?.isAdmin);
+  const [scopeSchoolName, setScopeSchoolName] = useState("");
+  const [scopeDepartmentName, setScopeDepartmentName] = useState("");
+  const [scopeSectionName, setScopeSectionName] = useState("");
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [selectedSectionLabel, setSelectedSectionLabel] = useState("");
+  const canManageScopeTargets = Boolean(portalAuth?.isPremium || portalAuth?.isAdmin);
   const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
+  const deferredSchoolName = useDeferredValue(scopeSchoolName.trim());
+  const deferredDepartmentName = useDeferredValue(scopeDepartmentName.trim());
+  const deferredSectionName = useDeferredValue(scopeSectionName.trim());
+  const isScopeWatchTypeValue = isScopeWatchType(watchType);
 
   useEffect(() => {
-    if (!canSubscribeSchool && watchType === "school") {
+    if (!canManageScopeTargets && (watchType === "school" || watchType === "department" || watchType === "section")) {
       setWatchType("major");
     }
-  }, [canSubscribeSchool, watchType]);
+  }, [canManageScopeTargets, watchType]);
 
   const subscriptionsQuery = useSubscriptionsQuery(isWatchlistOpen);
+  const monitorTargetsQuery = useMonitorTargetsQuery(isWatchlistOpen && canManageScopeTargets);
   const realtimeNoticesQuery = useWatchlistNoticesQuery(isWatchlistOpen);
+  const schoolSuggestionsQuery = useSchoolSuggestionsQuery(
+    {
+      q: deferredSchoolName || undefined,
+      limit: 8,
+    },
+    isWatchlistOpen && canManageScopeTargets && isScopeWatchTypeValue && Boolean(deferredSchoolName),
+  );
+  const departmentSuggestionsQuery = useMonitorScopeDepartmentsQuery(
+    {
+      school_name: deferredSchoolName || undefined,
+      department_name: deferredDepartmentName || undefined,
+      limit: 8,
+    },
+    isWatchlistOpen &&
+      canManageScopeTargets &&
+      (watchType === "department" || watchType === "section") &&
+      Boolean(deferredSchoolName || deferredDepartmentName),
+  );
+  const sectionLookupQuery = useMonitorScopeSectionsQuery(
+    {
+      school_name: deferredSchoolName || undefined,
+      department_name: deferredDepartmentName || undefined,
+      section_name: deferredSectionName || undefined,
+      limit: 10,
+    },
+    isWatchlistOpen &&
+      canManageScopeTargets &&
+      watchType === "section" &&
+      Boolean(deferredSchoolName || deferredDepartmentName || deferredSectionName),
+  );
 
   const createSubscriptionMutation = useAddSubscriptionMutation();
   const deleteSubscriptionMutation = useDeleteSubscriptionMutation();
+  const createMonitorTargetMutation = useAddMonitorTargetMutation();
+  const deleteMonitorTargetMutation = useDeleteMonitorTargetMutation();
+
+  const watchEntries = buildWatchEntries(subscriptionsQuery.data?.items || [], monitorTargetsQuery.data?.items || []);
+
+  function resetScopeDraft() {
+    setScopeSchoolName("");
+    setScopeDepartmentName("");
+    setScopeSectionName("");
+    setSelectedSchoolId(null);
+    setSelectedDepartmentId(null);
+    setSelectedSectionId(null);
+    setSelectedSectionLabel("");
+  }
+
+  function handleScopeSchoolInputChange(nextValue: string) {
+    setScopeSchoolName(nextValue);
+    setSelectedSchoolId(null);
+    setSelectedDepartmentId(null);
+    setSelectedSectionId(null);
+    setSelectedSectionLabel("");
+  }
+
+  function handleScopeDepartmentInputChange(nextValue: string) {
+    setScopeDepartmentName(nextValue);
+    setSelectedDepartmentId(null);
+    setSelectedSectionId(null);
+    setSelectedSectionLabel("");
+  }
+
+  function handleScopeSectionInputChange(nextValue: string) {
+    setScopeSectionName(nextValue);
+    setSelectedSectionId(null);
+    setSelectedSectionLabel("");
+  }
+
+  function selectSchoolSuggestion(item: SchoolSuggestItem) {
+    setSelectedSchoolId(item.id);
+    setScopeSchoolName(item.name);
+    setSelectedDepartmentId(null);
+    setSelectedSectionId(null);
+    setSelectedSectionLabel("");
+  }
+
+  function selectDepartmentSuggestion(item: MonitorScopeDepartmentItem) {
+    setSelectedDepartmentId(item.id);
+    setScopeDepartmentName(item.name);
+    if (item.school_id) {
+      setSelectedSchoolId(item.school_id);
+    }
+    if (item.school_name) {
+      setScopeSchoolName(item.school_name);
+    }
+    setSelectedSectionId(null);
+    setSelectedSectionLabel("");
+  }
+
+  function selectSectionSuggestion(item: MonitorScopeSectionItem) {
+    setSelectedSectionId(item.id);
+    setSelectedSectionLabel(buildSectionLabel(item));
+    setScopeSectionName(item.name);
+    if (item.school_id) {
+      setSelectedSchoolId(item.school_id);
+    }
+    if (item.school_name) {
+      setScopeSchoolName(item.school_name);
+    }
+    if (item.department_id) {
+      setSelectedDepartmentId(item.department_id);
+    }
+    if (item.department_name) {
+      setScopeDepartmentName(item.department_name);
+    }
+  }
 
   async function handleLogout() {
     setSubmitting(true);
@@ -64,13 +193,62 @@ export default function Modals() {
   }
 
   async function handleCreateSubscription() {
+    if (watchType === "school" || watchType === "department" || watchType === "section") {
+      if (!canManageScopeTargets) {
+        setMessage("学校、学院、栏目级关注仅高级用户或管理员可用。");
+        return;
+      }
+
+      const schoolName = scopeSchoolName.trim();
+      const departmentName = scopeDepartmentName.trim();
+      const sectionName = scopeSectionName.trim();
+
+      if (watchType === "school") {
+        if (!schoolName) {
+          setMessage("请输入学校名称");
+          return;
+        }
+      }
+
+      if (watchType === "department") {
+        if (!schoolName || !departmentName) {
+          setMessage("学院级关注需要同时填写学校和学院");
+          return;
+        }
+      }
+
+      if (watchType === "section" && !selectedSectionId && !sectionName) {
+        setMessage("请输入栏目名称，或从下方候选栏目里选择一个");
+        return;
+      }
+
+      try {
+        setMessage("");
+        await createMonitorTargetMutation.mutateAsync({
+          scope_type: watchType,
+          school_id: selectedSchoolId || undefined,
+          school_name: selectedSchoolId ? undefined : schoolName || undefined,
+          department_id: selectedDepartmentId || undefined,
+          department_name: selectedDepartmentId ? undefined : departmentName || undefined,
+          site_section_id: selectedSectionId || undefined,
+          site_section_name: selectedSectionId ? undefined : sectionName || undefined,
+          check_interval_minutes: 60,
+        });
+        resetScopeDraft();
+        setMessage("关注已加入雷达。");
+      } catch (error) {
+        if (error instanceof ApiError) {
+          setMessage(`操作失败：${error.message}`);
+        } else {
+          setMessage("操作失败，请稍后重试");
+        }
+      }
+      return;
+    }
+
     const value = watchValue.trim();
     if (!value) {
       setMessage("请输入你要关注的关键词或院校");
-      return;
-    }
-    if (watchType === "school" && !canSubscribeSchool) {
-      setMessage("院校收藏仅高级用户或管理员可用。");
       return;
     }
     try {
@@ -95,6 +273,20 @@ export default function Modals() {
     try {
       setMessage("");
       await deleteSubscriptionMutation.mutateAsync(subscriptionId);
+      setMessage("已移出归档。");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(`操作失败：${error.message}`);
+      } else {
+        setMessage("操作失败，请稍后重试");
+      }
+    }
+  }
+
+  async function handleDeleteMonitorTarget(targetId: string) {
+    try {
+      setMessage("");
+      await deleteMonitorTargetMutation.mutateAsync(targetId);
       setMessage("已移出归档。");
     } catch (error) {
       if (error instanceof ApiError) {
@@ -267,9 +459,11 @@ export default function Modals() {
                         <BellRing size={14} />
                         添加新关注
                       </div>
-                      <div className="mb-2 grid grid-cols-4 gap-2">
+                      <div className="mb-2 grid grid-cols-3 gap-2">
                         {[
-                          { key: "school", label: "院校" },
+                          { key: "school", label: "学校" },
+                          { key: "department", label: "学院" },
+                          { key: "section", label: "栏目" },
                           { key: "major", label: "专业" },
                           { key: "keyword", label: "关键词" },
                           { key: "region", label: "地区" },
@@ -277,14 +471,18 @@ export default function Modals() {
                           <button
                             key={x.key}
                             type="button"
-                            disabled={x.key === "school" && !canSubscribeSchool}
-                            onClick={() => setWatchType(x.key as "school" | "major" | "keyword" | "region")}
+                            disabled={
+                              (x.key === "school" || x.key === "department" || x.key === "section") && !canManageScopeTargets
+                            }
+                            onClick={() =>
+                              setWatchType(x.key as "school" | "department" | "section" | "major" | "keyword" | "region")
+                            }
                             className={`rounded-lg px-2 py-1.5 text-xs transition-colors ${
                               watchType === x.key
                                 ? "bg-cyan-500 text-white"
                                 : "bg-white/5 text-slate-300 hover:bg-white/10"
                             } ${
-                              x.key === "school" && !canSubscribeSchool
+                              (x.key === "school" || x.key === "department" || x.key === "section") && !canManageScopeTargets
                                 ? "cursor-not-allowed opacity-50 hover:bg-white/5"
                                 : ""
                             }`}
@@ -293,10 +491,10 @@ export default function Modals() {
                           </button>
                         ))}
                       </div>
-                      {!canSubscribeSchool ? (
+                      {!canManageScopeTargets ? (
                         <div className="mt-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
                           <div className="text-[11px] text-amber-200">
-                            院校收藏仅高级用户或管理员可用。普通用户不该只看到一行限制提示，所以这里直接给开通入口。
+                            学校、学院、栏目级关注仅高级用户或管理员可用。普通用户不该只看到一行限制提示，所以这里直接给开通入口。
                           </div>
                           <Link
                             href="/account/billing"
@@ -307,25 +505,164 @@ export default function Modals() {
                           </Link>
                         </div>
                       ) : null}
-                      <div className="flex gap-2">
-                        <input
-                          value={watchValue}
-                          onChange={(event) => setWatchValue(event.target.value)}
-                          placeholder="例如：电子科技大学 / 0854 / 复试线"
-                          className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
-                        />
-                        <button
-                          type="button"
-                          disabled={createSubscriptionMutation.isPending}
-                          onClick={handleCreateSubscription}
-                          className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-400 disabled:opacity-70"
-                        >
-                          添加
-                        </button>
-                      </div>
+                      {watchType === "school" || watchType === "department" || watchType === "section" ? (
+                        <div className="space-y-2">
+                          <input
+                            value={scopeSchoolName}
+                            onChange={(event) => handleScopeSchoolInputChange(event.target.value)}
+                            placeholder="学校名称，例如：电子科技大学"
+                            className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                          />
+                          {selectedSchoolId ? (
+                            <div className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+                              已锁定学校：{scopeSchoolName}
+                            </div>
+                          ) : null}
+                          {schoolSuggestionsQuery.isLoading ? (
+                            <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300">
+                              正在匹配学校候选...
+                            </div>
+                          ) : null}
+                          {schoolSuggestionsQuery.data?.items.length ? (
+                            <div className="max-h-36 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-2">
+                              {schoolSuggestionsQuery.data.items.map((item) => {
+                                const active = selectedSchoolId === item.id;
+                                return (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => selectSchoolSuggestion(item)}
+                                    className={`block w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                                      active
+                                        ? "border-cyan-400/40 bg-cyan-500/10"
+                                        : "border-white/10 bg-white/5 hover:bg-white/10"
+                                    }`}
+                                  >
+                                    <div className="text-sm font-medium text-white">{item.name}</div>
+                                    <div className="mt-1 text-[11px] text-slate-400">{item.province || "学校候选"}</div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                          {watchType === "department" || watchType === "section" ? (
+                            <>
+                              <input
+                                value={scopeDepartmentName}
+                                onChange={(event) => handleScopeDepartmentInputChange(event.target.value)}
+                                placeholder={watchType === "department" ? "学院名称，例如：计算机学院" : "学院名称，可选"}
+                                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                              />
+                              {selectedDepartmentId ? (
+                                <div className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+                                  已锁定学院：{scopeDepartmentName}
+                                </div>
+                              ) : null}
+                              {departmentSuggestionsQuery.isLoading ? (
+                                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300">
+                                  正在匹配学院候选...
+                                </div>
+                              ) : null}
+                              {departmentSuggestionsQuery.data?.items.length ? (
+                                <div className="max-h-36 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-2">
+                                  {departmentSuggestionsQuery.data.items.map((item) => {
+                                    const active = selectedDepartmentId === item.id;
+                                    return (
+                                      <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => selectDepartmentSuggestion(item)}
+                                        className={`block w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                                          active
+                                            ? "border-cyan-400/40 bg-cyan-500/10"
+                                            : "border-white/10 bg-white/5 hover:bg-white/10"
+                                        }`}
+                                      >
+                                        <div className="text-sm font-medium text-white">{item.name}</div>
+                                        <div className="mt-1 text-[11px] text-slate-400">
+                                          {[item.school_name, item.department_type].filter(Boolean).join(" · ")}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                          {watchType === "section" ? (
+                            <>
+                              <input
+                                value={scopeSectionName}
+                                onChange={(event) => handleScopeSectionInputChange(event.target.value)}
+                                placeholder="栏目名称或关键词，例如：通知公告 / 招生动态"
+                                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                              />
+                              {selectedSectionLabel ? (
+                                <div className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+                                  已选择栏目：{selectedSectionLabel}
+                                </div>
+                              ) : null}
+                              {sectionLookupQuery.isLoading ? (
+                                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-300">
+                                  正在匹配栏目候选...
+                                </div>
+                              ) : null}
+                              {sectionLookupQuery.data?.items.length ? (
+                                <div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-2">
+                                  {sectionLookupQuery.data.items.map((item) => {
+                                    const active = selectedSectionId === item.id;
+                                    return (
+                                      <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => selectSectionSuggestion(item)}
+                                        className={`block w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                                          active
+                                            ? "border-cyan-400/40 bg-cyan-500/10"
+                                            : "border-white/10 bg-white/5 hover:bg-white/10"
+                                        }`}
+                                      >
+                                        <div className="text-sm font-medium text-white">{item.name}</div>
+                                        <div className="mt-1 text-[11px] text-slate-400">
+                                          {[item.school_name, item.department_name, item.discovery_category].filter(Boolean).join(" · ")}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                          <button
+                            type="button"
+                            disabled={createMonitorTargetMutation.isPending}
+                            onClick={handleCreateSubscription}
+                            className="w-full rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-400 disabled:opacity-70"
+                          >
+                            添加
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            value={watchValue}
+                            onChange={(event) => setWatchValue(event.target.value)}
+                            placeholder="例如：0854 / 复试线 / 华中地区"
+                            className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                          />
+                          <button
+                            type="button"
+                            disabled={createSubscriptionMutation.isPending}
+                            onClick={handleCreateSubscription}
+                            className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-400 disabled:opacity-70"
+                          >
+                            添加
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {subscriptionsQuery.isLoading ? (
+                    {subscriptionsQuery.isLoading || (canManageScopeTargets && monitorTargetsQuery.isLoading) ? (
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-slate-300">
                         探针巡航中，拉取最新节点...
                       </div>
@@ -383,34 +720,40 @@ export default function Modals() {
                       )}
                     </div>
 
-                    {subscriptionsQuery.data?.items.length ? (
-                      subscriptionsQuery.data.items.map((item) => (
+                    {watchEntries.length ? (
+                      watchEntries.map((item) => (
                         <div
-                          key={item.id}
+                          key={`${item.kind}:${item.id}`}
                           className="rounded-2xl border border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/10"
                         >
                           <div className="mb-2 flex items-center justify-between">
                             <div className="flex items-center gap-2 font-mono text-xs text-cyan-400">
                               <BellRing size={12} />
-                              正在监控 · {watchTypeLabel(item.subscription_type)}
+                              正在监控 · {item.kind === "monitor" ? monitorScopeLabel(item.scope_type) : watchTypeLabel(item.subscription_type)}
                             </div>
                             <button
                               type="button"
-                              disabled={deleteSubscriptionMutation.isPending}
-                              onClick={() => handleDeleteSubscription(item.id)}
+                              disabled={item.kind === "monitor" ? deleteMonitorTargetMutation.isPending : deleteSubscriptionMutation.isPending}
+                              onClick={() =>
+                                item.kind === "monitor"
+                                  ? handleDeleteMonitorTarget(item.id)
+                                  : handleDeleteSubscription(item.id)
+                              }
                               className="rounded-md border border-white/20 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:bg-white/10"
                             >
                               移除
                             </button>
                           </div>
-                          <div className="mb-2 text-sm font-medium text-white">{item.display_label || item.value}</div>
+                          <div className="mb-2 text-sm font-medium text-white">
+                            {item.kind === "monitor" ? item.display_label : item.display_label || item.value}
+                          </div>
                           <div className="text-xs text-slate-400">
-                            类别：{item.category} · 创建于{" "}
+                            {item.kind === "monitor" ? "范围：站内公告" : `类别：${item.category}`} · 创建于{" "}
                             {new Date(item.created_at).toLocaleString("zh-CN", { hour12: false })}
                           </div>
                         </div>
                       ))
-                    ) : subscriptionsQuery.isSuccess ? (
+                    ) : subscriptionsQuery.isSuccess && (!canManageScopeTargets || monitorTargetsQuery.isSuccess) ? (
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-slate-300">
                         暂无归档。将有价值的卡片留存于此。
                       </div>
@@ -465,22 +808,54 @@ function watchTypeLabel(type: string) {
   return "未知";
 }
 
+function monitorScopeLabel(type: string) {
+  if (type === "school") return "学校级";
+  if (type === "department") return "学院级";
+  if (type === "section") return "栏目级";
+  return "监控";
+}
+
 
 function formatNoticeTitle(item: NotificationEventItem) {
   const school = item.payload.school_name || "未知院校";
+  const department = item.payload.department_name;
   const major = item.payload.major_name || item.payload.major || item.payload.major_code;
   const category = item.payload.category === "adjustment" ? "雷达异动" : "公告更新";
-  return [school, major, category].filter(Boolean).join(" · ");
+  return [school, department, major, category].filter(Boolean).join(" · ");
 }
 
 function formatNoticeSubline(item: NotificationEventItem) {
   const title = item.payload.title || "无标题";
+  const department = item.payload.department_name ? ` · ${item.payload.department_name}` : "";
+  const sectionName = item.payload.site_section_name ? ` · ${item.payload.site_section_name}` : "";
   const majorValue = item.payload.major_name || item.payload.major || item.payload.major_code;
   const major = majorValue ? ` · ${majorValue}` : "";
   const time = new Date(item.created_at).toLocaleString("zh-CN", { hour12: false });
-  return `${title}${major} · ${time}`;
+  return `${title}${department}${sectionName}${major} · ${time}`;
 }
 
 function isUrgentNotice(item: NotificationEventItem) {
   return item.payload.category === "adjustment" || item.payload.status === "urgent";
+}
+
+function isScopeWatchType(type: string) {
+  return type === "school" || type === "department" || type === "section";
+}
+
+function buildSectionLabel(item: {
+  name: string;
+  school_name?: string | null;
+  department_name?: string | null;
+}) {
+  return [item.school_name, item.department_name, item.name].filter(Boolean).join(" · ");
+}
+
+function buildWatchEntries(subscriptions: SubscriptionItem[], monitorTargets: MonitorTargetItem[]) {
+  const items = [
+    ...subscriptions.map((item) => ({ kind: "subscription" as const, ...item })),
+    ...monitorTargets.map((item) => ({ kind: "monitor" as const, ...item })),
+  ];
+  return items.sort(
+    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+  );
 }

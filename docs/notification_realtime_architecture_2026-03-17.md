@@ -6,7 +6,8 @@
 
 - 不引入 Celery / Redis 队列，直接基于 MySQL 实现可靠通知链路。
 - 支持多进程并发消费，避免重复推送和锁冲突。
-- 前端通过 SSE 接收通知，后端保持无状态。
+- 前端通过 SSE 接收通知，后端业务状态仍以 MySQL 为准。
+- 在线用户优先走内存连接池实时推送，离线或断连用户仍可通过 delivery 表补拉。
 
 ## 数据表
 
@@ -22,7 +23,7 @@
 
 ### `notification_deliveries`
 
-- 作用：按用户分发后的投递箱（SSE 读取此表）。
+- 作用：按用户分发后的投递箱（站内 SSE 与外部通道的共同兜底层）。
 - 关键字段：
   - `user_id`
   - `channel`：当前支持 `inapp | bark`
@@ -41,14 +42,28 @@
    - 热更新订阅缓存。
    - 用 AC 自动机（`pyahocorasick`）+ 类型规则匹配用户。
    - 写入 `notification_deliveries`，并标记 outbox 为 `done`。
+   - 对 `inapp` 且 `deliver_after<=now` 的 delivery，如果用户当前在线，则直接推入该用户的 SSE 队列。
 4. 后台 worker 继续轮询外部通道 delivery：
    - 当前最小实现支持 `Bark`
    - 到达 `deliver_after` 后发送
    - 成功标记 `sent`
    - 失败按重试窗口回到 `pending`，超过最大次数标记 `failed`
 5. 前端连接 `GET /api/v1/notifications/stream`：
-   - 每轮查询当前用户 `pending + deliver_after<=now` 的投递记录。
-   - 推送后标记为 `sent`。
+   - 连接时先补拉当前用户 `pending + deliver_after<=now` 的投递记录，并标记为 `sent`。
+   - 然后进入该用户的内存 SSE 队列等待实时消息。
+   - 收到实时消息后，会再次尝试按 delivery id 原子 claim；claim 成功才真正下发给前端。
+   - 这样可以避免“首次补拉”和“实时队列”命中同一条 delivery 时双发。
+
+## SSE 连接管理
+
+- 当前实现维护一个全局 `ConnectionManager`，按 `user_id -> [asyncio.Queue, ...]` 保存在线连接。
+- 同一用户可同时保留多个活跃 SSE 连接，用于多个可见标签页或多窗口并发接收站内通知。
+- 通知 worker 是同步线程环境，因此推送到 SSE 队列时必须通过线程安全方式切回对应事件循环。
+- 前端收到同一条 SSE `notice` 后，会先更新各自标签页的通知缓存，再通过浏览器级 claim gate 决定哪个标签页真正展示 Toast。
+- MySQL 中的 `notification_deliveries` 仍是最终状态来源：
+  - 在线推送成功前，delivery 仍保留 `pending`
+  - SSE 侧 claim 成功后再改成 `sent`
+  - 如果用户不在线或连接中断，稍后仍能通过 `/notifications/pending` 或 SSE 首次补拉拿到这条通知
 
 ## 新接口
 
@@ -88,6 +103,6 @@
   - 事务收件箱
   - 多进程抢占消费
   - 热更新订阅匹配
-  - SSE 无状态推送
+  - SSE 实时推送 + delivery 表兜底
 - 当前已补 `Bark` 最小外部通道，`inapp(SSE)` 逻辑保持不变。
 - `inapp(SSE)` 默认即时投递（`NOTIFICATION_INAPP_DELAY_SECONDS=0`），批量窗口主要用于外部通道。

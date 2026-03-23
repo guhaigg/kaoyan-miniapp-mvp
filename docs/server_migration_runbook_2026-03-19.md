@@ -15,7 +15,7 @@
 
 ## 2. 当前线上结构
 
-现有生产机：`45.192.110.219`
+现有生产机：`38.76.215.159`
 
 - 仓库目录：`/root/code/kaoyan-miniapp-mvp`
 - 后端运行目录：`/root/code/kaoyan-miniapp-mvp/backend`
