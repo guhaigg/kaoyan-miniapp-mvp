@@ -2,7 +2,7 @@ from datetime import datetime
 
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
-from app.models import AdjustmentOpportunity, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive
+from app.models import AdjustmentOpportunity, Content, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 from app.routers.search import _build_adjustment_detail_from_opportunity
@@ -2136,6 +2136,46 @@ def test_content_upsert_generates_summary_from_body_when_missing(client):
         payload["items"][0]["summary"]
         == "河海大学 计算机与软件学院 发布 2026 年硕士研究生复试安排。 请考生按时完成资格审查，并提前准备面试材料。"
     )
+
+
+def test_search_announcements_recovers_stale_content_fields_from_body(client):
+    with SessionLocal() as db:
+        school = School(name="摘要修复大学", aliases=[])
+        db.add(school)
+        db.flush()
+        db.add(
+            Content(
+                category="announcement",
+                title="3019.htm",
+                body=(
+                    "摘要修复大学关于2024年同等学力申硕学员现场确认暨开学典礼的通知-摘要修复大学研究生招生信息网 "
+                    "摘要修复大学 | 摘要修复大学研究生院 网站首页 发布时间：2024-08-30 "
+                    "根据《摘要修复大学同等学力人员申请硕士学位工作实施办法》的相关规定，"
+                    "现就2024年同等学力申硕第一批次学员现场确认等事宜通知如下。"
+                ),
+                summary=None,
+                school_id=school.id,
+                source_url="https://example.com/stale/3019.htm",
+                source_type="crawler",
+                published_at=None,
+                region=None,
+                major=None,
+                extra={"tags": ["招生简章", "同等学力"]},
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "摘要修复大学", "keywords": "现场确认暨开学典礼"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    item = payload["items"][0]
+    assert item["title"] == "摘要修复大学关于2024年同等学力申硕学员现场确认暨开学典礼的通知"
+    assert item["summary"].startswith("根据《摘要修复大学同等学力人员申请硕士学位工作实施办法》")
+    assert item["published_at"].startswith("2024-08-30")
 
 
 def test_search_cache_skips_refresh_and_page_beyond_limit():
