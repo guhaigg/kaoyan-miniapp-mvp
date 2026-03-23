@@ -297,7 +297,7 @@ def test_repair_broken_monitor_targets_soft_deletes_unrecoverable_rows():
         broken = PortalUserMonitorTarget(
             user_id=user.id,
             scope_type="school",
-            school_id=None,
+            school_id="ghost-school-id",
             department_id=None,
             site_section_id=None,
             status="active",

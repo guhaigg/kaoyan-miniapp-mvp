@@ -183,11 +183,11 @@ def is_monitor_target_broken(target: PortalUserMonitorTarget, context: dict[str,
     scope_type = _clean_text(target.scope_type) or ""
     context = context or {}
     if scope_type == "school":
-        return not _clean_id(context.get("school_id") or target.school_id)
+        return not (_clean_id(context.get("school_id") or target.school_id) and _clean_text(context.get("school_name")))
     if scope_type == "department":
-        return not _clean_id(context.get("department_id") or target.department_id)
+        return not (_clean_id(context.get("department_id") or target.department_id) and _clean_text(context.get("department_name")))
     if scope_type == "section":
-        return not _clean_id(context.get("site_section_id") or target.site_section_id)
+        return not (_clean_id(context.get("site_section_id") or target.site_section_id) and _clean_text(context.get("site_section_name")))
     return True
 
 
@@ -215,7 +215,8 @@ def repair_broken_monitor_targets(db: Session) -> dict[str, int]:
 
         if scope_type == "school":
             next_school_id = _clean_id(context.get("school_id"))
-            if next_school_id:
+            next_school_name = _clean_text(context.get("school_name"))
+            if next_school_id and next_school_name:
                 changed = target.school_id != next_school_id or target.department_id is not None or target.site_section_id is not None
                 target.school_id = next_school_id
                 target.department_id = None
@@ -226,7 +227,8 @@ def repair_broken_monitor_targets(db: Session) -> dict[str, int]:
         elif scope_type == "department":
             next_school_id = _clean_id(context.get("school_id"))
             next_department_id = _clean_id(context.get("department_id"))
-            if next_department_id:
+            next_department_name = _clean_text(context.get("department_name"))
+            if next_department_id and next_department_name:
                 changed = (
                     target.school_id != next_school_id
                     or target.department_id != next_department_id
@@ -242,7 +244,8 @@ def repair_broken_monitor_targets(db: Session) -> dict[str, int]:
             next_school_id = _clean_id(context.get("school_id"))
             next_department_id = _clean_id(context.get("department_id"))
             next_site_section_id = _clean_id(context.get("site_section_id"))
-            if next_site_section_id:
+            next_site_section_name = _clean_text(context.get("site_section_name"))
+            if next_site_section_id and next_site_section_name:
                 changed = (
                     target.school_id != next_school_id
                     or target.department_id != next_department_id
