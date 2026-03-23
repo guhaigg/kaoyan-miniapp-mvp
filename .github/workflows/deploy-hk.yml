@@ -105,11 +105,15 @@ jobs:
           DEPLOY_PATH="${DEPLOY_PATH:-/root/code/kaoyan-miniapp-mvp}"
           WEB_ROOT="${WEB_ROOT:-/var/www/html}"
           BACKEND_SERVICE="${BACKEND_SERVICE:-kaoyan-backend}"
+          BACKEND_SERVICE="${BACKEND_SERVICE%.service}"
           REPO_BUNDLE="${DEPLOY_PATH}.bundle"
 
           ssh -p "$PORT" "$TARGET" \
             "DEPLOY_PATH='$DEPLOY_PATH' WEB_ROOT='$WEB_ROOT' BACKEND_SERVICE='$BACKEND_SERVICE' REPO_BUNDLE='$REPO_BUNDLE' bash -s" <<'REMOTE'
           set -euo pipefail
+
+          BACKEND_SERVICE="${BACKEND_SERVICE:-kaoyan-backend}"
+          BACKEND_SERVICE="${BACKEND_SERVICE%.service}"
 
           pre_ts="$(date '+%Y%m%d-%H%M%S')"
           pre_dir="/root/backups/predeploy/${pre_ts}"
@@ -191,6 +195,7 @@ jobs:
           if systemctl list-unit-files | grep -q "^${BACKEND_SERVICE}\.service"; then
             systemctl restart "${BACKEND_SERVICE}.service"
             systemctl is-active --quiet "${BACKEND_SERVICE}.service"
+            systemctl show "${BACKEND_SERVICE}.service" --property MainPID,ActiveEnterTimestamp --no-pager
           fi
 
           if systemctl list-unit-files | grep -q "^nginx\.service"; then
