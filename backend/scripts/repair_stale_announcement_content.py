@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -186,6 +187,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Show would-be changes without committing.")
     parser.add_argument("--skip-refetch", action="store_true", help="Only repair from existing body, do not refetch unresolved URLs.")
     parser.add_argument("--source-url", type=str, default="", help="Repair only a specific source_url.")
+    parser.add_argument("--unresolved-sample-limit", type=int, default=5, help="How many unresolved rows to print for diagnosis.")
     args = parser.parse_args()
 
     with SessionLocal() as db:
@@ -220,6 +222,7 @@ def main() -> int:
         unresolved_missing_title = 0
         unresolved_missing_summary = 0
         unresolved_missing_published_at = 0
+        unresolved_samples: list[dict[str, str | None]] = []
 
         for row in query.all():
             scanned += 1
@@ -254,6 +257,14 @@ def main() -> int:
                     unresolved_missing_summary += 1
                 if row.published_at is None:
                     unresolved_missing_published_at += 1
+                if len(unresolved_samples) < max(args.unresolved_sample_limit, 0):
+                    unresolved_samples.append(
+                        {
+                            "source_url": row.source_url,
+                            "title": row.title,
+                            "body_preview": str(row.body or "").strip().replace("\n", " ")[:160],
+                        }
+                    )
 
         if args.dry_run:
             db.rollback()
@@ -277,6 +288,8 @@ def main() -> int:
             ]
         )
     )
+    if unresolved_samples:
+        print(f"unresolved_samples={json.dumps(unresolved_samples, ensure_ascii=False)}")
     return 0
 
 
