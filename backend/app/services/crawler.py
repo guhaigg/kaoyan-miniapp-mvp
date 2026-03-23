@@ -21,6 +21,7 @@ from ..db import SessionLocal
 from ..models import ContentFile, CrawlError, CrawlJob, SiteSection, SiteSectionLink, utcnow
 from ..schemas import ContentIn
 from .content import upsert_content
+from .content_summary import summarize_text
 from .nlp import extract_domain_tags
 
 with suppress(Exception):
@@ -119,7 +120,6 @@ _MIN_PDF_TEXT_LENGTH = 50
 _MAX_OUTBOUND_LINKS = 3
 _MAX_OUTBOUND_LINK_TEXT_LENGTH = 80
 _LINK_NOTICE_MAX_BODY_LENGTH = 120
-_SUMMARY_MAX_LENGTH = 180
 _LINK_NOTICE_HINT_KEYWORDS = [
     "详见附件",
     "点击查看",
@@ -180,15 +180,6 @@ def _extract_text(raw_html: str) -> str:
     text = _TAG_RE.sub(" ", raw_html)
     text = _SPACE_RE.sub(" ", unescape(text)).strip()
     return text
-
-
-def _summarize_text(text: str, *, max_length: int = _SUMMARY_MAX_LENGTH) -> str | None:
-    normalized = _SPACE_RE.sub(" ", str(text or "")).strip()
-    if not normalized:
-        return None
-    if len(normalized) <= max_length:
-        return normalized
-    return f"{normalized[: max_length - 1].rstrip()}..."
 
 
 def _coerce_datetime(value: Any) -> datetime | None:
@@ -985,7 +976,7 @@ class CrawlEngine:
             or _extract_title(raw_html)
             or f"{job.category} crawl {job.id[:8]}"
         )
-        summary = str(query.get("summary") or "").strip() or _summarize_text(body)
+        summary = str(query.get("summary") or "").strip() or summarize_text(body)
         extra = dict(query.get("extra") or {})
         outbound_links = _extract_outbound_links(raw_html, base_url=source_url, current_url=source_url)
         if _looks_like_link_notice(body=body, raw_html=raw_html, outbound_links=outbound_links):
@@ -1055,7 +1046,7 @@ class CrawlEngine:
 
         if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH:
             body = extracted_text
-            summary = _summarize_text(extracted_text)
+            summary = summarize_text(extracted_text)
             extra["pdf_parse_status"] = "done"
             extra["pdf_text_extracted"] = True
         else:
@@ -1111,7 +1102,7 @@ class CrawlEngine:
 
         source_url = str(content_data.get("source_url") or "").strip() or f"crawl-job://{job.id}"
         raw_html = str(content_data.get("raw_html") or "").strip() or None
-        summary = str(content_data.get("summary") or "").strip() or _summarize_text(body)
+        summary = str(content_data.get("summary") or "").strip() or summarize_text(body)
         extra = dict(content_data.get("extra") or {})
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "content_payload"
@@ -1150,7 +1141,7 @@ class CrawlEngine:
             category=job.category,
             title=title,
             body=body,
-            summary=(str(query.get("summary") or "").strip() or _summarize_text(body)),
+            summary=(str(query.get("summary") or "").strip() or summarize_text(body)),
             school_name=(str(query.get("school_name") or "").strip() or None),
             source_url=source_url,
             source_type="crawler",

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Content, ContentSnapshot, Department, NotificationOutbox, School, SiteSection, utcnow
 from ..schemas import ContentIn
+from .content_summary import normalize_text_whitespace, summarize_text
 from .nlp import extract_adjustment_meta, extract_domain_tags, infer_content_category
 from .premium_monitoring import evaluate_content_for_premium_monitoring
 from .search_cache import search_response_cache
@@ -152,11 +153,19 @@ def _build_content_fingerprint(payload: ContentIn, school_name: str | None, *, c
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _resolve_content_summary(summary: str | None, body: str) -> str | None:
+    normalized_summary = normalize_text_whitespace(summary)
+    if normalized_summary:
+        return normalized_summary
+    return summarize_text(body)
+
+
 def _apply_payload_to_content(
     content: Content,
     payload: ContentIn,
     *,
     category: str,
+    summary: str | None,
     school_id: str | None,
     merged_extra: dict,
     content_fingerprint: str,
@@ -164,7 +173,7 @@ def _apply_payload_to_content(
     content.category = category
     content.title = payload.title
     content.body = payload.body
-    content.summary = payload.summary
+    content.summary = summary
     content.school_id = school_id
     content.source_url = payload.source_url
     content.source_type = payload.source_type
@@ -188,15 +197,16 @@ def _find_existing_content(db: Session, *, source_url: str | None, content_finge
 
 
 def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
+    effective_summary = _resolve_content_summary(payload.summary, payload.body)
     incoming_extra = dict(payload.extra or {})
     if not incoming_extra.get("tags"):
         incoming_extra["tags"] = extract_domain_tags(
-            " ".join(part for part in [payload.title, payload.summary or "", payload.body] if part),
+            " ".join(part for part in [payload.title, effective_summary or "", payload.body] if part),
             top_k=5,
         )
     resolved_category = infer_content_category(
         title=payload.title,
-        summary=payload.summary,
+        summary=effective_summary,
         body=payload.body,
         tags=incoming_extra.get("tags") or [],
         existing_category=payload.category,
@@ -204,7 +214,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     if resolved_category == "adjustment":
         incoming_extra["adjustment_meta"] = extract_adjustment_meta(
             title=payload.title,
-            summary=payload.summary,
+            summary=effective_summary,
             body=payload.body,
             tags=incoming_extra.get("tags") or [],
         )
@@ -223,6 +233,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
         content,
         payload,
         category=resolved_category,
+        summary=effective_summary,
         school_id=school.id if school else None,
         merged_extra=merged_extra,
         content_fingerprint=content_fingerprint,
@@ -244,6 +255,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
             existing,
             payload,
             category=resolved_category,
+            summary=effective_summary,
             school_id=school.id if school else None,
             merged_extra=merged_extra,
             content_fingerprint=content_fingerprint,

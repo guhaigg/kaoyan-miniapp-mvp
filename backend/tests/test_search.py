@@ -2112,6 +2112,32 @@ def test_content_upsert_dedupes_by_fingerprint_when_source_url_changes(client):
     assert search.json()["total"] == 1
 
 
+def test_content_upsert_generates_summary_from_body_when_missing(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "河海大学计算机学院复试公告",
+            "body": "河海大学 计算机与软件学院 发布 2026 年硕士研究生复试安排。\n\n请考生按时完成资格审查，并提前准备面试材料。",
+            "school_name": "河海大学",
+            "source_type": "manual",
+            "source_url": "https://example.com/manual-summary-fallback",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "created"
+
+    search = client.post("/api/v1/search/announcements", json={"school_name": "河海大学"})
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert (
+        payload["items"][0]["summary"]
+        == "河海大学 计算机与软件学院 发布 2026 年硕士研究生复试安排。 请考生按时完成资格审查，并提前准备面试材料。"
+    )
+
+
 def test_search_cache_skips_refresh_and_page_beyond_limit():
     search_response_cache.clear()
     payload = AnnouncementSearchRequest(school_name="XX大学", page=1, page_size=10)
