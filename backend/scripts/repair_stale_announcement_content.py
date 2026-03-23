@@ -18,6 +18,7 @@ from app.db import SessionLocal
 from app.models import Content, utcnow
 from app.services.content_repair import (
     extract_content_published_at_from_body,
+    infer_non_detail_announcement_reason,
     looks_like_placeholder_content_title,
     repair_content_fields_from_body,
     resolve_content_display_fields,
@@ -42,6 +43,13 @@ def _needs_repair(row: Content) -> bool:
         or not str(row.summary or "").strip()
         or row.published_at is None
     )
+
+
+def _mark_non_detail_announcement(row: Content, *, reason: str) -> None:
+    extra = dict(row.extra or {})
+    extra["content_quality"] = "non_detail_page"
+    extra["content_quality_reason"] = reason
+    row.extra = extra
 
 
 def _can_refetch(row: Content) -> bool:
@@ -222,12 +230,22 @@ def main() -> int:
         unresolved_missing_title = 0
         unresolved_missing_summary = 0
         unresolved_missing_published_at = 0
+        skipped_non_detail = 0
         unresolved_samples: list[dict[str, str | None]] = []
 
         for row in query.all():
             scanned += 1
-            initial_needs_repair = _needs_repair(row)
-            if not initial_needs_repair:
+            non_detail_reason = infer_non_detail_announcement_reason(
+                title=row.title,
+                body=row.body,
+                source_url=row.source_url,
+            )
+            if non_detail_reason:
+                _mark_non_detail_announcement(row, reason=non_detail_reason)
+                skipped_non_detail += 1
+                continue
+
+            if not _needs_repair(row):
                 skipped += 1
                 continue
 
@@ -284,6 +302,7 @@ def main() -> int:
                 f"unresolved_missing_title={unresolved_missing_title}",
                 f"unresolved_missing_summary={unresolved_missing_summary}",
                 f"unresolved_missing_published_at={unresolved_missing_published_at}",
+                f"skipped_non_detail={skipped_non_detail}",
                 f"dry_run={args.dry_run}",
             ]
         )

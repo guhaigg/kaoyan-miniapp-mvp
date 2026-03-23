@@ -7,6 +7,31 @@ from ..models import Content
 from .content_summary import normalize_text_whitespace, summarize_text
 
 UTC = timezone.utc
+NON_DETAIL_ANNOUNCEMENT_TITLES = frozenset(
+    {
+        "学工新闻",
+        "研究生教育",
+        "学院简介",
+    }
+)
+NON_DETAIL_ANNOUNCEMENT_URL_SUFFIXES = (
+    "/list.htm",
+    "/list.html",
+    "/list.shtm",
+    "/list.shtml",
+    "/list.psp",
+    "/list.jsp",
+    "/list.php",
+    "/list.aspx",
+    "/list.do",
+)
+NON_DETAIL_ANNOUNCEMENT_TEST_HOST_MARKERS = (
+    "://smoke.example.com/",
+)
+NON_DETAIL_ANNOUNCEMENT_TEST_URL_MARKERS = (
+    "unauth-test",
+    "auth-after-fix",
+)
 
 PLACEHOLDER_CONTENT_TITLE_PATTERN = re.compile(r"^(?:[A-Za-z0-9_-]+|\d+)\.(?:s?html?|aspx?|php|jsp|do)$", re.IGNORECASE)
 CONTENT_BODY_TITLE_PATTERN = re.compile(
@@ -17,6 +42,31 @@ CONTENT_BODY_LABELED_PUBLISHED_AT_PATTERN = re.compile(
 )
 CONTENT_BODY_TOP_DATE_PATTERN = re.compile(r"(?<!\d)(\d{4})[.\-/年](\d{1,2})[.\-/月](\d{1,2})(?:日)?(?!\d)")
 CONTENT_SUMMARY_CUE_PATTERN = re.compile(r"(根据《|根据|现将|现就|为做好|为进一步|经研究|一、|请申请人|请考生|各位考生)")
+
+
+def infer_non_detail_announcement_reason(
+    *,
+    title: str | None,
+    body: str | None,
+    source_url: str | None,
+) -> str | None:
+    normalized_title = normalize_text_whitespace(title)
+    normalized_body = normalize_text_whitespace(body)
+    normalized_url = str(source_url or "").strip().lower()
+
+    if any(marker in normalized_url for marker in NON_DETAIL_ANNOUNCEMENT_TEST_HOST_MARKERS):
+        return "test_domain"
+
+    if any(marker in normalized_url for marker in NON_DETAIL_ANNOUNCEMENT_TEST_URL_MARKERS):
+        return "test_fixture"
+
+    if any(normalized_url.endswith(suffix) for suffix in NON_DETAIL_ANNOUNCEMENT_URL_SUFFIXES):
+        return "list_page"
+
+    if normalized_title in NON_DETAIL_ANNOUNCEMENT_TITLES and len(normalized_body) < 240:
+        return "generic_section_page"
+
+    return None
 
 
 def looks_like_placeholder_content_title(title: str | None) -> bool:

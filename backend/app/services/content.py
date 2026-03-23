@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Content, ContentSnapshot, Department, NotificationOutbox, School, SiteSection, utcnow
 from ..schemas import ContentIn
+from .content_repair import infer_non_detail_announcement_reason
 from .content_summary import normalize_text_whitespace, summarize_text
 from .nlp import extract_adjustment_meta, extract_domain_tags, infer_content_category
 from .premium_monitoring import evaluate_content_for_premium_monitoring
@@ -218,8 +219,21 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
             body=payload.body,
             tags=incoming_extra.get("tags") or [],
         )
+        incoming_extra.pop("content_quality", None)
+        incoming_extra.pop("content_quality_reason", None)
     else:
         incoming_extra.pop("adjustment_meta", None)
+        non_detail_reason = infer_non_detail_announcement_reason(
+            title=payload.title,
+            body=payload.body,
+            source_url=payload.source_url,
+        )
+        if non_detail_reason:
+            incoming_extra["content_quality"] = "non_detail_page"
+            incoming_extra["content_quality_reason"] = non_detail_reason
+        else:
+            incoming_extra.pop("content_quality", None)
+            incoming_extra.pop("content_quality_reason", None)
     school = _resolve_school(db, payload.school_name)
     school, incoming_extra = _normalize_scope_extra(db, school=school, incoming_extra=incoming_extra)
     content_fingerprint = _build_content_fingerprint(

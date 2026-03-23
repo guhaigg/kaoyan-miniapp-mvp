@@ -5,7 +5,7 @@ from app.db import SessionLocal
 from app.models import AdjustmentOpportunity, Content, ContentSnapshot, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
-from app.services.content_repair import extract_content_published_at_from_body
+from app.services.content_repair import extract_content_published_at_from_body, infer_non_detail_announcement_reason
 from app.routers.search import _build_adjustment_detail_from_opportunity
 from scripts.repair_stale_announcement_content import _repair_row_by_snapshot
 
@@ -2180,6 +2180,59 @@ def test_search_announcements_recovers_stale_content_fields_from_body(client):
     assert item["published_at"].startswith("2024-08-30")
 
 
+def test_search_announcements_excludes_non_detail_and_test_rows(client):
+    headers = {"X-Admin-Token": "test-admin-token"}
+    valid = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "湖北师范大学外国语学院2026年复试安排通知",
+            "body": "请考生于3月28日前完成资格审查。",
+            "school_name": "湖北师范大学",
+            "source_type": "crawler",
+            "source_url": "https://fld.hbnu.edu.cn/info/1234/5678.htm",
+        },
+        headers=headers,
+    )
+    assert valid.status_code == 200
+
+    noise_rows = [
+        {
+            "title": "学工新闻",
+            "body": "学工新闻 湖北师范大学-外国语学院 首页 学院概况 工会工作 机构设置 现任领导 党建工作 院务公开 学院简介 学工在线",
+            "source_url": "http://fld.hbnu.edu.cn/1613/list.htm",
+        },
+        {
+            "title": "线上烟测大学复试通知",
+            "body": "这里是复试安排与时间说明",
+            "source_url": "https://smoke.example.com/1773805706",
+        },
+    ]
+    for row in noise_rows:
+        response = client.post(
+            "/api/v1/content",
+            json={
+                "category": "announcement",
+                "title": row["title"],
+                "body": row["body"],
+                "school_name": "湖北师范大学",
+                "source_type": "manual",
+                "source_url": row["source_url"],
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200
+
+    search = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "湖北师范大学"},
+    )
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["title"] == "湖北师范大学外国语学院2026年复试安排通知"
+
+
 def test_repair_stale_announcement_script_uses_snapshots_before_refetch():
     source_url = "https://example.com/stale/snapshot-3019.htm"
     with SessionLocal() as db:
@@ -2239,6 +2292,34 @@ def test_repair_stale_announcement_script_uses_snapshots_before_refetch():
 def test_extract_content_published_at_from_body_supports_more_date_labels_and_top_dates():
     assert extract_content_published_at_from_body("日期：2024-09-01 复试工作安排如下").isoformat().startswith("2024-09-01")
     assert extract_content_published_at_from_body("2024-10-12 湖北大学同等学力申硕2024年秋季学期开课通知").isoformat().startswith("2024-10-12")
+
+
+def test_infer_non_detail_announcement_reason_flags_test_domains_and_list_pages():
+    assert infer_non_detail_announcement_reason(
+        title="线上烟测大学复试通知",
+        body="这里是复试安排与时间说明",
+        source_url="https://smoke.example.com/1773805706",
+    ) == "test_domain"
+    assert infer_non_detail_announcement_reason(
+        title="研究生教育",
+        body="研究生教育 湖北师范大学-外国语学院 首页 学院概况 工会工作 机构设置",
+        source_url="http://fld.hbnu.edu.cn/1593/list.htm",
+    ) == "list_page"
+    assert infer_non_detail_announcement_reason(
+        title="unauth-test",
+        body="x",
+        source_url="https://example.com/unauth-test-1",
+    ) == "test_fixture"
+    assert infer_non_detail_announcement_reason(
+        title="湖北师范大学外国语学院2026年复试安排通知",
+        body="请考生于3月28日前完成资格审查。",
+        source_url="https://fld.hbnu.edu.cn/info/1234/5678.htm",
+    ) is None
+    assert infer_non_detail_announcement_reason(
+        title="XX大学2026年硕士招生公告",
+        body="招生安排与时间节点",
+        source_url="https://example.com/a1",
+    ) is None
 
 
 def test_search_cache_skips_refresh_and_page_beyond_limit():

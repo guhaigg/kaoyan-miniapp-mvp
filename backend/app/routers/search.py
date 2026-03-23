@@ -181,6 +181,11 @@ def _apply_common_filters(query, payload: AnnouncementSearchRequest | Adjustment
     return query
 
 
+def _apply_announcement_quality_filters(query):
+    quality_expr = func.coalesce(cast(func.json_extract(Content.extra, "$.content_quality"), Text), "")
+    return query.filter(quality_expr != "non_detail_page")
+
+
 def _apply_adjustment_opportunity_filters(query, payload: AdjustmentSearchRequest):
     if payload.year is not None:
         query = query.filter(AdjustmentOpportunity.year == payload.year)
@@ -1651,6 +1656,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         return cached
     base_query = db.query(Content).filter(Content.category == "announcement")
     base_query = _apply_common_filters(base_query, effective_payload)
+    base_query = _apply_announcement_quality_filters(base_query)
 
     total = base_query.count()
     rows = (
