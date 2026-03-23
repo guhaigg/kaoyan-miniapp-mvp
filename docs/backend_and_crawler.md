@@ -32,6 +32,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `GET /api/v1/crawl-jobs/{job_id}` (requires portal admin token)
 - `POST /api/v1/site-sections` (requires portal admin token)
 - `GET /api/v1/site-sections` (requires portal admin token)
+- `POST /api/v1/site-sections/bootstrap` (requires portal admin token)
 - `PATCH /api/v1/site-sections/{id}` (requires portal admin token)
 - `POST /api/v1/site-sections/discover` (requires portal admin token)
 - `GET /api/v1/site-sections/{id}/links` (requires portal admin token)
@@ -126,6 +127,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 
 - Asset layer:
   - Admin can maintain `site_sections` with school/department dimensions.
+  - Admin can call `POST /api/v1/site-sections/bootstrap` with `school_name + homepage_url` to auto-probe same-host研招/公告栏目并批量落库，再可选直接排 discovery job。
 - Discovery scheduling:
   - `POST /api/v1/site-sections/discover` creates `crawl_jobs` with `job_kind=site_section_discovery`.
 - Worker behavior:

@@ -625,6 +625,28 @@ class SiteSectionDiscoverResponse(BaseModel):
     job_ids: list[str]
 
 
+class SiteSectionBootstrapRequest(BaseModel):
+    school_name: str = Field(min_length=1, max_length=255)
+    homepage_url: str | None = Field(default=None, max_length=2048)
+    department_name: str | None = Field(default=None, max_length=255)
+    department_type: str = Field(default="graduate_school", min_length=1, max_length=64)
+    seed_urls: list[str] = Field(default_factory=list)
+    enabled: bool = True
+    queue_discovery: bool = True
+    max_sections: int = Field(default=12, ge=1, le=30)
+
+
+class SiteSectionBootstrapResponse(BaseModel):
+    school_name: str
+    homepage_url: str | None
+    total_seed_urls: int
+    total_candidate_sections: int
+    created_sections: int
+    existing_sections: int
+    job_ids: list[str]
+    items: list["SiteSectionItem"]
+
+
 class SiteSectionBackfillSelectorConfigRequest(BaseModel):
     school_name: str | None = Field(default=None, max_length=255)
     department_name: str | None = Field(default=None, max_length=255)

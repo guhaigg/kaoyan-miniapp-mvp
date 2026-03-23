@@ -11,6 +11,8 @@ from ..schemas import (
     ContentFileItem,
     ContentFileListResponse,
     ContentFileRetryParseResponse,
+    SiteSectionBootstrapRequest,
+    SiteSectionBootstrapResponse,
     SiteSectionBackfillSelectorConfigRequest,
     SiteSectionBackfillSelectorConfigResponse,
     SiteSectionCreateRequest,
@@ -27,6 +29,7 @@ from ..schemas import (
 )
 from ..services import crawler as crawler_service
 from ..services.crawler import build_site_section_detail_selector_config, build_site_section_list_selector_config
+from ..services.site_section_bootstrap import bootstrap_site_sections as bootstrap_site_sections_service
 
 router = APIRouter(prefix="/site-sections", tags=["site-sections"])
 
@@ -298,6 +301,52 @@ def backfill_site_section_selector_config(
         total_sections=len(sections),
         updated_sections=len(updated_ids),
         items=[_to_site_section_item(section) for section in sections],
+    )
+
+
+@router.post("/bootstrap", response_model=SiteSectionBootstrapResponse)
+def bootstrap_site_sections(
+    payload: SiteSectionBootstrapRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> SiteSectionBootstrapResponse:
+    require_admin_request(request)
+    try:
+        result = bootstrap_site_sections_service(
+            db,
+            school_name=payload.school_name,
+            homepage_url=payload.homepage_url,
+            department_name=payload.department_name,
+            department_type=payload.department_type,
+            seed_urls=payload.seed_urls,
+            enabled=payload.enabled,
+            queue_discovery=payload.queue_discovery,
+            max_sections=payload.max_sections,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_event(
+        db,
+        request,
+        "site_section.bootstrap",
+        None,
+        {
+            "school_name": payload.school_name,
+            "created_sections": result["created_sections"],
+            "existing_sections": result["existing_sections"],
+            "job_ids": result["job_ids"],
+        },
+    )
+    return SiteSectionBootstrapResponse(
+        school_name=result["school"].name,
+        homepage_url=result["homepage_url"],
+        total_seed_urls=len(result["seed_urls"]),
+        total_candidate_sections=result["candidate_count"],
+        created_sections=result["created_sections"],
+        existing_sections=result["existing_sections"],
+        job_ids=result["job_ids"],
+        items=[_to_site_section_item(section) for section in result["items"]],
     )
 
 

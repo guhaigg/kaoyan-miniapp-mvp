@@ -414,6 +414,14 @@
 - PDF 正文抽取/OCR。
 - 跨栏目/跨站点全局去重与公告聚合。
 - 关键词规则命中与解释链路（`keyword_rules` / `content_matches`）。
+- 真正意义上的“只给学校名，系统自己全网找官网”的外部搜索冷启动。
+
+新增（2026-03-23）：
+
+- `POST /api/v1/site-sections/bootstrap` 已可用：
+  - 输入 `school_name + homepage_url`，系统会在同 host 下自动探测研究生院/研招/通知/调剂类栏目链接；
+  - 自动创建 `sources` / `site_sections` 资产；
+  - 可选立即排 `site_section_discovery` 任务。
 
 ## 12. 一句话总结
 

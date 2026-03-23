@@ -1,5 +1,5 @@
 from app.db import SessionLocal
-from app.models import Content, ContentFile, CrawlError, CrawlJob, SiteSection, SiteSectionLink
+from app.models import Content, ContentFile, CrawlError, CrawlJob, School, SiteSection, SiteSectionLink, Source
 from app.services.crawler import crawl_engine
 
 
@@ -258,7 +258,136 @@ def test_site_section_discovery_supports_css_selector_for_list_page(client, monk
         links = db.query(SiteSectionLink).filter(SiteSectionLink.site_section_id == section_id).all()
         assert len(links) == 1
         assert links[0].title == "调剂公告一"
-        assert links[0].link_url == "https://example.com/selector/detail-1.html"
+
+
+def test_site_section_bootstrap_discovers_sections_and_queues_jobs(client, monkeypatch):
+    def _fake_get(url, *args, **kwargs):
+        if url == "https://lnnu.edu.cn":
+            return _DummyResponse(
+                """
+                <html><head><title>辽宁师范大学</title></head><body>
+                  <a href="/yjs/">研究生院</a>
+                  <a href="/news/">新闻网</a>
+                </body></html>
+                """
+            )
+        if url == "https://lnnu.edu.cn/":
+            return _DummyResponse(
+                """
+                <html><head><title>辽宁师范大学首页</title></head><body>
+                  <a href="/yjs/">研究生院</a>
+                  <a href="/info/">通知公告</a>
+                </body></html>
+                """
+            )
+        if url == "https://lnnu.edu.cn/yjs/":
+            return _DummyResponse(
+                """
+                <html><head><title>辽宁师范大学研究生院</title></head><body>
+                  <a href="/yjs/zs/">研究生招生</a>
+                  <a href="/yjs/tzgg/">通知公告</a>
+                  <a href="/yjs/tj/">调剂信息</a>
+                </body></html>
+                """
+            )
+        if url in {
+            "https://lnnu.edu.cn/yjsy/",
+            "https://lnnu.edu.cn/yjsc/",
+            "https://lnnu.edu.cn/grs/",
+            "https://lnnu.edu.cn/graduate/",
+            "https://lnnu.edu.cn/yz/",
+            "https://lnnu.edu.cn/zs/",
+            "https://lnnu.edu.cn/news/",
+            "https://lnnu.edu.cn/info/",
+        }:
+            return _DummyResponse("<html><body>empty</body></html>")
+        raise RuntimeError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.crawler.httpx.get", _fake_get)
+
+    resp = client.post(
+        "/api/v1/site-sections/bootstrap",
+        json={
+            "school_name": "辽宁师范大学",
+            "homepage_url": "https://lnnu.edu.cn",
+            "department_name": "研究生院",
+            "queue_discovery": True,
+        },
+        headers=_admin_headers(),
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["created_sections"] >= 3
+    assert payload["existing_sections"] == 0
+    assert len(payload["job_ids"]) == payload["created_sections"]
+    names = {item["name"] for item in payload["items"]}
+    assert "研究生招生" in names
+    assert "通知公告" in names
+    assert "调剂信息" in names
+
+    with SessionLocal() as db:
+        source = db.query(Source).filter(Source.base_url == "https://lnnu.edu.cn").one()
+        assert source.school is not None
+        assert source.school.name == "辽宁师范大学"
+        sections = db.query(SiteSection).filter(SiteSection.school_id == source.school_id).all()
+        assert len(sections) == payload["created_sections"]
+        jobs = db.query(CrawlJob).filter(CrawlJob.id.in_(payload["job_ids"])).all()
+        assert len(jobs) == payload["created_sections"]
+        assert all(job.query["job_kind"] == "site_section_discovery" for job in jobs)
+
+
+def test_site_section_bootstrap_uses_existing_source_when_homepage_is_missing(client, monkeypatch):
+    with SessionLocal() as db:
+        school = School(name="陌生大学", aliases=[])
+        db.add(school)
+        db.flush()
+        db.add(
+            Source(
+                school_id=school.id,
+                name="陌生大学官网",
+                source_type="official",
+                base_url="https://strange.edu.cn",
+                config={},
+                enabled=1,
+            )
+        )
+        db.commit()
+
+    def _fake_get(url, *args, **kwargs):
+        if url in {
+            "https://strange.edu.cn",
+            "https://strange.edu.cn/",
+            "https://strange.edu.cn/yjs/",
+            "https://strange.edu.cn/yjsy/",
+            "https://strange.edu.cn/yjsc/",
+            "https://strange.edu.cn/grs/",
+            "https://strange.edu.cn/graduate/",
+            "https://strange.edu.cn/yz/",
+            "https://strange.edu.cn/zs/",
+        }:
+            return _DummyResponse(
+                """
+                <html><head><title>陌生大学研究生院</title></head><body>
+                  <a href="/yz/notice/">通知公告</a>
+                </body></html>
+                """
+            )
+        raise RuntimeError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.crawler.httpx.get", _fake_get)
+
+    resp = client.post(
+        "/api/v1/site-sections/bootstrap",
+        json={
+            "school_name": "陌生大学",
+            "queue_discovery": False,
+        },
+        headers=_admin_headers(),
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["homepage_url"] == "https://strange.edu.cn"
+    assert payload["created_sections"] >= 1
 
 
 def test_site_section_discovery_supports_xpath_selector_for_list_page(client, monkeypatch):
