@@ -1062,6 +1062,14 @@ class SearchItem(BaseModel):
     updated_at: datetime
 
 
+class SearchColdStartMeta(BaseModel):
+    state: Literal["queued", "in_progress", "no_candidate"]
+    school_name: str
+    message: str
+    candidate_urls: list[str] = Field(default_factory=list)
+    job_ids: list[str] = Field(default_factory=list)
+
+
 class SearchResponse(BaseModel):
     request_id: str
     mode: Literal["cache", "hybrid_refresh"]
@@ -1075,6 +1083,7 @@ class SearchResponse(BaseModel):
     source_breakdown: dict[str, int]
     last_updated_at: datetime | None
     refresh_job_id: str | None = None
+    cold_start: SearchColdStartMeta | None = None
 
 
 class AdjustmentSearchLinkItem(BaseModel):

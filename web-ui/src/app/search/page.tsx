@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, type ReactNode, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -77,6 +77,7 @@ function SearchPageContent() {
   const [adjustmentDetailError, setAdjustmentDetailError] = useState("");
   const searchRequestIdRef = useRef(0);
   const hydratedSearchParamsRef = useRef<string>("");
+  const coldStartRetryRef = useRef<Record<string, number>>({});
 
   const announcementMutation = useAnnouncementSearchMutation();
   const adjustmentMutation = useAdjustmentSearchMutation();
@@ -201,6 +202,10 @@ function SearchPageContent() {
       keywords?: string;
       filters?: SearchCommandCenterFilters;
     },
+    requestOptions?: {
+      refresh?: boolean;
+      autoRetry?: boolean;
+    },
   ) {
     const requestId = ++searchRequestIdRef.current;
     const effectiveQueryType = stateOverrides?.queryType ?? queryType;
@@ -220,6 +225,10 @@ function SearchPageContent() {
       effectiveQueryType === "adjustments" ? effectiveIntent.major : effectiveFilters.major.trim();
     const effectiveResolvedKeywords =
       effectiveQueryType === "adjustments" ? effectiveIntent.keywords : effectiveKeywords.trim();
+    const coldStartRetryKey = ["announcements", effectiveResolvedSchoolName || effectiveFilters.schoolName.trim(), effectiveKeywords.trim()].join("|");
+    if (!requestOptions?.autoRetry && coldStartRetryKey !== "announcements||") {
+      coldStartRetryRef.current[coldStartRetryKey] = 0;
+    }
     setMessage("");
     if (effectiveQueryType === "adjustments" && isAnonymous) {
       setMessage("调剂检索属于登录后的深度功能，请先登录后继续。");
@@ -234,6 +243,7 @@ function SearchPageContent() {
                 effectiveFilters.schoolName.trim() || (isSchoolLikeQuery(effectiveKeywords.trim()) ? effectiveKeywords.trim() : undefined),
               page,
               page_size: 12,
+              refresh: Boolean(requestOptions?.refresh),
             })
           : await adjustmentMutation.mutateAsync({
               keywords: effectiveResolvedKeywords || undefined,
@@ -253,33 +263,38 @@ function SearchPageContent() {
               ...buildAdjustmentQuickFilterPayload(effectiveFilters, overrides),
               page,
               page_size: 12,
+              refresh: Boolean(requestOptions?.refresh),
             });
       if (requestId !== searchRequestIdRef.current) {
         return;
       }
       setSearchResult(payload);
       if (payload.total === 0) {
-        setMessage(buildEmptyResultMessage(effectiveQueryType, {
-          keywords:
-            filterOverrides && !("schoolName" in filterOverrides) && !("major" in filterOverrides)
-              ? effectiveResolvedKeywords
-              : effectiveKeywords.trim(),
-          schoolName:
-            filterOverrides && "schoolName" in filterOverrides
-              ? effectiveFilters.schoolName
-              : effectiveResolvedSchoolName,
-          majorFilter:
-            filterOverrides && "major" in filterOverrides
-              ? effectiveFilters.major
-              : effectiveResolvedMajorFilter,
-          regionFilter: effectiveFilters.region === "不限" ? "" : effectiveFilters.region,
-          cityFilter: effectiveFilters.city,
-          schoolTierFilter: effectiveFilters.level === "不限" ? "" : effectiveFilters.level,
-          yearFilter: effectiveFilters.year,
-          candidateScoreFilter: effectiveFilters.score,
-        }));
+        setMessage(
+          payload.cold_start?.message ||
+            buildEmptyResultMessage(effectiveQueryType, {
+              keywords:
+                filterOverrides && !("schoolName" in filterOverrides) && !("major" in filterOverrides)
+                  ? effectiveResolvedKeywords
+                  : effectiveKeywords.trim(),
+              schoolName:
+                filterOverrides && "schoolName" in filterOverrides
+                  ? effectiveFilters.schoolName
+                  : effectiveResolvedSchoolName,
+              majorFilter:
+                filterOverrides && "major" in filterOverrides
+                  ? effectiveFilters.major
+                  : effectiveResolvedMajorFilter,
+              regionFilter: effectiveFilters.region === "不限" ? "" : effectiveFilters.region,
+              cityFilter: effectiveFilters.city,
+              schoolTierFilter: effectiveFilters.level === "不限" ? "" : effectiveFilters.level,
+              yearFilter: effectiveFilters.year,
+              candidateScoreFilter: effectiveFilters.score,
+            }),
+        );
       } else {
         setMessage("");
+        delete coldStartRetryRef.current[coldStartRetryKey];
       }
     } catch (error) {
       if (requestId !== searchRequestIdRef.current) {
@@ -292,6 +307,31 @@ function SearchPageContent() {
       }
     }
   }
+
+  const retryColdStartSearch = useEffectEvent(() => {
+    void triggerSearch(1, undefined, undefined, undefined, { refresh: true, autoRetry: true });
+  });
+
+  useEffect(() => {
+    if (queryType !== "announcements" || !searchResult || searchResult.total > 0) {
+      return;
+    }
+    const coldStart = searchResult.cold_start;
+    if (!coldStart || (coldStart.state !== "queued" && coldStart.state !== "in_progress")) {
+      return;
+    }
+    const retryKey = ["announcements", coldStart.school_name, keywords.trim()].join("|");
+    const attempt = coldStartRetryRef.current[retryKey] || 0;
+    if (attempt >= 3 || announcementMutation.isPending) {
+      return;
+    }
+    const delayMs = attempt === 0 ? 4000 : 7000;
+    const timer = window.setTimeout(() => {
+      coldStartRetryRef.current[retryKey] = attempt + 1;
+      retryColdStartSearch();
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [announcementMutation.isPending, keywords, queryType, retryColdStartSearch, searchResult]);
 
   useEffect(() => {
     const serialized = searchParams.toString();

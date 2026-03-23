@@ -355,6 +355,13 @@ export type SearchResponse = {
   source_breakdown: Record<string, number>;
   last_updated_at: string | null;
   refresh_job_id: string | null;
+  cold_start: {
+    state: "queued" | "in_progress" | "no_candidate";
+    school_name: string;
+    message: string;
+    candidate_urls: string[];
+    job_ids: string[];
+  } | null;
 };
 
 export type AdjustmentSearchDetailLinkItem = {

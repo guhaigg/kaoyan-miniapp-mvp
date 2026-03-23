@@ -16,6 +16,7 @@ from ..schemas import (
     AdjustmentSearchLinkItem,
     AdjustmentSearchRequest,
     AnnouncementSearchRequest,
+    SearchColdStartMeta,
     SearchItem,
     SearchResponse,
 )
@@ -35,6 +36,7 @@ from ..services.historical_intelligence import (
     normalize_school_name,
 )
 from ..services.content_repair import resolve_content_display_fields
+from ..services.school_cold_start import ensure_announcement_search_bootstrap
 from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -747,6 +749,7 @@ def _to_response(
     authenticated: bool,
     access_limited: bool = False,
     preview_limit: int | None = None,
+    cold_start: dict | SearchColdStartMeta | None = None,
 ) -> SearchResponse:
     historical_profiles, school_intelligence = (
         _load_profile_intelligence_bundle(
@@ -860,6 +863,7 @@ def _to_response(
         source_breakdown=source_breakdown,
         last_updated_at=last_updated,
         refresh_job_id=refresh_job_id,
+        cold_start=cold_start,
     )
 
 
@@ -1657,6 +1661,8 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
 
     request_id = str(uuid4())
     cached = search_response_cache.get("announcement", effective_payload, request_id=request_id)
+    if cached is not None and cached.total == 0 and str(effective_payload.school_name or "").strip() and effective_payload.page == 1:
+        cached = None
     if cached is not None:
         _audit_search_event(
             db,
@@ -1681,6 +1687,9 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
     )
     stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
     source_breakdown = {k: int(v) for k, v in stats_rows}
+    cold_start = None
+    if total == 0 and effective_payload.page == 1 and str(effective_payload.school_name or "").strip():
+        cold_start = ensure_announcement_search_bootstrap(db, str(effective_payload.school_name or "").strip())
 
     refresh_job_id = None
     if effective_payload.refresh:
@@ -1696,8 +1705,10 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         authenticated=bool(user),
         access_limited=not bool(user),
         preview_limit=ANONYMOUS_PREVIEW_LIMIT if not user else None,
+        cold_start=cold_start,
     )
-    search_response_cache.set("announcement", effective_payload, response)
+    if cold_start is None:
+        search_response_cache.set("announcement", effective_payload, response)
     _audit_search_event(
         db,
         request,
