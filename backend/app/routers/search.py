@@ -34,7 +34,7 @@ from ..services.historical_intelligence import (
     normalize_major_name,
     normalize_school_name,
 )
-from ..services.content_summary import normalize_text_whitespace, summarize_text
+from ..services.content_repair import resolve_content_display_fields
 from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -54,11 +54,6 @@ SCHOOL_SUFFIXES = (
     "中医药大学",
 )
 DEPARTMENT_HINT_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|研究院|研究所|中心))")
-PLACEHOLDER_CONTENT_TITLE_PATTERN = re.compile(r"^(?:[A-Za-z0-9_-]+|\d+)\.(?:s?html?|aspx?|php|jsp|do)$", re.IGNORECASE)
-CONTENT_BODY_TITLE_PATTERN = re.compile(
-    r"([\u4e00-\u9fa5A-Za-z0-9（）()《》“”·、\-—:：]{8,160}?(?:通知|公告|简章|章程|办法|须知|名单|安排|方案|信息))"
-)
-CONTENT_BODY_PUBLISHED_AT_PATTERN = re.compile(r"发布时间[:：]?\s*(\d{4})[.\-/年](\d{1,2})[.\-/月](\d{1,2})(?:日)?")
 SCHOOL_TIER_FILTER_MAP = {
     "普本": ["普本", "普通本科", "普通本科院校", "双非"],
     "普通本科": ["普本", "普通本科", "普通本科院校", "双非"],
@@ -151,70 +146,6 @@ def _build_major_terms(value: str) -> list[str]:
         if len(digits) > 4:
             terms.append(digits[:4])
     return _dedupe_terms(terms)
-
-
-def _looks_like_placeholder_content_title(title: str | None) -> bool:
-    normalized = normalize_text_whitespace(title)
-    if not normalized:
-        return True
-    return bool(PLACEHOLDER_CONTENT_TITLE_PATTERN.fullmatch(normalized))
-
-
-def _extract_content_title_from_body(body: str | None) -> str | None:
-    normalized = normalize_text_whitespace(body)
-    if not normalized:
-        return None
-    normalized = normalized.lstrip("\ufeff")
-    match = CONTENT_BODY_TITLE_PATTERN.search(normalized[:240])
-    if not match:
-        return None
-    candidate = re.sub(
-        r"\s*[-|｜]\s*.*?(?:研究生招生信息网|研究生院|官网|网站|网)$",
-        "",
-        match.group(1),
-    ).strip(" -|：:")
-    if not candidate or _looks_like_placeholder_content_title(candidate):
-        return None
-    return candidate
-
-
-def _extract_content_published_at_from_body(body: str | None) -> datetime | None:
-    normalized = normalize_text_whitespace(body)
-    if not normalized:
-        return None
-    match = CONTENT_BODY_PUBLISHED_AT_PATTERN.search(normalized)
-    if not match:
-        return None
-    year, month, day = (int(part) for part in match.groups())
-    try:
-        return datetime(year, month, day, tzinfo=UTC)
-    except ValueError:
-        return None
-
-
-def _extract_content_summary_from_body(body: str | None, display_title: str | None) -> str | None:
-    normalized = normalize_text_whitespace(body)
-    if not normalized:
-        return None
-    normalized = normalized.lstrip("\ufeff")
-    if display_title and normalized.startswith(display_title):
-        normalized = normalized[len(display_title):].strip(" -|：:")
-    published_match = CONTENT_BODY_PUBLISHED_AT_PATTERN.search(normalized)
-    if published_match:
-        normalized = normalized[published_match.end():].strip(" -|：:")
-    cue_match = re.search(r"(根据《|根据|现将|现就|为做好|为进一步|经研究|一、|请申请人|请考生|各位考生)", normalized)
-    if cue_match and 0 < cue_match.start() <= 160:
-        normalized = normalized[cue_match.start():].strip()
-    return summarize_text(normalized)
-
-
-def _resolve_content_display_fields(row: Content) -> tuple[str, str | None, datetime | None]:
-    display_title = normalize_text_whitespace(row.title) or row.title
-    if _looks_like_placeholder_content_title(display_title):
-        display_title = _extract_content_title_from_body(row.body) or display_title
-    display_summary = normalize_text_whitespace(row.summary) or _extract_content_summary_from_body(row.body, display_title)
-    display_published_at = row.published_at or _extract_content_published_at_from_body(row.body)
-    return display_title, display_summary, display_published_at
 
 
 def _apply_common_filters(query, payload: AnnouncementSearchRequest | AdjustmentSearchRequest):
@@ -509,7 +440,12 @@ def _build_adjustment_detail_from_content(
     db: Session,
     row: Content,
 ) -> AdjustmentSearchDetailResponse:
-    display_title, display_summary, display_published_at = _resolve_content_display_fields(row)
+    display_title, display_summary, display_published_at = resolve_content_display_fields(
+        title=row.title,
+        summary=row.summary,
+        published_at=row.published_at,
+        body=row.body,
+    )
     school_name = row.school.name if row.school else None
     normalized_school_name = normalize_school_name(school_name) if school_name else ""
     extra = dict(row.extra or {})
@@ -807,7 +743,12 @@ def _to_response(
     for row in items:
         school_name = row.school.name if row.school else None
         extra = dict(row.extra or {})
-        display_title, display_summary, display_published_at = _resolve_content_display_fields(row)
+        display_title, display_summary, display_published_at = resolve_content_display_fields(
+            title=row.title,
+            summary=row.summary,
+            published_at=row.published_at,
+            body=row.body,
+        )
         department_name = str(extra.get("department_name") or "").strip() or None
         adjustment_meta = dict(extra.get("adjustment_meta") or {})
         historical_adjustment = None
