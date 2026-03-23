@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, type ReactNode, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { Suspense, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -78,6 +78,7 @@ function SearchPageContent() {
   const searchRequestIdRef = useRef(0);
   const hydratedSearchParamsRef = useRef<string>("");
   const coldStartRetryRef = useRef<Record<string, number>>({});
+  const retryColdStartSearchRef = useRef<() => void>(() => {});
 
   const announcementMutation = useAnnouncementSearchMutation();
   const adjustmentMutation = useAdjustmentSearchMutation();
@@ -308,8 +309,10 @@ function SearchPageContent() {
     }
   }
 
-  const retryColdStartSearch = useEffectEvent(() => {
-    void triggerSearch(1, undefined, undefined, undefined, { refresh: true, autoRetry: true });
+  useEffect(() => {
+    retryColdStartSearchRef.current = () => {
+      void triggerSearch(1, undefined, undefined, undefined, { refresh: true, autoRetry: true });
+    };
   });
 
   useEffect(() => {
@@ -328,10 +331,10 @@ function SearchPageContent() {
     const delayMs = attempt === 0 ? 4000 : 7000;
     const timer = window.setTimeout(() => {
       coldStartRetryRef.current[retryKey] = attempt + 1;
-      retryColdStartSearch();
+      retryColdStartSearchRef.current();
     }, delayMs);
     return () => window.clearTimeout(timer);
-  }, [announcementMutation.isPending, keywords, queryType, retryColdStartSearch, searchResult]);
+  }, [announcementMutation.isPending, keywords, queryType, searchResult]);
 
   useEffect(() => {
     const serialized = searchParams.toString();
