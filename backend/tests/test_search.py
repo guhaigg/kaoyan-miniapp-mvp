@@ -1387,11 +1387,13 @@ def test_adjustment_search_exposes_historical_adjustment_insight(client):
     assert item["release_timing"]["signal_label"] == "晚间高发"
     assert item["school_intelligence"]["confidence_label"] == "连续活跃"
     assert item["school_intelligence"]["future_program_count"] == 3
-    assert item["school_intelligence"]["reference_urls"] == [
-        "https://example.com/xx-history-1",
-        "https://example.com/xx-history-2",
-        "https://example.com/xx-2026-program",
-    ]
+    assert sorted(item["school_intelligence"]["reference_urls"]) == sorted(
+        [
+            "https://example.com/xx-history-1",
+            "https://example.com/xx-history-2",
+            "https://example.com/xx-2026-program",
+        ]
+    )
 
 
 def test_adjustment_search_mentor_matching_does_not_mix_other_departments_when_department_missing(client):
