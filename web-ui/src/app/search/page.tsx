@@ -39,6 +39,9 @@ import { watchlistNoticeQueryKey } from "@/lib/notice-cache";
 
 const DEFAULT_SEARCH_FILTERS: SearchCommandCenterFilters = {
   schoolName: "",
+  announcementSystemTags: [],
+  announcementStartDate: "",
+  announcementEndDate: "",
   major: "",
   region: "不限",
   city: "",
@@ -51,6 +54,20 @@ const DEFAULT_SEARCH_FILTERS: SearchCommandCenterFilters = {
   referenceLinksOnly: false,
   hideMentorWarnings: false,
 };
+
+const DEFAULT_ANNOUNCEMENT_SYSTEM_TAGS = [
+  "硕士招生",
+  "博士招生",
+  "招生简章",
+  "专业目录",
+  "通知公告",
+  "政策文件",
+  "调剂",
+  "招生信息",
+  "工作动态",
+  "信息公开",
+  "招生宣传",
+];
 
 export default function SearchPage() {
   return (
@@ -138,6 +155,13 @@ function SearchPageContent() {
   ].filter(Boolean) as string[];
   const activeInlineFilters = [
     filters.schoolName.trim() ? `院校 ${filters.schoolName.trim()}` : null,
+    ...(queryType === "announcements"
+      ? [
+          filters.announcementSystemTags.length > 0 ? `标签 ${filters.announcementSystemTags.join(" / ")}` : null,
+          filters.announcementStartDate.trim() ? `开始 ${filters.announcementStartDate.trim()}` : null,
+          filters.announcementEndDate.trim() ? `结束 ${filters.announcementEndDate.trim()}` : null,
+        ]
+      : []),
     ...(queryType === "adjustments"
       ? [
           filters.major.trim() ? `专业 ${filters.major.trim()}` : null,
@@ -155,6 +179,10 @@ function SearchPageContent() {
   const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
   const adjustmentLocked = isAnonymous;
   const previewLimit = searchResult?.preview_limit ?? 2;
+  const announcementTagOptions = useMemo(
+    () => Array.from(new Set([...DEFAULT_ANNOUNCEMENT_SYSTEM_TAGS, ...(searchResult?.available_system_tags || [])])),
+    [searchResult?.available_system_tags],
+  );
   const radarSubscriptions = useMemo(() => {
     const map = new Map<string, SubscriptionItem>();
     for (const item of subscriptionsQuery.data?.items || []) {
@@ -187,6 +215,12 @@ function SearchPageContent() {
       reference_links_only: overrides?.referenceLinksOnly ?? effectiveFilters.referenceLinksOnly,
       exclude_mentor_warnings: overrides?.hideMentorWarnings ?? effectiveFilters.hideMentorWarnings,
     };
+  }
+
+  function toAnnouncementDateBoundary(value: string, boundary: "start" | "end") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return boundary === "start" ? `${trimmed}T00:00:00` : `${trimmed}T23:59:59`;
   }
 
   async function triggerSearch(
@@ -249,6 +283,9 @@ function SearchPageContent() {
           ? await announcementMutation.mutateAsync({
               keywords: effectiveAnnouncementKeywords || undefined,
               school_name: effectiveAnnouncementSchoolName || undefined,
+              system_tags: effectiveFilters.announcementSystemTags.length > 0 ? effectiveFilters.announcementSystemTags : undefined,
+              start_date: toAnnouncementDateBoundary(effectiveFilters.announcementStartDate, "start"),
+              end_date: toAnnouncementDateBoundary(effectiveFilters.announcementEndDate, "end"),
               page,
               page_size: 12,
               refresh: Boolean(requestOptions?.refresh),
@@ -514,6 +551,7 @@ function SearchPageContent() {
           setKeyword={setKeywords}
           filters={filters}
           setFilters={setFilters}
+          announcementTagOptions={announcementTagOptions}
           onSearch={(filterPatch) => void triggerSearch(1, undefined, filterPatch)}
         />
       </div>
@@ -1901,6 +1939,14 @@ function parseSearchStateFromParams(
     "keywords",
     "school",
     "schoolName",
+    "systemTag",
+    "systemTags",
+    "start",
+    "startDate",
+    "start_date",
+    "end",
+    "endDate",
+    "end_date",
     "major",
     "region",
     "city",
@@ -1929,6 +1975,9 @@ function parseSearchStateFromParams(
   const filters: SearchCommandCenterFilters = {
     ...DEFAULT_SEARCH_FILTERS,
     schoolName: readSearchParam(searchParams, ["school", "schoolName"]),
+    announcementSystemTags: parseCsvParam(readSearchParam(searchParams, ["systemTag", "systemTags"])),
+    announcementStartDate: parseDateParam(readSearchParam(searchParams, ["start", "startDate", "start_date"])),
+    announcementEndDate: parseDateParam(readSearchParam(searchParams, ["end", "endDate", "end_date"])),
     major: readSearchParam(searchParams, ["major"]),
     region: parseRegionParam(readSearchParam(searchParams, ["region"])),
     city: readSearchParam(searchParams, ["city"]),
@@ -1995,6 +2044,17 @@ function parseBooleanParam(value: string) {
   return /^(1|true|yes|on)$/i.test(value);
 }
 
+function parseDateParam(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+}
+
+function parseCsvParam(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function resolveQueryTypeFromParams(
   searchParams: Pick<URLSearchParams, "get">,
   filters: SearchCommandCenterFilters,
@@ -2031,6 +2091,9 @@ function hasSearchIntent(keywords: string, filters: SearchCommandCenterFilters) 
   return Boolean(
     keywords.trim() ||
       filters.schoolName.trim() ||
+      filters.announcementSystemTags.length > 0 ||
+      filters.announcementStartDate.trim() ||
+      filters.announcementEndDate.trim() ||
       filters.major.trim() ||
       filters.region !== "不限" ||
       filters.city.trim() ||

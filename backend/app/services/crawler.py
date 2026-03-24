@@ -21,6 +21,11 @@ from ..config import get_settings
 from ..db import SessionLocal
 from ..models import ContentFile, CrawlError, CrawlJob, SiteSection, SiteSectionLink, utcnow
 from ..schemas import ContentIn
+from .announcement_portal import (
+    derive_announcement_system_tags,
+    extract_announcement_portal_metadata,
+    merge_announcement_tags,
+)
 from .content import upsert_content
 from .content_repair import extract_content_published_at_from_body
 from .content_summary import summarize_text
@@ -332,6 +337,12 @@ def build_site_section_list_selector_config(section: SiteSection, overrides: dic
         "probe_heading": "",
         "probe_evidence": {},
         "probe_sample_links": [],
+        "portal_scope": "",
+        "portal_entry_url": "",
+        "channel_label": "",
+        "channel_tier": "",
+        "channel_keywords": [],
+        "portal_path_evidence": {},
     }
 
     raw_config = overrides if overrides is not None else (section.list_selector_config or {})
@@ -354,6 +365,7 @@ def build_site_section_list_selector_config(section: SiteSection, overrides: dic
         "exclude_text_regexes",
         "exclude_url_suffixes",
         "allowed_hosts",
+        "channel_keywords",
     ]:
         if key in raw_config:
             config[key] = _to_string_list(raw_config.get(key))
@@ -371,6 +383,10 @@ def build_site_section_list_selector_config(section: SiteSection, overrides: dic
         "probe_role",
         "probe_source",
         "probe_heading",
+        "portal_scope",
+        "portal_entry_url",
+        "channel_label",
+        "channel_tier",
     ]:
         if key in raw_config:
             config[key] = _to_optional_string(raw_config.get(key)) or ""
@@ -388,6 +404,8 @@ def build_site_section_list_selector_config(section: SiteSection, overrides: dic
         config["probe_evidence"] = dict(raw_config.get("probe_evidence") or {})
     if "probe_sample_links" in raw_config:
         config["probe_sample_links"] = _normalize_probe_sample_links(raw_config.get("probe_sample_links"))
+    if isinstance(raw_config.get("portal_path_evidence"), dict):
+        config["portal_path_evidence"] = dict(raw_config.get("portal_path_evidence") or {})
 
     for pattern in _derive_auto_include_url_regexes(str(getattr(section, "section_url", "") or "")):
         if pattern not in config["include_url_regexes"]:
@@ -863,11 +881,61 @@ def _scope_meta_from_query(db: Session, query: dict[str, Any]) -> dict[str, str]
         meta["site_section_id"] = site_section_id
         section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
         if section is not None:
+            if section.name:
+                meta["site_section_name"] = str(section.name)
             if section.school_id and "school_id" not in meta:
                 meta["school_id"] = section.school_id
             if section.department_id and "department_id" not in meta:
                 meta["department_id"] = section.department_id
     return meta
+
+
+def _announcement_extra_from_section(section: SiteSection | None) -> dict[str, Any]:
+    if section is None:
+        return {}
+    return extract_announcement_portal_metadata(
+        dict(section.list_selector_config or {}),
+        site_section_id=section.id,
+        site_section_name=section.name,
+    )
+
+
+def _finalize_ingest_extra(
+    db: Session,
+    *,
+    category: str,
+    title: str,
+    summary: str | None,
+    body: str,
+    extra: dict[str, Any],
+    query: dict[str, Any],
+    section: SiteSection | None = None,
+) -> dict[str, Any]:
+    normalized_extra = dict(extra or {})
+    normalized_extra.update(_scope_meta_from_query(db, query))
+    if category != "announcement":
+        return normalized_extra
+
+    normalized_extra.update(_announcement_extra_from_section(section))
+    system_tags = derive_announcement_system_tags(
+        title,
+        summary,
+        body,
+        channel_label=str(normalized_extra.get("channel_label") or ""),
+        channel_tier=str(normalized_extra.get("channel_tier") or ""),
+        channel_keywords=[
+            str(item)
+            for item in (normalized_extra.get("channel_keywords") or [])
+            if str(item or "").strip()
+        ],
+    )
+    normalized_extra["system_tags"] = system_tags
+    normalized_extra["tags"] = merge_announcement_tags(
+        normalized_extra.get("tags") or _build_content_tags(title, summary, body),
+        system_tags,
+        channel_label=str(normalized_extra.get("channel_label") or ""),
+    )
+    return normalized_extra
 
 
 class CrawlEngine:
@@ -1140,6 +1208,7 @@ class CrawlEngine:
         raw_html = response.text or ""
         detail_selector_config: dict[str, Any] | None = None
         site_section_id = str(query.get("site_section_id") or "").strip()
+        section: SiteSection | None = None
         if site_section_id:
             section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
             if section is not None:
@@ -1171,7 +1240,16 @@ class CrawlEngine:
             extra["detail_selector_applied"] = extraction_method == "selector"
         extra["detail_extraction_method"] = extraction_method
         extra["tags"] = _build_content_tags(title, summary, body)
-        extra.update(_scope_meta_from_query(db, query))
+        extra = _finalize_ingest_extra(
+            db,
+            category=job.category,
+            title=title,
+            summary=summary,
+            body=body,
+            extra=extra,
+            query=query,
+            section=section,
+        )
 
         payload = ContentIn(
             category=job.category,
@@ -1227,7 +1305,6 @@ class CrawlEngine:
         extra["content_file_id"] = file_record.id
         if link is not None:
             extra["site_section_link_id"] = link.id
-        extra.update(_scope_meta_from_query(db, query))
 
         if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH:
             body = extracted_text
@@ -1240,6 +1317,16 @@ class CrawlEngine:
             extra["pdf_text_extracted"] = False
 
         extra["tags"] = _build_content_tags(title, summary, extracted_text or body)
+        extra = _finalize_ingest_extra(
+            db,
+            category=job.category,
+            title=title,
+            summary=summary,
+            body=extracted_text or body,
+            extra=extra,
+            query=query,
+            section=link.site_section if link is not None else None,
+        )
 
         payload = ContentIn(
             category=job.category,
@@ -1292,7 +1379,20 @@ class CrawlEngine:
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "content_payload"
         extra["tags"] = _build_content_tags(title, summary, body)
-        extra.update(_scope_meta_from_query(db, query))
+        extra = _finalize_ingest_extra(
+            db,
+            category=category,
+            title=title,
+            summary=summary,
+            body=body,
+            extra=extra,
+            query=query,
+            section=(
+                db.query(SiteSection).filter(SiteSection.id == str(query.get("site_section_id") or "").strip()).one_or_none()
+                if str(query.get("site_section_id") or "").strip()
+                else None
+            ),
+        )
 
         payload = ContentIn(
             category=category,
@@ -1320,7 +1420,20 @@ class CrawlEngine:
         extra["crawl_job_id"] = job.id
         extra["crawl_mode"] = "simulate"
         extra["tags"] = _build_content_tags(title, query.get("summary"), body)
-        extra.update(_scope_meta_from_query(db, query))
+        extra = _finalize_ingest_extra(
+            db,
+            category=job.category,
+            title=title,
+            summary=str(query.get("summary") or "").strip() or summarize_text(body),
+            body=body,
+            extra=extra,
+            query=query,
+            section=(
+                db.query(SiteSection).filter(SiteSection.id == str(query.get("site_section_id") or "").strip()).one_or_none()
+                if str(query.get("site_section_id") or "").strip()
+                else None
+            ),
+        )
 
         payload = ContentIn(
             category=job.category,

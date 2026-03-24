@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as app_models
 from ..models import NotificationOutbox, utcnow
+from .announcement_portal import announcement_extra_is_visible
 from .nlp import keyword_matches_content, normalize_tag
 
 
@@ -124,8 +125,15 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
         return
 
     extra = dict(getattr(content, "extra", None) or {})
-    content_tags = [normalize_tag(tag) for tag in (extra.get("tags") or [])]
+    raw_content_tags = [
+        *list(extra.get("tags") or []),
+        *list(extra.get("system_tags") or []),
+        _as_text(extra.get("channel_label")),
+    ]
+    content_tags = [normalize_tag(tag) for tag in raw_content_tags]
     content_tags = [tag for tag in content_tags if tag]
+    if _as_text(getattr(content, "category", None)) == "announcement" and not announcement_extra_is_visible(extra):
+        return
     school_id = _as_id(extra.get("school_id")) or _as_id(getattr(content, "school_id", None))
     department_id = _as_id(extra.get("department_id"))
     site_section_id = _as_id(extra.get("site_section_id"))
@@ -271,6 +279,9 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
                 "major": major or None,
                 "region": region or None,
                 "tags": content_tags,
+                "system_tags": list(extra.get("system_tags") or []),
+                "channel_label": _as_text(extra.get("channel_label")) or None,
+                "channel_tier": _as_text(extra.get("channel_tier")) or None,
                 "hit_id": _as_id(getattr(hit_row, "id", None)),
             },
             status="pending",

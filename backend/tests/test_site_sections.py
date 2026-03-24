@@ -113,6 +113,72 @@ def test_bootstrap_site_sections_accepts_sibling_subdomain_and_skips_detail_page
     assert "https://yjs.example.edu.cn/ea/79/c17243a846457/page.htm" not in urls
 
 
+def test_bootstrap_site_sections_persists_portal_metadata_in_list_selector_config(monkeypatch):
+    homepage_url = "https://portal.example.edu.cn/"
+    section_url = "https://portal.example.edu.cn/sszs.htm"
+    pages = {
+        homepage_url: (
+            """
+            <html><body>
+              <a href="/sszs.htm">硕士招生</a>
+            </body></html>
+            """,
+            "示例大学研究生招生网",
+        ),
+        section_url: (
+            """
+            <html><body>
+              <h2>硕士招生</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1001/2001.htm">示例大学2026年硕士招生简章</a></td></tr>
+                <tr><td><a href="/info/1001/2002.htm">示例大学2026年复试安排</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "硕士招生-示例大学研究生招生网",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    with SessionLocal() as db:
+        result = bootstrap_site_sections(
+            db,
+            school_name="示例大学",
+            homepage_url=homepage_url,
+            department_name=None,
+            department_type="graduate_school",
+            seed_urls=[section_url],
+            enabled=True,
+            queue_discovery=False,
+            max_sections=4,
+            families={"notice", "admissions"},
+            portal_entry_url=homepage_url,
+            portal_scope="graduate_admissions",
+        )
+        section_id = result["items"][0].id
+        section = db.query(SiteSection).filter(SiteSection.id == section_id).one()
+        list_config = dict(section.list_selector_config or {})
+
+    assert result["created_sections"] == 1
+    assert section.section_url == section_url
+    assert list_config["portal_scope"] == "graduate_admissions"
+    assert list_config["portal_entry_url"] == homepage_url
+    assert list_config["channel_label"] == "硕士招生"
+    assert list_config["channel_tier"] == "core"
+    assert "硕士招生" in list_config["channel_keywords"]
+    assert list_config["portal_path_evidence"]["section_url"] == section_url
+    assert list_config["portal_path_evidence"]["channel_label"] == "硕士招生"
+    assert list_config["portal_path_evidence"]["channel_tier"] == "core"
+
+
 def test_bootstrap_site_sections_persists_only_leaf_container_from_hybrid_page(monkeypatch):
     pages = {
         "https://hybrid.example.edu.cn/yjs/": (

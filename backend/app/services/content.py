@@ -7,6 +7,12 @@ from sqlalchemy.orm import Session
 
 from ..models import Content, ContentSnapshot, Department, NotificationOutbox, School, SiteSection, utcnow
 from ..schemas import ContentIn
+from .announcement_portal import (
+    announcement_extra_is_visible,
+    derive_announcement_system_tags,
+    merge_announcement_tags,
+    normalize_portal_tags,
+)
 from .content_repair import infer_non_detail_announcement_reason
 from .content_summary import normalize_text_whitespace, summarize_text
 from .nlp import extract_adjustment_meta, extract_domain_tags, infer_content_category
@@ -213,6 +219,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
         existing_category=payload.category,
     )
     if resolved_category == "adjustment":
+        incoming_extra.pop("system_tags", None)
         incoming_extra["adjustment_meta"] = extract_adjustment_meta(
             title=payload.title,
             summary=effective_summary,
@@ -223,6 +230,26 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
         incoming_extra.pop("content_quality_reason", None)
     else:
         incoming_extra.pop("adjustment_meta", None)
+        system_tags = normalize_portal_tags(incoming_extra.get("system_tags") or [])
+        if not system_tags:
+            system_tags = derive_announcement_system_tags(
+                payload.title,
+                effective_summary,
+                payload.body,
+                channel_label=str(incoming_extra.get("channel_label") or ""),
+                channel_tier=str(incoming_extra.get("channel_tier") or ""),
+                channel_keywords=[
+                    str(item)
+                    for item in (incoming_extra.get("channel_keywords") or [])
+                    if str(item or "").strip()
+                ],
+            )
+        incoming_extra["system_tags"] = system_tags
+        incoming_extra["tags"] = merge_announcement_tags(
+            incoming_extra.get("tags") or [],
+            system_tags,
+            channel_label=str(incoming_extra.get("channel_label") or ""),
+        )
         non_detail_reason = infer_non_detail_announcement_reason(
             title=payload.title,
             body=payload.body,
@@ -285,34 +312,39 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
 
     evaluate_content_for_premium_monitoring(db, content, trigger_status=status)
 
-    adjustment_meta = dict((content.extra or {}).get("adjustment_meta") or {})
+    content_extra = dict(content.extra or {})
+    adjustment_meta = dict(content_extra.get("adjustment_meta") or {})
     major_code = next((str(code).strip() for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()), None)
-    department_name = str((content.extra or {}).get("department_name") or "").strip() or None
+    department_name = str(content_extra.get("department_name") or "").strip() or None
 
-    outbox = NotificationOutbox(
-        content_id=content.id,
-        event_type="content.upsert",
-        payload={
-            "content_id": content.id,
-            "category": content.category,
-            "title": content.title,
-            "body": content.body,
-            "summary": content.summary,
-            "school_name": school.name if school else None,
-            "department_name": department_name,
-            "major": content.major,
-            "major_name": content.major,
-            "major_code": major_code,
-            "region": content.region,
-            "tags": list((content.extra or {}).get("tags") or []),
-            "source_url": content.source_url,
-            "published_at": content.published_at.isoformat() if content.published_at else None,
-            "status": status,
-        },
-        status="pending",
-        available_at=utcnow(),
-    )
-    db.add(outbox)
+    if content.category != "announcement" or announcement_extra_is_visible(content_extra):
+        outbox = NotificationOutbox(
+            content_id=content.id,
+            event_type="content.upsert",
+            payload={
+                "content_id": content.id,
+                "category": content.category,
+                "title": content.title,
+                "body": content.body,
+                "summary": content.summary,
+                "school_name": school.name if school else None,
+                "department_name": department_name,
+                "major": content.major,
+                "major_name": content.major,
+                "major_code": major_code,
+                "region": content.region,
+                "tags": list(content_extra.get("tags") or []),
+                "system_tags": list(content_extra.get("system_tags") or []),
+                "channel_label": str(content_extra.get("channel_label") or "").strip() or None,
+                "channel_tier": str(content_extra.get("channel_tier") or "").strip() or None,
+                "source_url": content.source_url,
+                "published_at": content.published_at.isoformat() if content.published_at else None,
+                "status": status,
+            },
+            status="pending",
+            available_at=utcnow(),
+        )
+        db.add(outbox)
     db.commit()
     db.refresh(content)
     search_response_cache.clear()

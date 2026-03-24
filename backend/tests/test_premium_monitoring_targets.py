@@ -336,6 +336,75 @@ def test_target_list_includes_recent_three_day_announcement_signal_summary(clien
     assert section_signal["latest_announcement"]["site_section_name"] == "计算机学院通知公告"
 
 
+def test_target_list_recent_signals_skip_invisible_supplemental_announcements(client):
+    _require_monitoring_api()
+
+    _user_id, headers = _privileged_user_headers(client, "targets_hidden_supplemental_user")
+    school_id, _department_id, _section_id = _ensure_asset_ids()
+
+    _create_target(
+        client,
+        headers,
+        {"scope_type": "school", "school_id": school_id, "check_interval_minutes": 60},
+    )
+
+    now = utcnow()
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Content(
+                    school_id=school_id,
+                    category="announcement",
+                    title="电子科技大学2026年招生简章",
+                    body="这是学校级核心研招公告。",
+                    summary="核心栏目样本",
+                    source_url="https://example.com/visible-core-guide",
+                    source_type="crawler",
+                    published_at=now - timedelta(hours=2),
+                    extra={
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "招生简章",
+                        "channel_tier": "core",
+                        "system_tags": ["招生简章"],
+                        "tags": ["招生简章"],
+                    },
+                ),
+                Content(
+                    school_id=school_id,
+                    category="announcement",
+                    title="电子科技大学信息公开说明",
+                    body="这是更晚发布的非研招信息公开。",
+                    summary="补充栏目非研招内容",
+                    source_url="https://example.com/hidden-supplemental-public",
+                    source_type="crawler",
+                    published_at=now - timedelta(hours=1),
+                    extra={
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "信息公开",
+                        "channel_tier": "supplemental",
+                        "system_tags": ["信息公开"],
+                        "tags": ["信息公开"],
+                    },
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.get("/api/v1/monitoring/targets", headers=headers)
+    assert response.status_code == 200, response.text
+    payload = _extract_payload(response)
+
+    overview = payload["recent_signal_overview"]
+    assert overview["total_recent_announcements"] == 1
+    assert overview["total_recruitment_announcements"] == 1
+    assert overview["latest_announcement"]["title"] == "电子科技大学2026年招生简章"
+
+    school_signal = payload["items"][0]["recent_signal"]
+    assert school_signal["recent_announcement_count"] == 1
+    assert school_signal["recruitment_announcement_count"] == 1
+    assert school_signal["latest_announcement"]["title"] == "电子科技大学2026年招生简章"
+
+
 def test_target_list_infers_school_name_from_hits_for_legacy_broken_rows(client):
     _require_monitoring_api()
 

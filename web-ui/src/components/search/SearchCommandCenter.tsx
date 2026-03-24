@@ -11,6 +11,9 @@ export type StudyMode = "all" | "fulltime" | "parttime";
 
 export type SearchCommandCenterFilters = {
   schoolName: string;
+  announcementSystemTags: string[];
+  announcementStartDate: string;
+  announcementEndDate: string;
   major: string;
   region: string;
   city: string;
@@ -32,6 +35,7 @@ interface SearchCommandCenterProps {
   filters: SearchCommandCenterFilters;
   setFilters: Dispatch<SetStateAction<SearchCommandCenterFilters>>;
   onSearch: (filterPatch?: Partial<SearchCommandCenterFilters>) => void;
+  announcementTagOptions?: string[];
 }
 
 type PopoverId = "region" | "year" | "level" | "type";
@@ -69,6 +73,7 @@ function InlineInput({
   placeholder,
   widthClass,
   inputMode,
+  type = "text",
   searchOnBlur = false,
 }: {
   value: string;
@@ -77,10 +82,12 @@ function InlineInput({
   placeholder: string;
   widthClass?: string;
   inputMode?: "text" | "numeric";
+  type?: "text" | "date";
   searchOnBlur?: boolean;
 }) {
   return (
     <input
+      type={type}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={(event) => {
@@ -109,13 +116,18 @@ export default function SearchCommandCenter({
   filters,
   setFilters,
   onSearch,
+  announcementTagOptions = [],
 }: SearchCommandCenterProps) {
   const [openPopover, setOpenPopover] = useState<PopoverId | null>(null);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.schoolName.trim()) count += 1;
-    if (tab === "adjustments") {
+    if (tab === "announcements") {
+      if (filters.announcementSystemTags.length > 0) count += 1;
+      if (filters.announcementStartDate.trim()) count += 1;
+      if (filters.announcementEndDate.trim()) count += 1;
+    } else {
       if (filters.major.trim()) count += 1;
       if (filters.region !== "不限") count += 1;
       if (filters.city.trim()) count += 1;
@@ -138,7 +150,7 @@ export default function SearchCommandCenter({
   const helperText =
     tab === "adjustments"
       ? "学校、专业、地区和快筛都在这一条里完成，不再弹出抽屉。"
-      : "公告检索只保留真正生效的条件：学校限定和主搜索词。";
+      : "公告检索支持学校限定、标准标签和时间范围筛选，默认仍按时间倒序。";
 
   function updatePopoverFilter(id: PopoverId, value: string) {
     const filterPatch: Partial<SearchCommandCenterFilters> = {
@@ -293,6 +305,53 @@ export default function SearchCommandCenter({
                 onSearch={() => onSearch({ schoolName: filters.schoolName })}
                 placeholder={tab === "adjustments" ? "精确院校" : "院校限定"}
               />
+
+          {tab === "announcements" ? (
+            <>
+              <InlineInput
+                type="date"
+                value={filters.announcementStartDate}
+                onChange={(value) => setFilters((previous) => ({ ...previous, announcementStartDate: value }))}
+                onSearch={() => onSearch({ announcementStartDate: filters.announcementStartDate })}
+                placeholder="开始日期"
+                widthClass="w-36"
+              />
+              <InlineInput
+                type="date"
+                value={filters.announcementEndDate}
+                onChange={(value) => setFilters((previous) => ({ ...previous, announcementEndDate: value }))}
+                onSearch={() => onSearch({ announcementEndDate: filters.announcementEndDate })}
+                placeholder="结束日期"
+                widthClass="w-36"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {announcementTagOptions.map((tag) => {
+                  const active = filters.announcementSystemTags.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => {
+                        const nextTags = active
+                          ? filters.announcementSystemTags.filter((item) => item !== tag)
+                          : [...filters.announcementSystemTags, tag];
+                        const filterPatch = { announcementSystemTags: nextTags };
+                        setFilters((previous) => ({ ...previous, ...filterPatch }));
+                        onSearch(filterPatch);
+                      }}
+                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                        active
+                          ? "border-cyan-400/35 bg-cyan-500/16 text-cyan-200"
+                          : "border-white/8 bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white"
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
 
           {tab === "adjustments" ? (
             <>

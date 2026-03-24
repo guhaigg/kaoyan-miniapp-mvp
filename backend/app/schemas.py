@@ -953,7 +953,7 @@ class SearchBaseRequest(BaseModel):
 
 
 class AnnouncementSearchRequest(SearchBaseRequest):
-    pass
+    system_tags: list[str] = Field(default_factory=list)
 
 
 class AdjustmentSearchRequest(SearchBaseRequest):
@@ -1076,6 +1076,9 @@ class SearchItem(BaseModel):
     title: str
     summary: str | None
     tags: list[str] = Field(default_factory=list)
+    system_tags: list[str] = Field(default_factory=list)
+    channel_label: str | None = None
+    channel_tier: Literal["core", "supplemental"] | None = None
     notice_kind: str | None = None
     pdf_parse_status: str | None = None
     source_url: str | None
@@ -1118,6 +1121,7 @@ class SearchResponse(BaseModel):
     page_size: int
     source_breakdown: dict[str, int]
     last_updated_at: datetime | None
+    available_system_tags: list[str] = Field(default_factory=list)
     refresh_job_id: str | None = None
     cold_start: SearchColdStartMeta | None = None
 

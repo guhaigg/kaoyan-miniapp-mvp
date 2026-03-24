@@ -139,7 +139,12 @@ class NotificationMatcher:
         normalized_major_name = normalize_major_name(major) or ""
         normalized_major_code = normalize_major_code(payload.get("major_code")) or ""
         region = str(payload.get("region") or "").strip().lower()
-        tags = [normalize_tag(tag) for tag in (payload.get("tags") or [])]
+        raw_tags = [
+            *list(payload.get("tags") or []),
+            *list(payload.get("system_tags") or []),
+            str(payload.get("channel_label") or ""),
+        ]
+        tags = [normalize_tag(tag) for tag in raw_tags]
         tags = [tag for tag in tags if tag]
         full_text = " ".join(
             x
@@ -151,6 +156,7 @@ class NotificationMatcher:
                 major.lower(),
                 normalized_major_code,
                 str(payload.get("department_name") or "").strip().lower(),
+                str(payload.get("channel_label") or "").strip().lower(),
                 region,
             ]
             if x

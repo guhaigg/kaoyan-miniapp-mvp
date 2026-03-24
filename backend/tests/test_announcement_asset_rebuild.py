@@ -274,3 +274,168 @@ def test_rebuild_announcement_assets_clears_crawler_announcement_chain_and_reque
         assert announcement_jobs[0].query["site_section_id"] == announcement_section_id
         assert len(adjustment_jobs) == 1
         assert db.query(HistoricalReleaseTimingProfile).count() == 1
+
+
+def test_rebuild_announcement_assets_rebinds_monitor_payload_with_portal_metadata():
+    with SessionLocal() as db:
+        school = School(name="回填大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="回填大学研究生院",
+            source_type="official",
+            base_url="https://rebind.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+
+        section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="工作动态",
+            section_type="notice",
+            section_url="https://rebind.edu.cn/yjs/news/",
+            discovery_category="announcement",
+            list_selector_config={},
+            detail_selector_config={},
+            enabled=1,
+        )
+        db.add(section)
+        db.flush()
+
+        link = SiteSectionLink(
+            site_section_id=section.id,
+            link_url="https://rebind.edu.cn/yjs/news/2026-01.html#crawler",
+            link_url_hash="rebind-link-hash",
+            title="回填大学复试工作动态",
+            link_type="html",
+            status="discovered",
+        )
+        db.add(link)
+        db.flush()
+
+        crawler_row = Content(
+            school_id=school.id,
+            source_id=source.id,
+            category="announcement",
+            title="回填大学旧版复试工作动态",
+            body="旧的 crawler 内容。",
+            summary="旧版摘要",
+            source_type="crawler",
+            source_url="https://rebind.edu.cn/yjs/news/2026-01.html#crawler",
+            extra={
+                "school_name": "回填大学",
+                "site_section_id": section.id,
+                "site_section_link_id": link.id,
+                "crawl_mode": "url_fetch",
+            },
+        )
+        replacement = Content(
+            school_id=school.id,
+            source_id=source.id,
+            category="announcement",
+            title="回填大学新版复试工作动态",
+            body="新的手工修复内容。",
+            summary="新版摘要",
+            source_type="manual",
+            source_url="https://rebind.edu.cn/yjs/news/2026-01.html",
+            extra={
+                "school_name": "回填大学",
+                "site_section_id": section.id,
+                "site_section_name": "工作动态",
+                "portal_scope": "graduate_admissions",
+                "channel_label": "工作动态",
+                "channel_tier": "supplemental",
+                "tags": ["工作动态", "招生信息"],
+                "system_tags": ["工作动态", "招生信息"],
+            },
+        )
+        db.add_all([crawler_row, replacement])
+        db.flush()
+
+        user = PortalUser(username="rebind-monitor-user", password_hash="hash", nickname="rebind", status="active")
+        db.add(user)
+        db.flush()
+        target = PortalUserMonitorTarget(
+            user_id=user.id,
+            scope_type="school",
+            school_id=school.id,
+            department_id=None,
+            site_section_id=None,
+            status="active",
+            check_interval_minutes=60,
+        )
+        db.add(target)
+        db.flush()
+
+        hit = PortalUserMonitorHit(
+            user_id=user.id,
+            monitor_target_id=target.id,
+            content_id=crawler_row.id,
+            site_section_id=section.id,
+            matched_keywords=["工作动态"],
+            match_score=1,
+            hit_reason="contains:工作动态",
+            pushed_inapp=0,
+            pushed_bark=0,
+        )
+        db.add(hit)
+        db.flush()
+
+        outbox = NotificationOutbox(
+            content_id=crawler_row.id,
+            event_type="monitor.hit",
+            payload={"content_id": crawler_row.id, "title": crawler_row.title},
+            status="pending",
+        )
+        db.add(outbox)
+        db.flush()
+
+        delivery = NotificationDelivery(
+            outbox_id=outbox.id,
+            user_id=user.id,
+            channel="inapp",
+            payload={"content_id": crawler_row.id},
+            status="pending",
+        )
+        db.add(delivery)
+        db.commit()
+
+        crawler_row_id = crawler_row.id
+        replacement_id = replacement.id
+        section_id = section.id
+        hit_id = hit.id
+        outbox_id = outbox.id
+        delivery_id = delivery.id
+
+        result = rebuild_announcement_assets(db)
+
+        assert result["rebound_monitor_hits"] == 1
+        assert result["rebound_outboxes"] == 1
+
+    with SessionLocal() as db:
+        assert db.query(Content).filter(Content.id == crawler_row_id).count() == 0
+        assert db.query(Content).filter(Content.id == replacement_id).count() == 1
+
+        rebound_hit = db.query(PortalUserMonitorHit).filter(PortalUserMonitorHit.id == hit_id).one()
+        assert rebound_hit.content_id == replacement_id
+        assert rebound_hit.site_section_id == section_id
+
+        rebound_outbox = db.query(NotificationOutbox).filter(NotificationOutbox.id == outbox_id).one()
+        rebound_payload = dict(rebound_outbox.payload or {})
+        assert rebound_outbox.content_id == replacement_id
+        assert rebound_payload["content_id"] == replacement_id
+        assert rebound_payload["title"] == "回填大学新版复试工作动态"
+        assert rebound_payload["system_tags"] == ["工作动态", "招生信息"]
+        assert rebound_payload["channel_label"] == "工作动态"
+        assert rebound_payload["channel_tier"] == "supplemental"
+
+        rebound_delivery = db.query(NotificationDelivery).filter(NotificationDelivery.id == delivery_id).one()
+        rebound_delivery_payload = dict(rebound_delivery.payload or {})
+        assert rebound_delivery_payload["content_id"] == replacement_id
+        assert rebound_delivery_payload["system_tags"] == ["工作动态", "招生信息"]
+        assert rebound_delivery_payload["channel_label"] == "工作动态"
+        assert rebound_delivery_payload["channel_tier"] == "supplemental"

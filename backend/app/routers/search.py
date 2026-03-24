@@ -36,6 +36,7 @@ from ..services.historical_intelligence import (
     normalize_school_name,
 )
 from ..services.content_repair import infer_non_detail_announcement_reason, resolve_content_display_fields
+from ..services.announcement_portal import announcement_extra_is_visible, normalize_portal_tags
 from ..services.school_cold_start import ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap
 from ..services.search_cache import search_response_cache
 
@@ -83,6 +84,29 @@ def _dedupe_terms(values: list[str]) -> list[str]:
         seen.add(text)
         result.append(text)
     return result
+
+
+def _announcement_system_tags_from_extra(extra: dict) -> list[str]:
+    return normalize_portal_tags(extra.get("system_tags") or [])
+
+
+def _row_matches_announcement_system_tags(row: Content, requested_tags: list[str]) -> bool:
+    normalized_requested = normalize_portal_tags(requested_tags)
+    if not normalized_requested:
+        return True
+    row_tags = set(_announcement_system_tags_from_extra(dict(row.extra or {})))
+    return all(tag in row_tags for tag in normalized_requested)
+
+
+def _row_is_visible_announcement(row: Content) -> bool:
+    return announcement_extra_is_visible(dict(row.extra or {}))
+
+
+def _available_announcement_system_tags(rows: list[Content]) -> list[str]:
+    tags: list[str] = []
+    for row in rows:
+        tags.extend(_announcement_system_tags_from_extra(dict(row.extra or {})))
+    return normalize_portal_tags(tags)
 
 
 def _parse_optional_int(value) -> int | None:
@@ -973,6 +997,7 @@ def _to_response(
     authenticated: bool,
     access_limited: bool = False,
     preview_limit: int | None = None,
+    available_system_tags: list[str] | None = None,
     cold_start: dict | SearchColdStartMeta | None = None,
 ) -> SearchResponse:
     historical_profiles, school_intelligence = (
@@ -1038,6 +1063,9 @@ def _to_response(
                 title=display_title,
                 summary=display_summary,
                 tags=[str(tag) for tag in (extra.get("tags") or []) if str(tag or "").strip()],
+                system_tags=_announcement_system_tags_from_extra(extra),
+                channel_label=str(extra.get("channel_label") or "").strip() or None,
+                channel_tier=str(extra.get("channel_tier") or "").strip() or None,
                 notice_kind=str((extra.get("notice_kind") or "")).strip() or None,
                 pdf_parse_status=str((extra.get("pdf_parse_status") or "")).strip() or None,
                 source_url=row.source_url or (school_signal.reference_urls[0] if school_signal and school_signal.reference_urls else None),
@@ -1086,6 +1114,7 @@ def _to_response(
         page_size=payload.page_size,
         source_breakdown=source_breakdown,
         last_updated_at=last_updated,
+        available_system_tags=available_system_tags or [],
         refresh_job_id=refresh_job_id,
         cold_start=SearchColdStartMeta.model_validate(cold_start) if cold_start is not None else None,
     )
@@ -1914,6 +1943,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
     base_query = _apply_announcement_quality_filters(base_query)
 
     ordered_query = base_query.order_by(Content.published_at.is_(None), Content.published_at.desc(), Content.updated_at.desc())
+    filtered_rows: list[Content]
     if str(effective_payload.school_name or "").strip() and any(
         str(effective_payload.school_name or "").strip().endswith(suffix) for suffix in SCHOOL_SUFFIXES
     ):
@@ -1943,6 +1973,8 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         filtered_rows = [
             row
             for row in candidate_rows
+            if _row_is_visible_announcement(row)
+            if _row_matches_announcement_system_tags(row, effective_payload.system_tags)
             if _row_matches_requested_announcement_scope(
                 row,
                 section_lookup=section_lookup,
@@ -1963,15 +1995,21 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
             source_breakdown[row.source_type] += 1
         source_breakdown = dict(source_breakdown)
     else:
-        total = base_query.count()
-        rows = (
-            ordered_query
-            .offset((effective_payload.page - 1) * effective_payload.page_size)
-            .limit(effective_payload.page_size)
-            .all()
-        )
-        stats_rows = base_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
-        source_breakdown = {k: int(v) for k, v in stats_rows}
+        candidate_rows = ordered_query.all()
+        filtered_rows = [
+            row
+            for row in candidate_rows
+            if _row_is_visible_announcement(row)
+            if _row_matches_announcement_system_tags(row, effective_payload.system_tags)
+        ]
+        total = len(filtered_rows)
+        offset = (effective_payload.page - 1) * effective_payload.page_size
+        rows = filtered_rows[offset : offset + effective_payload.page_size]
+        source_breakdown_counts: dict[str, int] = defaultdict(int)
+        for row in filtered_rows:
+            source_breakdown_counts[row.source_type] += 1
+        source_breakdown = dict(source_breakdown_counts)
+    available_system_tags = _available_announcement_system_tags(filtered_rows)
     cold_start = None
     if total == 0 and effective_payload.page == 1 and str(effective_payload.school_name or "").strip():
         requested_school_name = str(effective_payload.school_name or "").strip()
@@ -2000,6 +2038,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         authenticated=bool(user),
         access_limited=not bool(user),
         preview_limit=ANONYMOUS_PREVIEW_LIMIT if not user else None,
+        available_system_tags=available_system_tags,
         cold_start=cold_start,
     )
     if cold_start is None:

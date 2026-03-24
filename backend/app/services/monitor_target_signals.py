@@ -7,6 +7,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from ..models import Content, PortalUserMonitorTarget, School, utcnow
+from .announcement_portal import announcement_extra_is_visible
 from .monitor_target_repair import infer_monitor_target_context
 from .nlp import canonicalize_keyword, extract_system_keywords
 
@@ -72,7 +73,12 @@ def _content_scope(content: Content) -> dict[str, str | None]:
 
 
 def _content_tags(content: Content) -> list[str]:
-    raw_tags = dict(content.extra or {}).get("tags") or []
+    extra = dict(content.extra or {})
+    raw_tags = [
+        *list(extra.get("tags") or []),
+        *list(extra.get("system_tags") or []),
+        str(extra.get("channel_label") or ""),
+    ]
     tags: list[str] = []
     for raw in raw_tags:
         tag = canonicalize_keyword(_normalize_text(raw))
@@ -230,7 +236,10 @@ def build_monitor_target_recent_signals(
     recruitment_content_ids: set[str] = set()
 
     for content in query.all():
-        if dict(content.extra or {}).get("content_quality") == "non_detail_page":
+        extra = dict(content.extra or {})
+        if extra.get("content_quality") == "non_detail_page":
+            continue
+        if content.category == "announcement" and not announcement_extra_is_visible(extra):
             continue
 
         matched_target_ids = [

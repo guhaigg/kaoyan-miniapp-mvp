@@ -272,6 +272,9 @@ export type SearchItem = {
   title: string;
   summary: string | null;
   tags: string[];
+  system_tags: string[];
+  channel_label: string | null;
+  channel_tier: "core" | "supplemental" | null;
   notice_kind: string | null;
   pdf_parse_status: string | null;
   source_url: string | null;
@@ -354,6 +357,7 @@ export type SearchResponse = {
   page_size: number;
   source_breakdown: Record<string, number>;
   last_updated_at: string | null;
+  available_system_tags: string[];
   refresh_job_id: string | null;
   cold_start: {
     state: "queued" | "in_progress" | "no_candidate";
@@ -443,6 +447,10 @@ export type SearchBaseRequest = {
   start_date?: string;
   end_date?: string;
   refresh?: boolean;
+};
+
+export type AnnouncementSearchRequest = SearchBaseRequest & {
+  system_tags?: string[];
 };
 
 export type AdjustmentSearchRequest = SearchBaseRequest & {

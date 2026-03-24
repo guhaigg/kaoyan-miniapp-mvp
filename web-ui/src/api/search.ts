@@ -2,11 +2,11 @@ import {
   request,
   type AdjustmentSearchDetailResponse,
   type AdjustmentSearchRequest,
-  type SearchBaseRequest,
+  type AnnouncementSearchRequest,
   type SearchResponse,
 } from "@/lib/api";
 
-export const fetchAnnouncementResults = (payload: SearchBaseRequest) =>
+export const fetchAnnouncementResults = (payload: AnnouncementSearchRequest) =>
   request<SearchResponse>({
     method: "POST",
     url: "/search/announcements",

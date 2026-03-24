@@ -12,6 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models import CrawlJob, School, SiteSection, SiteSectionLink, utcnow
+from .announcement_portal import PORTAL_SCOPE_GRADUATE_ADMISSIONS
 from .crawler import _extract_links, _extract_title, _fetch_with_retry
 from .site_section_bootstrap import _host_scope, bootstrap_site_sections
 
@@ -981,6 +982,8 @@ def _bootstrap_family_sections(
         queue_discovery=True,
         max_sections=8,
         families=families,
+        portal_entry_url=homepage_url if families == {"notice", "admissions"} else None,
+        portal_scope=PORTAL_SCOPE_GRADUATE_ADMISSIONS if families == {"notice", "admissions"} else None,
     )
     job_ids = list(result.get("job_ids") or [])
     visible_sections = [

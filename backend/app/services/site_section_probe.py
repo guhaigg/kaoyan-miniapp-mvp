@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlparse
 from lxml import etree, html
 
 from ..config import get_settings
+from .announcement_portal import classify_announcement_channel
 
 _SPACE_RE = re.compile(r"\s+")
 _DETAIL_URL_PATTERNS = [
@@ -111,6 +112,9 @@ class ContainerCandidate:
     same_container_links: list[ProbeLinkSample] = field(default_factory=list)
     evidence: dict[str, Any] = field(default_factory=dict)
     probe_source: str = "static"
+    channel_label: str | None = None
+    channel_tier: str | None = None
+    channel_keywords: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -126,6 +130,9 @@ class ContainerCandidate:
             "same_container_links": [item.as_dict() for item in self.same_container_links],
             "evidence": dict(self.evidence),
             "probe_source": self.probe_source,
+            "channel_label": self.channel_label,
+            "channel_tier": self.channel_tier,
+            "channel_keywords": list(self.channel_keywords),
         }
 
 
@@ -493,6 +500,13 @@ def _build_candidate(
     if family_filter and family not in family_filter:
         return None
     audience_scope = _classify_audience_scope(stable_text, family)
+    channel_meta = classify_announcement_channel(
+        heading_text,
+        stable_text,
+        weak_text,
+        page_context.get("page_title"),
+        str(page_context.get("path") or ""),
+    )
     sample_links = detail_links if role == "leaf" else section_links
     signature = _build_signature(page_url, family, role, probe_source, container_xpath or "", heading_text or "")
     evidence = {
@@ -502,6 +516,9 @@ def _build_candidate(
         "section_like_count": len(section_links),
         "probe_source": probe_source,
     }
+    if channel_meta is not None:
+        evidence["channel_label"] = channel_meta["label"]
+        evidence["channel_tier"] = channel_meta["tier"]
     return ContainerCandidate(
         page_url=page_url,
         family=family,
@@ -515,6 +532,15 @@ def _build_candidate(
         same_container_links=sample_links[:12],
         evidence=evidence,
         probe_source=probe_source,
+        channel_label=str(channel_meta["label"]) if channel_meta is not None else None,
+        channel_tier=str(channel_meta["tier"]) if channel_meta is not None else None,
+        channel_keywords=[
+            str(item)
+            for item in (channel_meta.get("keywords") or [])
+            if str(item or "").strip()
+        ]
+        if channel_meta is not None
+        else [],
     )
 
 
@@ -885,6 +911,9 @@ def build_list_selector_overrides(candidate: ContainerCandidate) -> dict[str, An
         "probe_evidence": dict(candidate.evidence),
         "probe_heading": candidate.heading_text or "",
         "fallback_to_all_links": False,
+        "channel_label": candidate.channel_label or "",
+        "channel_tier": candidate.channel_tier or "",
+        "channel_keywords": [str(item) for item in candidate.channel_keywords if str(item or "").strip()],
     }
     if candidate.container_selector:
         overrides["css_selector"] = f"{candidate.container_selector} a[href]"

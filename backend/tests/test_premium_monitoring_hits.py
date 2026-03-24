@@ -279,6 +279,69 @@ def test_monitor_hit_matches_alias_keyword_via_system_tags(client):
         assert "复试线" in (hits[0].matched_keywords or [])
 
 
+def test_monitor_hit_outbox_payload_preserves_portal_metadata(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_portal_meta")
+    _create_monitor_target_and_keyword(user_id, school_name="华中大学", keyword="工作动态")
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "华中大学复试工作动态",
+            "body": "复试安排已更新。",
+            "school_name": "华中大学",
+            "source_url": "https://example.com/pm-hit-portal-meta",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "工作动态",
+                "channel_tier": "supplemental",
+                "system_tags": ["工作动态", "招生信息"],
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert ingest_resp.status_code == 200
+
+    with SessionLocal() as db:
+        outboxes = _monitor_outboxes_for_user(db, user_id=user_id)
+        assert len(outboxes) == 1
+        payload = dict(outboxes[0].payload or {})
+        assert payload["channel_label"] == "工作动态"
+        assert payload["channel_tier"] == "supplemental"
+        assert payload["system_tags"] == ["工作动态", "招生信息"]
+        assert "工作动态" in payload["tags"]
+        assert "招生信息" in payload["tags"]
+
+
+def test_invisible_supplemental_announcement_does_not_create_monitor_hit(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_hidden_supplemental")
+    _create_monitor_target_and_keyword(user_id, school_name="南方大学", keyword="信息公开")
+
+    ingest_resp = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "南方大学信息公开说明",
+            "body": "这是行政公开信息，不属于研招动态。",
+            "school_name": "南方大学",
+            "source_url": "https://example.com/pm-hit-hidden-supplemental",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "信息公开",
+                "channel_tier": "supplemental",
+                "system_tags": ["信息公开"],
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert ingest_resp.status_code == 200
+
+    with SessionLocal() as db:
+        hits = db.query(HIT_MODEL).filter(HIT_MODEL.user_id == user_id).all()
+        assert hits == []
+        assert _monitor_outboxes_for_user(db, user_id=user_id) == []
+
+
 def test_monitor_hit_generates_bark_delivery_when_enabled(client):
     user_id, token = _register_user_and_token(client, "pmhit_bark")
     _create_monitor_target_and_keyword(user_id, school_name="同济大学", keyword="公告")

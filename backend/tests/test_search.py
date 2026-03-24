@@ -2321,7 +2321,8 @@ def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):
     assert payload["preview_limit"] == 2
     assert payload["items"][0]["notice_kind"] == "link_notice"
     assert payload["items"][0]["pdf_parse_status"] == "needs_ocr"
-    assert payload["items"][0]["tags"] == ["复试线", "招生简章"]
+    assert payload["items"][0]["system_tags"] == ["通知公告"]
+    assert payload["items"][0]["tags"] == ["复试线", "招生简章", "通知公告"]
 
 
 def test_search_announcements_matches_department_name_and_tags_from_extra(client):
@@ -2360,7 +2361,103 @@ def test_search_announcements_matches_department_name_and_tags_from_extra(client
     assert tag_search.status_code == 200
     tag_payload = tag_search.json()
     assert tag_payload["total"] == 1
-    assert tag_payload["items"][0]["tags"] == ["复试线", "报名须知"]
+    assert tag_payload["items"][0]["system_tags"] == ["通知公告", "招生信息"]
+    assert tag_payload["items"][0]["tags"] == ["复试线", "报名须知", "通知公告", "招生信息"]
+
+
+def test_search_announcements_filters_portal_visibility_and_system_tags(client):
+    token = _register_and_login(client, "announcement_system_tags_user")
+    user_headers = {"X-User-Token": token}
+    admin_headers = {"X-Admin-Token": "test-admin-token"}
+
+    rows = [
+        {
+            "category": "announcement",
+            "title": "门户大学2026年招生简章",
+            "body": "请查看今年硕士研究生招生简章。",
+            "summary": "学校级核心栏目样本",
+            "school_name": "门户大学",
+            "source_type": "crawler",
+            "source_url": "https://portal.example.com/guide",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "portal_entry_url": "https://portal.example.com/",
+                "channel_label": "招生简章",
+                "channel_tier": "core",
+                "channel_keywords": ["招生简章"],
+                "system_tags": ["招生简章"],
+                "tags": ["历年简章"],
+            },
+        },
+        {
+            "category": "announcement",
+            "title": "门户大学复试工作动态",
+            "body": "复试安排已经更新。",
+            "summary": "补充栏目中的研招动态",
+            "school_name": "门户大学",
+            "source_type": "crawler",
+            "source_url": "https://portal.example.com/news/retest",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "portal_entry_url": "https://portal.example.com/",
+                "channel_label": "工作动态",
+                "channel_tier": "supplemental",
+                "channel_keywords": ["工作动态"],
+                "system_tags": ["工作动态", "招生信息"],
+                "tags": ["复试安排"],
+            },
+        },
+        {
+            "category": "announcement",
+            "title": "门户大学信息公开说明",
+            "body": "这是行政信息公开，不属于研招动态。",
+            "summary": "补充栏目非研招内容",
+            "school_name": "门户大学",
+            "source_type": "crawler",
+            "source_url": "https://portal.example.com/public/info",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "portal_entry_url": "https://portal.example.com/",
+                "channel_label": "信息公开",
+                "channel_tier": "supplemental",
+                "channel_keywords": ["信息公开"],
+                "system_tags": ["信息公开"],
+                "tags": ["公开说明"],
+            },
+        },
+    ]
+
+    for row in rows:
+        response = client.post("/api/v1/content", json=row, headers=admin_headers)
+        assert response.status_code == 200
+
+    response = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "门户大学"},
+        headers=user_headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert {item["title"] for item in payload["items"]} == {
+        "门户大学2026年招生简章",
+        "门户大学复试工作动态",
+    }
+    assert set(payload["available_system_tags"]) == {"招生简章", "工作动态", "招生信息"}
+    assert "信息公开" not in payload["available_system_tags"]
+
+    filtered = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "门户大学", "system_tags": ["招生简章"]},
+        headers=user_headers,
+    )
+    assert filtered.status_code == 200
+    filtered_payload = filtered.json()
+    assert filtered_payload["total"] == 1
+    assert filtered_payload["items"][0]["title"] == "门户大学2026年招生简章"
+    assert filtered_payload["items"][0]["system_tags"] == ["招生简章"]
+    assert filtered_payload["items"][0]["channel_label"] == "招生简章"
+    assert filtered_payload["items"][0]["channel_tier"] == "core"
 
 
 def test_content_upsert_dedupes_by_fingerprint_when_source_url_changes(client):

@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 from sqlalchemy.orm import Session
 
 from ..models import CrawlJob, Department, School, Source, SiteSection, utcnow
+from .announcement_portal import PORTAL_SCOPE_GRADUATE_ADMISSIONS
 from .crawler import _extract_links, _extract_title, _fetch_with_retry, build_site_section_detail_selector_config, build_site_section_list_selector_config
 from .site_section_probe import (
     ContainerCandidate,
@@ -333,11 +334,33 @@ def _find_existing_section(
     return None
 
 
-def _build_list_config_for_candidate(section: SiteSection, candidate: CandidateSection) -> dict[str, Any]:
+def _build_list_config_for_candidate(
+    section: SiteSection,
+    candidate: CandidateSection,
+    *,
+    portal_scope: str | None = None,
+    portal_entry_url: str | None = None,
+) -> dict[str, Any]:
     overrides = dict(section.list_selector_config or {})
     overrides.update(build_list_selector_overrides(candidate.probe_candidate))
     if not overrides.get("allowed_path_prefixes"):
         overrides["allowed_path_prefixes"] = _build_allowed_path_prefixes(candidate.page_url)
+    if portal_scope:
+        overrides["portal_scope"] = portal_scope
+    if portal_entry_url:
+        overrides["portal_entry_url"] = portal_entry_url
+    if candidate.probe_candidate.channel_label:
+        overrides["channel_label"] = candidate.probe_candidate.channel_label
+    if candidate.probe_candidate.channel_tier:
+        overrides["channel_tier"] = candidate.probe_candidate.channel_tier
+    if candidate.probe_candidate.channel_keywords:
+        overrides["channel_keywords"] = list(candidate.probe_candidate.channel_keywords)
+    overrides["portal_path_evidence"] = {
+        "section_url": candidate.page_url,
+        "channel_label": candidate.probe_candidate.channel_label or "",
+        "channel_tier": candidate.probe_candidate.channel_tier or "",
+        "probe_heading": candidate.probe_candidate.heading_text or "",
+    }
     return build_site_section_list_selector_config(section, overrides)
 
 
@@ -387,6 +410,8 @@ def bootstrap_site_sections(
     max_sections: int,
     max_seed_pages: int = 10,
     families: set[str] | None = None,
+    portal_entry_url: str | None = None,
+    portal_scope: str | None = None,
 ) -> dict[str, Any]:
     school = _resolve_school(db, school_name)
     department = _resolve_department(
@@ -415,6 +440,9 @@ def bootstrap_site_sections(
         raise ValueError("homepage_url is required when the school has no existing source")
 
     normalized_families = _normalize_families(families)
+    resolved_portal_scope = portal_scope
+    if resolved_portal_scope is None and normalized_families == {"admissions", "notice"}:
+        resolved_portal_scope = PORTAL_SCOPE_GRADUATE_ADMISSIONS
     source = _ensure_source(db, school=school, homepage_url=homepage_urls[0])
     seed_pool = _collect_seed_urls(
         homepage_urls=homepage_urls,
@@ -472,7 +500,12 @@ def bootstrap_site_sections(
                 list_selector_config={},
                 detail_selector_config={},
             )
-            section.list_selector_config = _build_list_config_for_candidate(section, candidate)
+            section.list_selector_config = _build_list_config_for_candidate(
+                section,
+                candidate,
+                portal_scope=resolved_portal_scope,
+                portal_entry_url=portal_entry_url,
+            )
             section.detail_selector_config = build_site_section_detail_selector_config(section, {})
             db.add(section)
             db.flush()
@@ -483,7 +516,12 @@ def bootstrap_site_sections(
             section.source_id = section.source_id or source.id
             section.discovery_category = candidate.discovery_category
             section.enabled = 1 if enabled else section.enabled
-            section.list_selector_config = _build_list_config_for_candidate(section, candidate)
+            section.list_selector_config = _build_list_config_for_candidate(
+                section,
+                candidate,
+                portal_scope=resolved_portal_scope,
+                portal_entry_url=portal_entry_url,
+            )
             section.detail_selector_config = build_site_section_detail_selector_config(section, section.detail_selector_config or {})
             db.flush()
 

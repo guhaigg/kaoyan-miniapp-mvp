@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchAdjustmentResults, fetchAnnouncementResults } from "@/api/search";
-import type { AdjustmentSearchRequest, SearchBaseRequest } from "@/lib/api";
+import type { AdjustmentSearchRequest, AnnouncementSearchRequest } from "@/lib/api";
 
 export function useAnnouncementSearchMutation() {
   return useMutation({
@@ -16,12 +16,12 @@ export function useAdjustmentSearchMutation() {
   });
 }
 
-export function useHomeAnnouncementsQuery(payload: SearchBaseRequest) {
+export function useHomeAnnouncementsQuery(payload: AnnouncementSearchRequest) {
   return useQuery({
     queryKey: ["home", "announcements", payload],
     queryFn: () => fetchAnnouncementResults(payload),
   });
 }
 
-export type AnnouncementSearchInput = SearchBaseRequest;
+export type AnnouncementSearchInput = AnnouncementSearchRequest;
 export type AdjustmentSearchInput = AdjustmentSearchRequest;

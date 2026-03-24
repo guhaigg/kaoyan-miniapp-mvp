@@ -110,6 +110,9 @@ def _rebind_outbox_payload(payload: dict[str, Any], replacement: Content) -> dic
     )
     next_payload["region"] = replacement.region
     next_payload["tags"] = list(extra.get("tags") or [])
+    next_payload["system_tags"] = list(extra.get("system_tags") or [])
+    next_payload["channel_label"] = str(extra.get("channel_label") or "").strip() or None
+    next_payload["channel_tier"] = str(extra.get("channel_tier") or "").strip() or None
     next_payload["source_url"] = replacement.source_url
     next_payload["published_at"] = replacement.published_at.isoformat() if replacement.published_at else None
     next_payload["status"] = "rebound"
