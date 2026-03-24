@@ -74,6 +74,20 @@ _ANNOUNCEMENT_NAV_TEXT_HINTS = (
 _ANNOUNCEMENT_DOMAIN_PRIORITY_HINTS = ("yzb", "yjsc", "yjsy", "yjs", "graduate", "grad", "zhaosheng")
 _FAMILY_DISCOVERY_COOLDOWN = timedelta(minutes=10)
 _ANNOUNCEMENT_CANONICAL_SEEDS: dict[str, dict[str, Any]] = {
+    "湖北大学": {
+        "homepage_url": "https://yz.hubu.edu.cn/",
+        "seed_urls": [
+            "https://yz.hubu.edu.cn/",
+        ],
+        "deny_prefixes": [
+            "http://yjs.hbut.edu.cn/",
+            "https://yjs.hbut.edu.cn/",
+            "https://kjcy.hbut.edu.cn/",
+            "https://ce.hbut.edu.cn/",
+            "https://zs.hbut.edu.cn/",
+            "https://yjsy.hbu.edu.cn/",
+        ],
+    },
     "江西农业大学": {
         "homepage_url": "https://yzb.jxau.edu.cn/",
         "seed_urls": [
@@ -207,7 +221,9 @@ def _build_school_validation_terms(school_name: str) -> list[str]:
     terms = [raw, compact]
     for suffix in _SCHOOL_SUFFIXES:
         if compact.endswith(suffix) and len(compact) > len(suffix) + 1:
-            terms.append(compact[: -len(suffix)])
+            stripped = compact[: -len(suffix)]
+            if len(stripped) >= 3:
+                terms.append(stripped)
     return [term for term in _dedupe_texts(terms) if len(term) >= 2]
 
 

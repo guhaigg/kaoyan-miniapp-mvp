@@ -7,7 +7,7 @@ from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 from app.services.content_repair import extract_content_published_at_from_body, infer_non_detail_announcement_reason
 from app.services.crawler import crawl_engine
-from app.services.school_cold_start import ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap, run_family_discovery_job
+from app.services.school_cold_start import _candidate_page_matches_school_name, ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap, run_family_discovery_job
 from app.routers.search import _build_adjustment_detail_from_opportunity
 from scripts.repair_stale_announcement_content import _repair_row_by_snapshot
 
@@ -2879,6 +2879,36 @@ def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_section
         jobs = db.query(CrawlJob).all()
         assert len(jobs) == 1
         assert jobs[0].query["job_kind"] == "family_discovery"
+
+
+def test_ensure_announcement_search_bootstrap_uses_hubu_canonical_candidates():
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "湖北大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
+        assert job.query["job_kind"] == "family_discovery"
+        assert job.query["school_name"] == "湖北大学"
+        assert job.query["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+
+
+def test_candidate_page_matches_school_name_rejects_two_char_suffix_collisions(monkeypatch):
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    def _fake_fetch(url: str):
+        if url in {"https://yjs.hbut.edu.cn/", "https://yjs.hbut.edu.cn"}:
+            return _DummyResponse("<html><head><title>湖北工业大学研究生院</title></head><body>湖北工业大学欢迎你</body></html>")
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
+
+    assert _candidate_page_matches_school_name("https://yjs.hbut.edu.cn/", "湖北大学") is False
 
 
 def test_ensure_adjustment_search_bootstrap_queues_existing_adjustment_sections():
