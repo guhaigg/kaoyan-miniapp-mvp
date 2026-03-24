@@ -309,6 +309,10 @@ def rebuild_announcement_assets(db: Session, *, school_name: str | None = None, 
             continue
         error_row.content_id = replacement.id
 
+    # Flush ORM deletes/updates so MySQL no longer has FK references into rows that
+    # are about to be removed via bulk DELETE below.
+    db.flush()
+
     if snapshot_ids:
         db.query(ContentSnapshot).filter(ContentSnapshot.id.in_(snapshot_ids)).delete(synchronize_session=False)
     if content_file_ids:
