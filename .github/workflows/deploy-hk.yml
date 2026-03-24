@@ -192,10 +192,13 @@ jobs:
             )
           fi
 
-          if systemctl list-unit-files | grep -q "^${BACKEND_SERVICE}\.service"; then
-            systemctl restart "${BACKEND_SERVICE}.service"
-            systemctl is-active --quiet "${BACKEND_SERVICE}.service"
-            systemctl show "${BACKEND_SERVICE}.service" --property MainPID,ActiveEnterTimestamp --no-pager
+          if systemctl status "${BACKEND_SERVICE}" >/dev/null 2>&1 || systemctl status "${BACKEND_SERVICE}.service" >/dev/null 2>&1; then
+            systemctl restart "${BACKEND_SERVICE}"
+            systemctl is-active --quiet "${BACKEND_SERVICE}"
+            systemctl show "${BACKEND_SERVICE}" --property Names,MainPID,ActiveEnterTimestamp --no-pager
+          else
+            echo "backend service ${BACKEND_SERVICE} not found"
+            exit 1
           fi
 
           if systemctl list-unit-files | grep -q "^nginx\.service"; then
