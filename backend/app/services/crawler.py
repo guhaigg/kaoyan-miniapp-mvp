@@ -2,6 +2,7 @@ import hashlib
 import io
 import re
 import time
+from copy import deepcopy
 from contextlib import suppress
 from datetime import timedelta
 from datetime import datetime
@@ -21,6 +22,7 @@ from ..db import SessionLocal
 from ..models import ContentFile, CrawlError, CrawlJob, SiteSection, SiteSectionLink, utcnow
 from ..schemas import ContentIn
 from .content import upsert_content
+from .content_repair import extract_content_published_at_from_body
 from .content_summary import summarize_text
 from .nlp import extract_domain_tags
 
@@ -98,7 +100,9 @@ _DEFAULT_DETAIL_CSS_SELECTOR = ", ".join(
     [
         "article",
         ".article",
+        ".Article",
         ".article-content",
+        ".wp_articlecontent",
         ".detail-content",
         ".content",
         ".news-content",
@@ -110,6 +114,8 @@ _DEFAULT_DETAIL_XPATH_SELECTOR = " | ".join(
     [
         "//article",
         "//div[contains(@class, 'article')]",
+        "//div[contains(@class, 'Article')]",
+        "//div[contains(@class, 'wp_articlecontent')]",
         "//div[contains(@class, 'article-content')]",
         "//div[contains(@class, 'detail-content')]",
         "//div[contains(@class, 'news-content')]",
@@ -131,6 +137,15 @@ _LINK_NOTICE_HINT_KEYWORDS = [
     "见附件",
     "查看详情",
 ]
+_PUBLISHED_AT_LABEL_MARKERS = (
+    "发布时间",
+    "发布日期",
+    "日期",
+    "时间",
+    "发文时间",
+    "更新时间",
+    "发布于",
+)
 
 
 class _AnchorParser(HTMLParser):
@@ -482,6 +497,27 @@ def _collect_anchor_nodes(results: list[Any]) -> list[Any]:
     return anchors
 
 
+def _collect_text_nodes(results: list[Any]) -> list[Any]:
+    nodes: list[Any] = []
+    seen_ids: set[int] = set()
+
+    for result in results:
+        if not hasattr(result, "itertext"):
+            continue
+        node_id = id(result)
+        if node_id in seen_ids:
+            continue
+        seen_ids.add(node_id)
+        nodes.append(result)
+
+    filtered: list[Any] = []
+    for node in nodes:
+        if any(node in other.iterancestors() for other in nodes if other is not node):
+            continue
+        filtered.append(node)
+    return filtered
+
+
 def _extract_links_by_selector(raw_html: str, config: dict[str, Any]) -> list[dict[str, str]]:
     document = _parse_html_document(raw_html)
     if document is None:
@@ -515,6 +551,24 @@ def _extract_links_by_selector(raw_html: str, config: dict[str, Any]) -> list[di
     return items
 
 
+def _sanitize_selected_node(node: Any) -> Any:
+    if not hasattr(node, "xpath"):
+        return node
+    try:
+        sanitized = deepcopy(node)
+    except Exception:
+        return node
+    for noisy in sanitized.xpath(".//style | .//script | .//noscript"):
+        parent = noisy.getparent()
+        if parent is not None:
+            parent.remove(noisy)
+    for comment in sanitized.xpath(".//comment()"):
+        parent = comment.getparent()
+        if parent is not None:
+            parent.remove(comment)
+    return sanitized
+
+
 def _extract_text_by_selector(raw_html: str, config: dict[str, Any]) -> str:
     document = _parse_html_document(raw_html)
     if document is None:
@@ -535,7 +589,8 @@ def _extract_text_by_selector(raw_html: str, config: dict[str, Any]) -> str:
             pass
 
     chunks: list[str] = []
-    for node in selected_nodes:
+    for node in _collect_text_nodes(selected_nodes):
+        node = _sanitize_selected_node(node)
         if hasattr(node, "itertext"):
             text = _SPACE_RE.sub(" ", " ".join(node.itertext())).strip()
         else:
@@ -543,6 +598,20 @@ def _extract_text_by_selector(raw_html: str, config: dict[str, Any]) -> str:
         if text:
             chunks.append(text)
     return _SPACE_RE.sub(" ", " ".join(chunks)).strip()
+
+
+def _extract_published_at_from_raw_html(raw_html: str) -> datetime | None:
+    normalized = _extract_text(raw_html)
+    if not normalized:
+        return None
+    for marker in _PUBLISHED_AT_LABEL_MARKERS:
+        index = normalized.find(marker)
+        if index < 0:
+            continue
+        candidate = extract_content_published_at_from_body(normalized[index : index + 160])
+        if candidate is not None:
+            return candidate
+    return None
 
 
 def _extract_text_by_readability(raw_html: str) -> tuple[str | None, str]:
@@ -1037,7 +1106,10 @@ class CrawlEngine:
             school_name=(str(query.get("school_name") or "").strip() or None),
             source_url=source_url,
             source_type="crawler",
-            published_at=_coerce_datetime(query.get("published_at")),
+            published_at=(
+                _coerce_datetime(query.get("published_at"))
+                or _extract_published_at_from_raw_html(raw_html)
+            ),
             region=(str(query.get("region") or "").strip() or None),
             major=(str(query.get("major") or "").strip() or None),
             extra=extra,

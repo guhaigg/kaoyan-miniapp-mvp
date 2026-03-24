@@ -152,6 +152,85 @@ def test_crawl_worker_uses_readability_fallback_for_detail_page(client, monkeypa
         assert "复试" in content.extra["tags"]
 
 
+def test_crawl_worker_extracts_clean_summary_and_published_at_from_shnu_detail_page(client, monkeypatch):
+    class _FakeResponse:
+        text = """
+        <html>
+          <head><title>教育学院2025年专业型博士研究生招生进入综合考核考生名单（补充公示）</title></head>
+          <body>
+            <div class="Article">
+              <table>
+                <tr>
+                  <td>
+                    <span class="NormalBold">发布日期:</span>
+                    <span class="Normal">2025/05/21</span>
+                  </td>
+                </tr>
+              </table>
+                  <div class="wp_articlecontent">
+                    <p>补充公示如下，请相关考生按时参加综合考核，并按通知要求准备材料。</p>
+                    <p><style><!-- BODY,DIV,TABLE,THEAD,TBODY,TFOOT,TR,TH,TD,P { font-family:"Arimo"; font-size:x-small } --></style></p>
+                    <table>
+                  <tr><td>学科：教育领导与管理</td></tr>
+                  <tr><td>250956</td><td>韩杰</td></tr>
+                  <tr><td>251108</td><td>宋丹</td></tr>
+                  <tr><td>250326</td><td>王孝凡</td></tr>
+                </table>
+              </div>
+            </div>
+          </body>
+        </html>
+        """
+
+    monkeypatch.setattr("app.services.crawler._fetch_with_retry", lambda _url: _FakeResponse())
+
+    with SessionLocal() as db:
+        section = SiteSection(
+            name="上海师范大学教育学院通知",
+            section_type="notice",
+            section_url="http://web.shnu.edu.cn/yjspyzx/19513/list.htm",
+            discovery_category="announcement",
+            detail_selector_config={},
+        )
+        db.add(section)
+        db.commit()
+        db.refresh(section)
+        section_id = section.id
+
+    create_resp = client.post(
+        "/api/v1/crawl-jobs",
+        json={
+            "category": "announcement",
+            "query": {
+                "source_url": "http://web.shnu.edu.cn/yjspyzx/a8/c8/c19513a829640/page.htm",
+                "site_section_id": section_id,
+                "school_name": "上海师范大学",
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert create_resp.status_code == 200
+
+    processed = crawl_engine.process_job_batch()
+    assert processed == 1
+
+    with SessionLocal() as db:
+        content = (
+            db.query(Content)
+            .filter(Content.source_url == "http://web.shnu.edu.cn/yjspyzx/a8/c8/c19513a829640/page.htm")
+            .one()
+        )
+        assert content.extra["detail_extraction_method"] == "selector"
+        assert "学科：教育领导与管理" in content.body
+        assert "<!--" not in content.body
+        assert "Arimo" not in content.body
+        assert content.summary is not None
+        assert "<!--" not in content.summary
+        assert "Arimo" not in content.summary
+        assert content.published_at is not None
+        assert content.published_at.isoformat().startswith("2025-05-21")
+
+
 def test_crawl_job_list_handles_legacy_completed_status(client):
     with SessionLocal() as db:
         legacy = CrawlJob(
