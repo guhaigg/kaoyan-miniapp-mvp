@@ -35,7 +35,7 @@ from ..services.historical_intelligence import (
     normalize_major_name,
     normalize_school_name,
 )
-from ..services.content_repair import resolve_content_display_fields
+from ..services.content_repair import infer_non_detail_announcement_reason, resolve_content_display_fields
 from ..services.school_cold_start import ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap
 from ..services.search_cache import search_response_cache
 
@@ -167,6 +167,19 @@ def _extract_requested_department_terms(payload: AnnouncementSearchRequest) -> l
     )
 
 
+def _department_matches_requested_terms(department_name: str | None, requested_departments: list[str]) -> bool:
+    normalized_department = normalize_department_name(department_name)
+    if not normalized_department or not requested_departments:
+        return False
+    return any(
+        requested == normalized_department
+        or requested in normalized_department
+        or normalized_department in requested
+        for requested in requested_departments
+        if requested
+    )
+
+
 def _extract_non_department_keyword_terms(raw_keywords: str, requested_departments: list[str]) -> list[str]:
     text = str(raw_keywords or "").strip()
     if not text:
@@ -252,7 +265,15 @@ def _is_school_level_announcement_row(
             return True
 
     if normalize_department_name(extra.get("department_name")):
-        return False
+        return row.source_type == "crawler"
+
+    source_url = str(row.source_url or "").strip()
+    if row.source_type == "crawler" or infer_non_detail_announcement_reason(
+        source_url=source_url,
+        title=row.title,
+        body=row.body,
+    ) is None:
+        return True
 
     return _extract_row_department_scope_hint(row) is None
 
@@ -276,9 +297,9 @@ def _row_matches_requested_announcement_scope(
         if section is not None and section.department is not None:
             department_name = normalize_department_name(section.department.name) or department_name
     if department_name:
-        return department_name in requested_departments
+        return _department_matches_requested_terms(department_name, requested_departments)
     inferred_department = _extract_row_department_scope_hint(row)
-    return inferred_department in requested_departments if inferred_department else False
+    return _department_matches_requested_terms(inferred_department, requested_departments)
 
 
 def _row_matches_keyword_terms(row: Content, keyword_terms: list[str]) -> bool:
