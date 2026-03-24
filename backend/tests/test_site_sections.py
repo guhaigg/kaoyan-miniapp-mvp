@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app.db import SessionLocal
 from app.models import Content, ContentFile, CrawlError, CrawlJob, School, SiteSection, SiteSectionLink, Source
 from app.services.crawler import crawl_engine
@@ -299,6 +301,279 @@ def test_site_section_discovery_accepts_shnu_subdomain_detail_urls_outside_list_
             "https://yjsc.shnu.edu.cn/eb/aa/c17205a846762/page.htm",
         ]
         assert all(link.status == "enqueued" for link in links)
+
+
+def test_site_section_link_retry_queues_html_jobs_and_reuses_existing_jobs(client):
+    with SessionLocal() as db:
+        school = School(name="上海师范大学", aliases=[])
+        db.add(school)
+        db.flush()
+        section = SiteSection(
+            school_id=school.id,
+            name="教育学院通知",
+            section_type="notice",
+            section_url="http://web.shnu.edu.cn/yjspyzx/19513/list.htm",
+            discovery_category="announcement",
+            list_selector_config={},
+            detail_selector_config={},
+        )
+        db.add(section)
+        db.flush()
+        existing_link = SiteSectionLink(
+            site_section_id=section.id,
+            link_url="http://web.shnu.edu.cn/yjspyzx/a8/42/c19513a829506/page.htm",
+            link_url_hash="existing-html-link",
+            title="教育学院2025年专业型博士研究生招生进入综合考核考生名单",
+            link_type="html",
+            status="discovered",
+        )
+        fresh_link = SiteSectionLink(
+            site_section_id=section.id,
+            link_url="http://web.shnu.edu.cn/yjspyzx/a8/c8/c19513a829640/page.htm",
+            link_url_hash="fresh-html-link",
+            title="教育学院2025年专业型博士研究生招生进入综合考核考生名单（补充公示）",
+            link_type="html",
+            status="discovered",
+            published_at=datetime(2025, 5, 21, tzinfo=timezone.utc),
+        )
+        db.add_all([existing_link, fresh_link])
+        db.flush()
+        existing_job = CrawlJob(
+            category="announcement",
+            status="pending",
+            message="existing detail fetch",
+            query={
+                "job_kind": "detail_fetch",
+                "site_section_id": section.id,
+                "site_section_link_id": existing_link.id,
+                "source_url": existing_link.link_url,
+            },
+        )
+        db.add(existing_job)
+        db.commit()
+        db.refresh(existing_link)
+        db.refresh(fresh_link)
+        db.refresh(existing_job)
+        existing_link_id = existing_link.id
+        fresh_link_id = fresh_link.id
+        existing_job_id = existing_job.id
+
+    resp = client.post(
+        "/api/v1/site-sections/links/retry",
+        json={"link_ids": [existing_link_id, fresh_link_id]},
+        headers=_admin_headers(),
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["total_links"] == 2
+    assert payload["queued"] == 1
+    assert payload["existing"] == 1
+    assert payload["failed"] == 0
+
+    items = {item["link_id"]: item for item in payload["items"]}
+    assert items[existing_link_id]["status"] == "existing"
+    assert items[existing_link_id]["job_id"] == existing_job_id
+    assert items[fresh_link_id]["status"] == "queued"
+    assert items[fresh_link_id]["job_id"] is not None
+
+    with SessionLocal() as db:
+        fresh_link = db.query(SiteSectionLink).filter(SiteSectionLink.id == fresh_link_id).one()
+        assert fresh_link.status == "enqueued"
+        queued_job = db.query(CrawlJob).filter(CrawlJob.id == fresh_link.crawl_job_id).one()
+        assert queued_job.query["job_kind"] == "detail_fetch"
+        assert queued_job.query["site_section_link_id"] == fresh_link_id
+        assert queued_job.query["site_section_id"] == fresh_link.site_section_id
+        assert queued_job.query["published_at"].startswith("2025-05-21")
+
+
+def test_site_section_link_retry_queues_pdf_jobs_and_creates_missing_content_file(client):
+    with SessionLocal() as db:
+        school = School(name="电子科技大学", aliases=[])
+        db.add(school)
+        db.flush()
+        section = SiteSection(
+            school_id=school.id,
+            name="学院附件通知",
+            section_type="notice",
+            section_url="https://example.com/college/notices/",
+            discovery_category="announcement",
+            list_selector_config={},
+            detail_selector_config={},
+        )
+        db.add(section)
+        db.flush()
+        existing_file_link = SiteSectionLink(
+            site_section_id=section.id,
+            link_url="https://example.com/college/notices/files/notice-1.pdf",
+            link_url_hash="existing-pdf-link",
+            title="复试细则 PDF",
+            link_type="pdf",
+            status="discovered",
+        )
+        missing_file_link = SiteSectionLink(
+            site_section_id=section.id,
+            link_url="https://example.com/college/notices/files/notice-2.pdf",
+            link_url_hash="missing-pdf-link",
+            title="复试补充说明 PDF",
+            link_type="pdf",
+            status="discovered",
+        )
+        db.add_all([existing_file_link, missing_file_link])
+        db.flush()
+        file_record = ContentFile(
+            site_section_link_id=existing_file_link.id,
+            file_url=existing_file_link.link_url,
+            file_url_hash="existing-pdf-file",
+            file_type="pdf",
+            mime_type="application/pdf",
+            parse_status="done",
+            ocr_status="done",
+            file_meta={},
+        )
+        db.add(file_record)
+        db.commit()
+        db.refresh(existing_file_link)
+        db.refresh(missing_file_link)
+        db.refresh(file_record)
+        existing_file_link_id = existing_file_link.id
+        missing_file_link_id = missing_file_link.id
+        existing_file_id = file_record.id
+
+    resp = client.post(
+        "/api/v1/site-sections/links/retry",
+        json={"link_ids": [existing_file_link_id, missing_file_link_id]},
+        headers=_admin_headers(),
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["queued"] == 2
+    assert payload["existing"] == 0
+    assert payload["failed"] == 0
+
+    with SessionLocal() as db:
+        existing_file = db.query(ContentFile).filter(ContentFile.id == existing_file_id).one()
+        assert existing_file.parse_status == "pending"
+        queued_existing_job = db.query(CrawlJob).filter(CrawlJob.id == existing_file.site_section_link.crawl_job_id).one()
+        assert queued_existing_job.query["job_kind"] == "file_parse"
+        assert queued_existing_job.query["content_file_id"] == existing_file.id
+
+        missing_link = db.query(SiteSectionLink).filter(SiteSectionLink.id == missing_file_link_id).one()
+        created_file = db.query(ContentFile).filter(ContentFile.site_section_link_id == missing_file_link_id).one()
+        assert created_file.file_url == missing_link.link_url
+        assert created_file.file_type == "pdf"
+        queued_missing_job = db.query(CrawlJob).filter(CrawlJob.id == missing_link.crawl_job_id).one()
+        assert queued_missing_job.query["job_kind"] == "file_parse"
+        assert queued_missing_job.query["content_file_id"] == created_file.id
+
+
+def test_site_section_link_retry_reingests_existing_content_and_cleans_summary(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.crawler._fetch_with_retry",
+        lambda _url: _DummyResponse(
+            """
+            <html>
+              <head><title>教育学院2025年专业型博士研究生招生进入综合考核考生名单（补充公示）</title></head>
+              <body>
+                <div class="Article">
+                  <table>
+                    <tr>
+                      <td>
+                        <span>发布日期:</span>
+                        <span>2025/05/21</span>
+                      </td>
+                    </tr>
+                  </table>
+                  <div class="wp_articlecontent">
+                    <p>补充公示如下，请相关考生按时参加综合考核，并按通知要求准备材料。</p>
+                    <p><style><!-- BODY,DIV,TABLE,THEAD,TBODY,TFOOT,TR,TH,TD,P { font-family:"Arimo"; font-size:x-small } --></style></p>
+                    <table>
+                      <tr><td>学科：教育领导与管理</td></tr>
+                      <tr><td>250956</td><td>韩杰</td></tr>
+                      <tr><td>251108</td><td>宋丹</td></tr>
+                      <tr><td>250326</td><td>王孝凡</td></tr>
+                    </table>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """
+        ),
+    )
+
+    source_url = "http://web.shnu.edu.cn/yjspyzx/a8/c8/c19513a829640/page.htm"
+
+    with SessionLocal() as db:
+        school = School(name="上海师范大学", aliases=[])
+        db.add(school)
+        db.flush()
+        section = SiteSection(
+            school_id=school.id,
+            name="教育学院通知",
+            section_type="notice",
+            section_url="http://web.shnu.edu.cn/yjspyzx/19513/list.htm",
+            discovery_category="announcement",
+            list_selector_config={},
+            detail_selector_config={},
+        )
+        db.add(section)
+        db.flush()
+        link = SiteSectionLink(
+            site_section_id=section.id,
+            link_url=source_url,
+            link_url_hash="shnu-existing-link",
+            title="教育学院2025年专业型博士研究生招生进入综合考核考生名单（补充公示）",
+            link_type="html",
+            status="discovered",
+        )
+        db.add(link)
+        db.flush()
+        existing_content = Content(
+            school_id=school.id,
+            category="announcement",
+            title="教育学院2025年专业型博士研究生招生进入综合考核考生名单（补充公示）",
+            body="旧正文",
+            summary='<!-- BODY,DIV,TABLE,THEAD,TBODY,TFOOT,TR,TH,TD,P { font-family:"Arimo"; font-size:x-small } --> 学科：教育领导与管理',
+            source_url=source_url,
+            source_type="crawler",
+            published_at=None,
+            content_fingerprint="legacy-shnu-dirty-content",
+            extra={},
+        )
+        db.add(existing_content)
+        db.commit()
+        db.refresh(link)
+        db.refresh(existing_content)
+        link_id = link.id
+        content_id = existing_content.id
+
+    retry_resp = client.post(
+        "/api/v1/site-sections/links/retry",
+        json={"link_ids": [link_id]},
+        headers=_admin_headers(),
+    )
+    assert retry_resp.status_code == 200
+
+    processed = crawl_engine.process_job_batch()
+    assert processed == 1
+
+    with SessionLocal() as db:
+        content = db.query(Content).filter(Content.source_url == source_url).one()
+        assert content.id == content_id
+        assert "学科：教育领导与管理" in content.body
+        assert "<!--" not in content.summary
+        assert "Arimo" not in content.summary
+        assert content.published_at is not None
+        assert content.published_at.isoformat().startswith("2025-05-21")
+
+
+def test_site_section_link_retry_rejects_more_than_100_links(client):
+    resp = client.post(
+        "/api/v1/site-sections/links/retry",
+        json={"link_ids": [f"link-{index}" for index in range(101)]},
+        headers=_admin_headers(),
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "link_ids exceeds max length 100"
 
 
 def test_site_section_discovery_failure_writes_crawl_error(client, monkeypatch):

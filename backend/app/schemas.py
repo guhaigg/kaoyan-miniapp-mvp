@@ -706,6 +706,26 @@ class SiteSectionLinkListResponse(BaseModel):
     items: list[SiteSectionLinkItem]
 
 
+class SiteSectionLinkRetryRequest(BaseModel):
+    link_ids: list[str] = Field(default_factory=list, min_length=1)
+
+
+class SiteSectionLinkRetryItem(BaseModel):
+    link_id: str
+    job_id: str | None
+    status: Literal["queued", "existing", "failed"]
+    link_type: Literal["html", "pdf"] | None = None
+    message: str | None = None
+
+
+class SiteSectionLinkRetryResponse(BaseModel):
+    total_links: int
+    queued: int
+    existing: int
+    failed: int
+    items: list[SiteSectionLinkRetryItem]
+
+
 class ContentFileItem(BaseModel):
     id: str
     content_id: str | None

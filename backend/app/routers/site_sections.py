@@ -21,6 +21,9 @@ from ..schemas import (
     SiteSectionItem,
     SiteSectionLinkItem,
     SiteSectionLinkListResponse,
+    SiteSectionLinkRetryItem,
+    SiteSectionLinkRetryRequest,
+    SiteSectionLinkRetryResponse,
     SiteSectionListResponse,
     SiteSectionSelectorPreviewLinkItem,
     SiteSectionSelectorPreviewRequest,
@@ -194,6 +197,142 @@ def _find_existing_file_parse_job(db: Session, *, content_file_id: str) -> Crawl
         if str(query_payload.get("content_file_id") or "").strip() == content_file_id:
             return row
     return None
+
+
+def _find_existing_detail_fetch_job(db: Session, *, site_section_link_id: str) -> CrawlJob | None:
+    rows = db.query(CrawlJob).filter(CrawlJob.status.in_(["pending", "running"])).order_by(CrawlJob.requested_at.desc()).all()
+    for row in rows:
+        query_payload = dict(row.query or {})
+        if query_payload.get("job_kind") != "detail_fetch":
+            continue
+        if str(query_payload.get("site_section_link_id") or "").strip() == site_section_link_id:
+            return row
+    return None
+
+
+def _link_scope(section: SiteSection | None) -> dict[str, str | None]:
+    return {
+        "school_name": section.school.name if section and section.school else None,
+        "department_name": section.department.name if section and section.department else None,
+        "section_type": section.section_type if section else None,
+    }
+
+
+def _queue_detail_fetch_for_link(db: Session, *, link: SiteSectionLink) -> tuple[CrawlJob, str, str]:
+    existing_job = _find_existing_detail_fetch_job(db, site_section_link_id=link.id)
+    if existing_job is not None:
+        link.crawl_job_id = existing_job.id
+        link.status = "enqueued"
+        return existing_job, "existing", "existing detail_fetch job"
+
+    section = link.site_section
+    if section is None:
+        raise ValueError("site section not found for link")
+
+    scope = _link_scope(section)
+    title = link.title or crawler_service._fallback_link_title(link.link_url)
+    job = CrawlJob(
+        category=section.discovery_category,
+        status="pending",
+        requested_at=utcnow(),
+        message=f"queued manual retry fetch for site section link {link.id}",
+        query={
+            "job_kind": "detail_fetch",
+            "site_section_id": section.id,
+            "site_section_link_id": link.id,
+            "source_url": link.link_url,
+            "title": title,
+            "school_name": scope["school_name"],
+            "department_name": scope["department_name"],
+            "section_type": scope["section_type"],
+            "published_at": link.published_at.isoformat() if link.published_at else None,
+        },
+    )
+    db.add(job)
+    db.flush()
+    link.crawl_job_id = job.id
+    link.status = "enqueued"
+    return job, "queued", "queued detail_fetch job"
+
+
+def _ensure_content_file_for_link(db: Session, *, link: SiteSectionLink) -> ContentFile:
+    file_record = (
+        db.query(ContentFile)
+        .filter(ContentFile.site_section_link_id == link.id)
+        .order_by(ContentFile.created_at.desc())
+        .first()
+    )
+    if file_record is not None:
+        return file_record
+
+    section = link.site_section
+    file_record = ContentFile(
+        site_section_link_id=link.id,
+        file_url=link.link_url,
+        file_url_hash=crawler_service._url_hash(link.link_url),
+        file_type="pdf",
+        mime_type="application/pdf",
+        parse_status="pending",
+        ocr_status="not_started",
+        file_meta={
+            "site_section_id": section.id if section else None,
+            "section_url": section.section_url if section else None,
+            "created_by": "site_section_link_retry",
+        },
+    )
+    db.add(file_record)
+    db.flush()
+    return file_record
+
+
+def _queue_file_parse_for_record(
+    db: Session,
+    *,
+    file_record: ContentFile,
+    message: str,
+) -> tuple[CrawlJob, str]:
+    existing_job = _find_existing_file_parse_job(db, content_file_id=file_record.id)
+    link = file_record.site_section_link
+    if existing_job is not None:
+        if link is not None:
+            link.crawl_job_id = existing_job.id
+            link.status = "file_recorded"
+        return existing_job, "existing"
+
+    section = link.site_section if link else None
+    scope = _link_scope(section)
+    job = CrawlJob(
+        category=section.discovery_category if section else "announcement",
+        status="pending",
+        requested_at=utcnow(),
+        message=message,
+        query={
+            "job_kind": "file_parse",
+            "content_file_id": file_record.id,
+            "site_section_id": section.id if section else None,
+            "site_section_link_id": link.id if link else None,
+            "source_url": file_record.file_url,
+            "title": link.title if link else None,
+            "school_name": scope["school_name"],
+            "department_name": scope["department_name"],
+            "section_type": scope["section_type"],
+            "published_at": link.published_at.isoformat() if link and link.published_at else None,
+        },
+    )
+    db.add(job)
+    db.flush()
+
+    file_record.parse_status = "pending"
+    file_record.ocr_status = "not_started"
+    file_record.file_meta = {
+        **dict(file_record.file_meta or {}),
+        "retry_parse_job_id": job.id,
+        "retry_requested_at": utcnow().isoformat(),
+    }
+    if link is not None:
+        link.crawl_job_id = job.id
+        link.status = "file_recorded"
+    return job, "queued"
 
 
 @router.post("", response_model=SiteSectionItem)
@@ -566,6 +705,111 @@ def list_site_section_links(
     return SiteSectionLinkListResponse(total=len(rows), items=[_to_link_item(row) for row in rows])
 
 
+@router.post("/links/retry", response_model=SiteSectionLinkRetryResponse)
+def retry_site_section_links(
+    payload: SiteSectionLinkRetryRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> SiteSectionLinkRetryResponse:
+    require_admin_request(request)
+
+    link_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for raw_link_id in payload.link_ids:
+        link_id = str(raw_link_id or "").strip()
+        if not link_id or link_id in seen_ids:
+            continue
+        seen_ids.add(link_id)
+        link_ids.append(link_id)
+
+    if not link_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="link_ids is required")
+    if len(link_ids) > 100:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="link_ids exceeds max length 100")
+
+    links = db.query(SiteSectionLink).filter(SiteSectionLink.id.in_(link_ids)).all()
+    links_by_id = {link.id: link for link in links}
+
+    queued = 0
+    existing = 0
+    failed = 0
+    items: list[SiteSectionLinkRetryItem] = []
+
+    for link_id in link_ids:
+        link = links_by_id.get(link_id)
+        if link is None:
+            failed += 1
+            items.append(
+                SiteSectionLinkRetryItem(
+                    link_id=link_id,
+                    job_id=None,
+                    status="failed",
+                    link_type=None,
+                    message="site section link not found",
+                )
+            )
+            continue
+
+        try:
+            with db.begin_nested():
+                if link.link_type == "pdf":
+                    file_record = _ensure_content_file_for_link(db, link=link)
+                    job, item_status = _queue_file_parse_for_record(
+                        db,
+                        file_record=file_record,
+                        message=f"queued manual retry parse for site section link {link.id}",
+                    )
+                    item_message = (
+                        "existing file_parse job"
+                        if item_status == "existing"
+                        else f"queued file_parse job for content file {file_record.id}"
+                    )
+                else:
+                    job, item_status, item_message = _queue_detail_fetch_for_link(db, link=link)
+        except Exception as exc:
+            failed += 1
+            items.append(
+                SiteSectionLinkRetryItem(
+                    link_id=link.id,
+                    job_id=None,
+                    status="failed",
+                    link_type=link.link_type if link.link_type in {"html", "pdf"} else None,
+                    message=str(exc),
+                )
+            )
+            continue
+
+        if item_status == "queued":
+            queued += 1
+        else:
+            existing += 1
+        items.append(
+            SiteSectionLinkRetryItem(
+                link_id=link.id,
+                job_id=job.id,
+                status=item_status,
+                link_type=link.link_type if link.link_type in {"html", "pdf"} else None,
+                message=item_message,
+            )
+        )
+
+    db.commit()
+    audit_event(
+        db,
+        request,
+        "site_section.link.retry",
+        None,
+        {"total_links": len(link_ids), "queued": queued, "existing": existing, "failed": failed},
+    )
+    return SiteSectionLinkRetryResponse(
+        total_links=len(link_ids),
+        queued=queued,
+        existing=existing,
+        failed=failed,
+        items=items,
+    )
+
+
 @router.get("/content-files", response_model=ContentFileListResponse)
 def list_content_files(
     request: Request,
@@ -614,38 +858,11 @@ def retry_content_file_parse(
             parse_status=file_record.parse_status,
         )
 
-    link = file_record.site_section_link
-    section = link.site_section if link else None
-    job = CrawlJob(
-        category=section.discovery_category if section else "announcement",
-        status="pending",
-        requested_at=utcnow(),
+    job, _status = _queue_file_parse_for_record(
+        db,
+        file_record=file_record,
         message=f"queued manual retry parse for content file {file_record.id}",
-        query={
-            "job_kind": "file_parse",
-            "content_file_id": file_record.id,
-            "site_section_id": section.id if section else None,
-            "site_section_link_id": link.id if link else None,
-            "source_url": file_record.file_url,
-            "title": link.title if link else None,
-            "school_name": section.school.name if section and section.school else None,
-            "department_name": section.department.name if section and section.department else None,
-            "section_type": section.section_type if section else None,
-        },
     )
-    db.add(job)
-    db.flush()
-
-    file_record.parse_status = "pending"
-    file_record.ocr_status = "not_started"
-    file_record.file_meta = {
-        **dict(file_record.file_meta or {}),
-        "retry_parse_job_id": job.id,
-        "retry_requested_at": utcnow().isoformat(),
-    }
-    if link is not None:
-        link.crawl_job_id = job.id
-        link.status = "file_recorded"
 
     db.commit()
     audit_event(db, request, "site_section.content_file.retry_parse", None, {"content_file_id": file_record.id, "job_id": job.id})
