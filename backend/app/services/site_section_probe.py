@@ -220,7 +220,9 @@ def _extract_page_title(document: html.HtmlElement | None, raw_html: str, provid
 def _visible_node_text(node: Any) -> str:
     if node is None or not hasattr(node, "itertext"):
         return ""
-    return _normalize_text(" ".join(str(part or "") for part in node.itertext()))
+    with suppress(Exception):
+        return _normalize_text(" ".join(str(part or "") for part in node.itertext()))
+    return ""
 
 
 def _collect_texts(nodes: list[Any], limit: int = 6) -> list[str]:

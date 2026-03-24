@@ -235,6 +235,64 @@ def test_bootstrap_site_sections_rejects_channel_prefix_pages_as_leaf_sections(m
     assert "https://yzb.jxau.edu.cn/info/1021/" not in urls
 
 
+def test_bootstrap_site_sections_handles_comment_nodes_before_list_content(monkeypatch):
+    pages = {
+        "https://yzb.jxau.edu.cn/": (
+            """
+            <html><body>
+              <a href="/sszs.htm">硕士招生</a>
+            </body></html>
+            """,
+            "江西农业大学研究生招生网",
+        ),
+        "https://yzb.jxau.edu.cn/sszs.htm": (
+            """
+            <html>
+              <body>
+                <div class="cbox-top">
+                  <div class="cbox-title"><span class="Column_Name">硕士招生</span></div>
+                </div>
+                <!-- cms comment before list -->
+                <div class="list-content">
+                  <ul class="wp_article_list">
+                    <li><a href="/info/1021/3561.htm">关于提供2026年硕士研究生入学考试初试成绩加分证明材料的通知</a></li>
+                    <li><a href="/info/1021/3541.htm">关于我校2026年全国硕士研究生招生入学考试成绩查询的通知</a></li>
+                  </ul>
+                </div>
+              </body>
+            </html>
+            """,
+            "硕士招生-研究生招生网",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    with SessionLocal() as db:
+        result = bootstrap_site_sections(
+            db,
+            school_name="江西农业大学",
+            homepage_url="https://yzb.jxau.edu.cn/",
+            department_name=None,
+            department_type="graduate_school",
+            seed_urls=["https://yzb.jxau.edu.cn/sszs.htm"],
+            enabled=True,
+            queue_discovery=False,
+            max_sections=8,
+            families={"notice", "admissions"},
+        )
+        urls = [item.section_url for item in result["items"]]
+
+    assert "https://yzb.jxau.edu.cn/sszs.htm" in urls
+
+
 def test_probe_section_page_keeps_general_admissions_scope_when_doctoral_articles_dominate():
     result = probe_section_page(
         "https://example.edu.cn/zhaosheng/dongtai/list.htm",
@@ -282,6 +340,35 @@ def test_probe_section_page_detects_doctoral_scope_from_stable_structure():
     leaf = next(candidate for candidate in result.candidates if candidate.role == "leaf")
     assert leaf.family == "admissions"
     assert leaf.audience_scope == "doctoral"
+
+
+def test_probe_section_page_ignores_comment_siblings_before_list_containers():
+    result = probe_section_page(
+        "https://yzb.jxau.edu.cn/sszs.htm",
+        raw_html="""
+        <html>
+          <head><title>硕士招生-研究生招生网</title></head>
+          <body>
+            <div class="cbox-top">
+              <div class="cbox-title"><span class="Column_Name">硕士招生</span></div>
+            </div>
+            <!-- comment node inserted by CMS before the list -->
+            <div class="list-content">
+              <ul class="wp_article_list">
+                <li><a href="/info/1021/3561.htm">关于提供2026年硕士研究生入学考试初试成绩加分证明材料的通知</a></li>
+                <li><a href="/info/1021/3541.htm">关于我校2026年全国硕士研究生招生入学考试成绩查询的通知</a></li>
+              </ul>
+            </div>
+          </body>
+        </html>
+        """,
+        page_title="硕士招生-研究生招生网",
+        allow_browser=False,
+    )
+
+    leaf = next(candidate for candidate in result.candidates if candidate.role == "leaf")
+    assert leaf.family == "admissions"
+    assert leaf.audience_scope in {"general", "masters"}
 
 
 def test_probe_section_page_discovers_iframe_leaf_candidates():
