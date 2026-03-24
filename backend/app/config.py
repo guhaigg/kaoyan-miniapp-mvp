@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     crawl_retry_attempts: int = 3
     crawl_retry_backoff_seconds: float = 0.1
     crawl_processing_timeout_seconds: int = 5 * 60
+    enable_site_section_browser_probe: bool = False
+    site_section_browser_probe_timeout_seconds: float = 8.0
     cors_allow_origins: str = ",".join(
         [
             "http://localhost:3000",

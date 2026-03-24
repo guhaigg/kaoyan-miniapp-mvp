@@ -39,6 +39,8 @@ Copy `backend/.env.example` to `backend/.env` and fill values:
 - `ADMIN_TOKEN`
 - `RATE_LIMIT_PER_MINUTE`
 - `CORS_ALLOW_ORIGINS`
+- `ENABLE_SITE_SECTION_BROWSER_PROBE` (optional, default `false`)
+- `SITE_SECTION_BROWSER_PROBE_TIMEOUT_SECONDS` (optional, default `8`)
 
 Security rule:
 
@@ -51,6 +53,19 @@ Recommended environment policy:
 - Local dev: `USE_MOCK_WECHAT=true`, `CORS_ALLOW_ORIGINS=*`
 - Shared test or staging: prefer real `WECHAT_APPID` and `WECHAT_SECRET`, set `USE_MOCK_WECHAT=false`, and restrict `CORS_ALLOW_ORIGINS`
 - Production: `USE_MOCK_WECHAT=false`, real WeChat credentials required, never use wildcard CORS
+
+Site-section browser probe note:
+
+- Browser probe is optional and defaults to disabled.
+- Installing the Python `playwright` package alone is not enough to execute browser probe.
+- If you enable `ENABLE_SITE_SECTION_BROWSER_PROBE=true` in production, install browser binaries on the host as well, for example:
+
+```bash
+cd /root/code/kaoyan-miniapp-mvp/backend
+./.venv/bin/python -m playwright install chromium
+```
+
+- If browser binaries are missing, the backend should log a warning and fall back to static/iframe/script-based probe instead of failing the request.
 
 Database note:
 

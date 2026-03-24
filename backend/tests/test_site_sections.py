@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 
+from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Content, ContentFile, CrawlError, CrawlJob, School, SiteSection, SiteSectionLink, Source
 from app.services.crawler import crawl_engine
 from app.services.site_section_bootstrap import bootstrap_site_sections
+from app.services.site_section_probe import probe_section_page
 
 
 def _admin_headers() -> dict[str, str]:
@@ -71,6 +73,18 @@ def test_bootstrap_site_sections_accepts_sibling_subdomain_and_skips_detail_page
             """,
             "研究生院",
         ),
+        "https://yjs.example.edu.cn/17205/list.htm": (
+            """
+            <html><body>
+              <h2>博士研究生招生信息</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/ea/79/c17243a846457/page.htm">【博士招生】资格审核结果查询</a></td></tr>
+                <tr><td><a href="/eb/aa/c17243a846762/page.htm">【博士招生】综合考核考生须知</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "博士研究生招生信息",
+        ),
     }
 
     def _fake_fetch_html(url: str):
@@ -97,6 +111,302 @@ def test_bootstrap_site_sections_accepts_sibling_subdomain_and_skips_detail_page
         urls = [item.section_url for item in result["items"]]
     assert "https://yjs.example.edu.cn/17205/list.htm" in urls
     assert "https://yjs.example.edu.cn/ea/79/c17243a846457/page.htm" not in urls
+
+
+def test_bootstrap_site_sections_persists_only_leaf_container_from_hybrid_page(monkeypatch):
+    pages = {
+        "https://hybrid.example.edu.cn/yjs/": (
+            """
+            <html>
+              <body>
+                <div class="quick-link">
+                  <a href="/yjs/zsjz/list.htm">招生简章</a>
+                  <a href="/yjs/tzgg/list.htm">通知公告</a>
+                </div>
+                <section>
+                  <h2>调剂公告</h2>
+                  <ul class="news-list">
+                    <li><a href="/yjs/info/2026/tj-1.htm">2026年计算机学院调剂公告</a></li>
+                    <li><a href="/yjs/info/2026/tj-2.htm">2026年材料学院调剂公告</a></li>
+                  </ul>
+                </section>
+              </body>
+            </html>
+            """,
+            "研究生招生",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    with SessionLocal() as db:
+        result = bootstrap_site_sections(
+            db,
+            school_name="混合大学",
+            homepage_url="https://hybrid.example.edu.cn/yjs/",
+            department_name=None,
+            department_type="graduate_school",
+            seed_urls=[],
+            enabled=True,
+            queue_discovery=False,
+            max_sections=8,
+        )
+
+    assert result["created_sections"] == 1
+    section = result["items"][0]
+    assert section.section_url == "https://hybrid.example.edu.cn/yjs/"
+    assert section.section_type == "adjustment"
+    assert section.list_selector_config["probe_role"] == "leaf"
+    assert section.list_selector_config["container_signature"]
+    assert section.list_selector_config["probe_family"] == "adjustment"
+
+
+def test_probe_section_page_keeps_general_admissions_scope_when_doctoral_articles_dominate():
+    result = probe_section_page(
+        "https://example.edu.cn/zhaosheng/dongtai/list.htm",
+        raw_html="""
+        <html>
+          <head><title>招生动态</title></head>
+          <body>
+            <div class="breadcrumb">当前位置：研究生招生 / 招生动态</div>
+            <ul class="news-list">
+              <li><a href="/zhaosheng/dongtai/2026/1.htm">【博士招生】2026年博士研究生综合考核通知</a></li>
+              <li><a href="/zhaosheng/dongtai/2026/2.htm">【博士招生】2026年博士研究生资格审核结果</a></li>
+            </ul>
+          </body>
+        </html>
+        """,
+        page_title="招生动态",
+        allow_browser=False,
+    )
+
+    leaf = next(candidate for candidate in result.candidates if candidate.role == "leaf")
+    assert leaf.family == "admissions"
+    assert leaf.audience_scope == "general"
+
+
+def test_probe_section_page_detects_doctoral_scope_from_stable_structure():
+    result = probe_section_page(
+        "https://example.edu.cn/17205/list.htm",
+        raw_html="""
+        <html>
+          <head><title>博士研究生招生信息</title></head>
+          <body>
+            <div class="breadcrumb">当前位置：研究生招生 / 博士研究生招生信息</div>
+            <h2>博士研究生招生信息</h2>
+            <table class="ArticleList">
+              <tr><td><a href="/ea/79/c17205a846457/page.htm">2026年博士研究生报考资格审核结果查询</a></td></tr>
+              <tr><td><a href="/eb/aa/c17205a846762/page.htm">2026年博士研究生综合考核考生须知</a></td></tr>
+            </table>
+          </body>
+        </html>
+        """,
+        page_title="博士研究生招生信息",
+        allow_browser=False,
+    )
+
+    leaf = next(candidate for candidate in result.candidates if candidate.role == "leaf")
+    assert leaf.family == "admissions"
+    assert leaf.audience_scope == "doctoral"
+
+
+def test_probe_section_page_discovers_iframe_leaf_candidates():
+    pages = {
+        "https://example.edu.cn/portal/": (
+            """
+            <html>
+              <body>
+                <iframe src="/frames/adjustment/list.htm"></iframe>
+              </body>
+            </html>
+            """,
+            "研究生院",
+        ),
+        "https://example.edu.cn/frames/adjustment/list.htm": (
+            """
+            <html>
+              <body>
+                <h2>调剂公告</h2>
+                <ul class="news-list">
+                  <li><a href="/frames/adjustment/2026/1.htm">2026年调剂公告（一）</a></li>
+                  <li><a href="/frames/adjustment/2026/2.htm">2026年调剂公告（二）</a></li>
+                </ul>
+              </body>
+            </html>
+            """,
+            "调剂公告",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    result = probe_section_page(
+        "https://example.edu.cn/portal/",
+        raw_html=pages["https://example.edu.cn/portal/"][0],
+        page_title=pages["https://example.edu.cn/portal/"][1],
+        fetch_html=_fake_fetch_html,
+        family_filter={"adjustment"},
+        allow_browser=False,
+    )
+
+    leaf = next(candidate for candidate in result.candidates if candidate.role == "leaf")
+    assert leaf.page_url == "https://example.edu.cn/frames/adjustment/list.htm"
+    assert leaf.probe_source == "iframe"
+    assert leaf.family == "adjustment"
+
+
+def test_probe_section_page_skips_browser_probe_when_disabled(monkeypatch):
+    monkeypatch.setenv("ENABLE_SITE_SECTION_BROWSER_PROBE", "false")
+    get_settings.cache_clear()
+    try:
+        result = probe_section_page(
+            "https://example.edu.cn/csr/",
+            raw_html="""
+            <html>
+              <body>
+                <div id="app"></div>
+                <script>window.__NEXT_DATA__ = {"props": {}};</script>
+              </body>
+            </html>
+            """,
+            page_title="客户端渲染页面",
+            allow_browser=True,
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert result.candidates == []
+
+
+def test_preview_site_section_selectors_includes_container_candidates(client, monkeypatch):
+    create_resp = client.post(
+        "/api/v1/site-sections",
+        json={
+            "name": "调剂公告",
+            "section_type": "adjustment",
+            "section_url": "https://example.com/adjustment/",
+            "school_name": "混合大学",
+        },
+        headers=_admin_headers(),
+    )
+    assert create_resp.status_code == 200
+    section_id = create_resp.json()["id"]
+
+    monkeypatch.setattr(
+        "app.services.crawler._fetch_with_retry",
+        lambda *_args, **_kwargs: _DummyResponse(
+            """
+            <html>
+              <body>
+                <div class="quick-link">
+                  <a href="/adjustment/guide/list.htm">调剂工作</a>
+                  <a href="/adjustment/rules/list.htm">调剂说明</a>
+                </div>
+                <section>
+                  <h2>调剂公告</h2>
+                  <ul class="news-list">
+                    <li><a href="/adjustment/2026/1.htm">2026年调剂公告（一）</a></li>
+                    <li><a href="/adjustment/2026/2.htm">2026年调剂公告（二）</a></li>
+                  </ul>
+                </section>
+              </body>
+            </html>
+            """
+        ),
+    )
+
+    preview_resp = client.post(
+        f"/api/v1/site-sections/{section_id}/preview-selectors",
+        json={},
+        headers=_admin_headers(),
+    )
+    assert preview_resp.status_code == 200
+    payload = preview_resp.json()
+    roles = {item["role"] for item in payload["container_candidates"]}
+    assert roles == {"hub", "leaf"}
+
+
+def test_site_section_discovery_replays_container_links_before_fallback(client, monkeypatch):
+    create_resp = client.post(
+        "/api/v1/site-sections",
+        json={
+            "name": "通知公告",
+            "section_type": "notice",
+            "section_url": "https://example.com/notices/",
+            "school_name": "复用大学",
+            "list_selector_config": {
+                "container_signature": "stale-signature",
+                "container_selector": "div.old-list",
+                "container_xpath": "/html/body/div[99]",
+                "probe_family": "notice",
+                "probe_scope": "general",
+                "probe_role": "leaf",
+                "fallback_to_all_links": False,
+                "probe_sample_links": [
+                    {"url": "https://example.com/notices/old-1.htm", "text": "旧公告 1", "link_type": "html"},
+                    {"url": "https://example.com/notices/old-2.htm", "text": "旧公告 2", "link_type": "html"},
+                ],
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert create_resp.status_code == 200
+    section_id = create_resp.json()["id"]
+
+    monkeypatch.setattr(
+        "app.services.crawler._fetch_with_retry",
+        lambda *_args, **_kwargs: _DummyResponse(
+            """
+            <html>
+              <body>
+                <div class="menu">
+                  <a href="/notices/list.htm">通知公告</a>
+                  <a href="/admissions/list.htm">研究生招生</a>
+                </div>
+                <section>
+                  <h2>通知公告</h2>
+                  <ul class="news-list">
+                    <li><a href="/notices/2026/1.htm">关于复试安排的通知</a></li>
+                    <li><a href="/notices/2026/2.htm">关于调档函领取的通知</a></li>
+                  </ul>
+                </section>
+              </body>
+            </html>
+            """
+        ),
+    )
+
+    discover_resp = client.post(
+        "/api/v1/site-sections/discover",
+        json={"school_name": "复用大学"},
+        headers=_admin_headers(),
+    )
+    assert discover_resp.status_code == 200
+    assert crawl_engine.process_job_batch() == 1
+
+    with SessionLocal() as db:
+        links = (
+            db.query(SiteSectionLink)
+            .filter(SiteSectionLink.site_section_id == section_id)
+            .order_by(SiteSectionLink.link_url.asc())
+            .all()
+        )
+        assert [link.link_url for link in links] == [
+            "https://example.com/notices/2026/1.htm",
+            "https://example.com/notices/2026/2.htm",
+        ]
 
 
 def test_site_section_discovery_creates_html_jobs_and_pdf_records(client, monkeypatch):
@@ -747,16 +1057,49 @@ def test_site_section_bootstrap_discovers_sections_and_queues_jobs(client, monke
                 </body></html>
                 """
             )
+        if url == "https://lnnu.edu.cn/yjs/zs/":
+            return _DummyResponse(
+                """
+                <html><head><title>研究生招生</title></head><body>
+                  <ul class="news-list">
+                    <li><a href="/yjs/zs/2026/1.htm">辽宁师范大学2026年硕士研究生招生简章</a></li>
+                    <li><a href="/yjs/zs/2026/2.htm">辽宁师范大学2026年复试通知</a></li>
+                  </ul>
+                </body></html>
+                """
+            )
+        if url == "https://lnnu.edu.cn/yjs/tzgg/":
+            return _DummyResponse(
+                """
+                <html><head><title>通知公告</title></head><body>
+                  <ul class="news-list">
+                    <li><a href="/yjs/tzgg/2026/1.htm">关于复试资格审查的通知</a></li>
+                    <li><a href="/yjs/tzgg/2026/2.htm">关于调档函领取的通知</a></li>
+                  </ul>
+                </body></html>
+                """
+            )
+        if url == "https://lnnu.edu.cn/yjs/tj/":
+            return _DummyResponse(
+                """
+                <html><head><title>调剂信息</title></head><body>
+                  <ul class="news-list">
+                    <li><a href="/yjs/tj/2026/1.htm">2026年调剂公告（一）</a></li>
+                    <li><a href="/yjs/tj/2026/2.htm">2026年调剂公告（二）</a></li>
+                  </ul>
+                </body></html>
+                """
+            )
         if url in {
-            "https://lnnu.edu.cn/yjsy/",
-            "https://lnnu.edu.cn/yjsc/",
-            "https://lnnu.edu.cn/grs/",
-            "https://lnnu.edu.cn/graduate/",
-            "https://lnnu.edu.cn/yz/",
-            "https://lnnu.edu.cn/zs/",
-            "https://lnnu.edu.cn/news/",
-            "https://lnnu.edu.cn/info/",
-        }:
+                "https://lnnu.edu.cn/yjsy/",
+                "https://lnnu.edu.cn/yjsc/",
+                "https://lnnu.edu.cn/grs/",
+                "https://lnnu.edu.cn/graduate/",
+                "https://lnnu.edu.cn/yz/",
+                "https://lnnu.edu.cn/zs/",
+                "https://lnnu.edu.cn/news/",
+                "https://lnnu.edu.cn/info/",
+            }:
             return _DummyResponse("<html><body>empty</body></html>")
         raise RuntimeError(f"unexpected url: {url}")
 
@@ -826,6 +1169,17 @@ def test_site_section_bootstrap_uses_existing_source_when_homepage_is_missing(cl
                 """
                 <html><head><title>陌生大学研究生院</title></head><body>
                   <a href="/yz/notice/">通知公告</a>
+                </body></html>
+                """
+            )
+        if url == "https://strange.edu.cn/yz/notice/":
+            return _DummyResponse(
+                """
+                <html><head><title>通知公告</title></head><body>
+                  <ul class="news-list">
+                    <li><a href="/yz/notice/2026/1.htm">2026年复试安排通知</a></li>
+                    <li><a href="/yz/notice/2026/2.htm">2026年招生咨询安排</a></li>
+                  </ul>
                 </body></html>
                 """
             )

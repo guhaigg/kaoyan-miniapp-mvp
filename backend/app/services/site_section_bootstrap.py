@@ -8,12 +8,13 @@ from urllib.parse import urljoin, urlparse
 from sqlalchemy.orm import Session
 
 from ..models import CrawlJob, Department, School, Source, SiteSection, utcnow
-from .crawler import (
-    _extract_links,
-    _extract_title,
-    _fetch_with_retry,
-    build_site_section_detail_selector_config,
-    build_site_section_list_selector_config,
+from .crawler import _extract_links, _extract_title, _fetch_with_retry, build_site_section_detail_selector_config, build_site_section_list_selector_config
+from .site_section_probe import (
+    ContainerCandidate,
+    build_list_selector_overrides,
+    family_to_discovery_category,
+    family_to_section_type,
+    probe_section_page,
 )
 
 _COMMON_SEED_PATHS = [
@@ -48,26 +49,18 @@ _ENTRY_EXCLUDE_KEYWORDS = [
     "培训",
 ]
 
-_SECTION_RULES: list[tuple[str, str, list[str]]] = [
-    ("adjustment", "adjustment", ["调剂", "缺额", "意向采集"]),
-    ("admissions", "announcement", ["研究生招生", "招生信息", "招生工作", "招生简章", "复试", "录取", "推免"]),
-    ("notice", "announcement", ["通知公告", "公告通知", "通知", "公告"]),
-]
-_DETAIL_URL_PATTERNS = [
-    r"/page\.htm(?:l)?$",
-    r"/info/\d+/\d+\.htm(?:l)?$",
-    r"/c\d+[a-z]?\d+/page\.htm(?:l)?$",
-    r"/[a-z0-9_-]{0,12}\d{4,}\.htm(?:l)?$",
-]
+_KNOWN_FAMILIES = {"admissions", "adjustment", "notice"}
+_FAMILY_PRIORITY = {"adjustment": 30, "admissions": 20, "notice": 10}
 
 
 @dataclass(slots=True)
 class CandidateSection:
-    url: str
+    page_url: str
     name: str
     section_type: str
     discovery_category: str
     score: int
+    probe_candidate: ContainerCandidate
 
 
 def _normalize_url(url: str) -> str:
@@ -105,7 +98,15 @@ def looks_like_detail_page_url(url: str) -> bool:
     path = (urlparse(url).path or "").lower()
     if not path or path.endswith("/"):
         return False
-    return any(re.search(pattern, path) for pattern in _DETAIL_URL_PATTERNS)
+    return any(
+        re.search(pattern, path)
+        for pattern in [
+            r"/page\.htm(?:l)?$",
+            r"/info/\d+/\d+\.htm(?:l)?$",
+            r"/c\d+[a-z]?\d+/page\.htm(?:l)?$",
+            r"/[a-z0-9_-]{0,12}\d{4,}\.htm(?:l)?$",
+        ]
+    )
 
 
 def _normalize_label(text: str, fallback_url: str) -> str:
@@ -125,22 +126,6 @@ def _entry_score(text: str, absolute_url: str) -> int:
         if keyword.lower() in haystack:
             score += len(keyword)
     return score
-
-
-def _classify_section(text: str, absolute_url: str) -> tuple[str, str, int] | None:
-    haystack = f"{text} {absolute_url}".lower()
-    best: tuple[str, str, int] | None = None
-    for section_type, discovery_category, keywords in _SECTION_RULES:
-        score = 0
-        for keyword in keywords:
-            if keyword.lower() in haystack:
-                score += len(keyword)
-        if score <= 0:
-            continue
-        candidate = (section_type, discovery_category, score)
-        if best is None or candidate[2] > best[2]:
-            best = candidate
-    return best
 
 
 def _build_allowed_path_prefixes(section_url: str) -> list[str]:
@@ -267,47 +252,110 @@ def _discover_entry_pages(*, homepage_urls: list[str], max_extra_pages: int) -> 
     return [url for url, _score in sorted(scored.items(), key=lambda item: (-item[1], item[0]))[:max_extra_pages]]
 
 
-def _discover_candidate_sections(seed_url: str) -> list[CandidateSection]:
+def _candidate_score(candidate: ContainerCandidate) -> int:
+    score = _FAMILY_PRIORITY.get(candidate.family, 0)
+    score += max(1, int(candidate.detail_link_count or 0)) * 5
+    if candidate.audience_scope == "masters":
+        score += 6
+    elif candidate.audience_scope == "general":
+        score += 4
+    elif candidate.audience_scope == "unknown":
+        score += 2
+    return score
+
+
+def _build_candidate_section(candidate: ContainerCandidate, *, page_title: str | None) -> CandidateSection:
+    name = _normalize_label(candidate.heading_text or page_title or "", candidate.page_url)
+    return CandidateSection(
+        page_url=candidate.page_url,
+        name=name,
+        section_type=family_to_section_type(candidate.family),
+        discovery_category=family_to_discovery_category(candidate.family),
+        score=_candidate_score(candidate),
+        probe_candidate=candidate,
+    )
+
+
+def _normalize_families(families: set[str] | None) -> set[str] | None:
+    if not families:
+        return None
+    normalized = {str(family or "").strip() for family in families if str(family or "").strip() in _KNOWN_FAMILIES}
+    return normalized or None
+
+
+def _section_container_signature(section: SiteSection) -> str:
+    list_config = dict(section.list_selector_config or {})
+    return str(list_config.get("container_signature") or "").strip()
+
+
+def _find_existing_section(
+    db: Session,
+    *,
+    school: School,
+    department: Department | None,
+    candidate: CandidateSection,
+) -> SiteSection | None:
+    query = db.query(SiteSection).filter(
+        SiteSection.school_id == school.id,
+        SiteSection.section_url == candidate.page_url,
+        SiteSection.section_type == candidate.section_type,
+    )
+    if department is None:
+        query = query.filter(SiteSection.department_id.is_(None))
+    else:
+        query = query.filter(SiteSection.department_id == department.id)
+    rows = query.order_by(SiteSection.created_at.asc()).all()
+    if not rows:
+        return None
+
+    signature = candidate.probe_candidate.container_signature
+    for row in rows:
+        if _section_container_signature(row) == signature:
+            return row
+
+    legacy_rows = [row for row in rows if not _section_container_signature(row)]
+    if len(rows) == 1 and legacy_rows:
+        return legacy_rows[0]
+    return None
+
+
+def _build_list_config_for_candidate(section: SiteSection, candidate: CandidateSection) -> dict[str, Any]:
+    overrides = dict(section.list_selector_config or {})
+    overrides.update(build_list_selector_overrides(candidate.probe_candidate))
+    if not overrides.get("allowed_path_prefixes"):
+        overrides["allowed_path_prefixes"] = _build_allowed_path_prefixes(candidate.page_url)
+    return build_site_section_list_selector_config(section, overrides)
+
+
+def _probe_seed_page(seed_url: str, *, families: set[str] | None) -> tuple[list[CandidateSection], list[str]]:
     raw_html, page_title = _fetch_html(seed_url)
-    candidates: dict[str, CandidateSection] = {}
+    result = probe_section_page(
+        seed_url,
+        raw_html=raw_html,
+        page_title=page_title,
+        fetch_html=_fetch_html,
+        family_filter=families,
+        allow_browser=True,
+    )
 
-    page_match = _classify_section(page_title or "", seed_url)
-    if page_match is not None and not looks_like_detail_page_url(seed_url):
-        section_type, discovery_category, score = page_match
-        candidates[seed_url] = CandidateSection(
-            url=seed_url,
-            name=_normalize_label(page_title or "", seed_url),
-            section_type=section_type,
-            discovery_category=discovery_category,
-            score=score,
-        )
+    candidates: list[CandidateSection] = []
+    for item in result.candidates:
+        if item.role != "leaf":
+            continue
+        candidates.append(_build_candidate_section(item, page_title=page_title))
 
-    for item in _extract_links(raw_html):
-        href = str(item.get("href") or "").strip()
-        if not href or href.startswith("javascript:") or href.startswith("#"):
+    frontier_urls: list[str] = []
+    seen_frontier: set[str] = set()
+    for url in result.frontier_urls:
+        normalized = _normalize_url(url)
+        if not normalized or normalized in seen_frontier:
             continue
-        absolute_url = _normalize_url(urljoin(seed_url, href))
-        if not absolute_url or not _is_same_site(seed_url, absolute_url):
+        if not _is_same_site(seed_url, normalized) or looks_like_detail_page_url(normalized):
             continue
-        if looks_like_detail_page_url(absolute_url):
-            continue
-        text = str(item.get("text") or "").strip()
-        match = _classify_section(text, absolute_url)
-        if match is None:
-            continue
-        section_type, discovery_category, score = match
-        current = candidates.get(absolute_url)
-        if current is not None and current.score >= score:
-            continue
-        candidates[absolute_url] = CandidateSection(
-            url=absolute_url,
-            name=_normalize_label(text, absolute_url),
-            section_type=section_type,
-            discovery_category=discovery_category,
-            score=score,
-        )
+        seen_frontier.add(normalized)
+        frontier_urls.append(normalized)
 
-    return list(candidates.values())
+    return candidates, frontier_urls
 
 
 def bootstrap_site_sections(
@@ -322,6 +370,7 @@ def bootstrap_site_sections(
     queue_discovery: bool,
     max_sections: int,
     max_seed_pages: int = 10,
+    families: set[str] | None = None,
 ) -> dict[str, Any]:
     school = _resolve_school(db, school_name)
     department = _resolve_department(
@@ -349,6 +398,7 @@ def bootstrap_site_sections(
     if not homepage_urls:
         raise ValueError("homepage_url is required when the school has no existing source")
 
+    normalized_families = _normalize_families(families)
     source = _ensure_source(db, school=school, homepage_url=homepage_urls[0])
     seed_pool = _collect_seed_urls(
         homepage_urls=homepage_urls,
@@ -356,26 +406,43 @@ def bootstrap_site_sections(
         max_seed_pages=max_seed_pages,
     )
 
-    candidate_map: dict[str, CandidateSection] = {}
-    for seed_url in seed_pool:
+    candidate_map: dict[tuple[str, str, str], CandidateSection] = {}
+    queue = list(seed_pool)
+    seen_pages: set[str] = set()
+    max_probe_pages = max(max_seed_pages, len(seed_pool)) + max_sections
+    while queue and len(seen_pages) < max_probe_pages:
+        seed_url = _normalize_url(queue.pop(0))
+        if not seed_url or seed_url in seen_pages:
+            continue
+        seen_pages.add(seed_url)
         try:
-            items = _discover_candidate_sections(seed_url)
+            candidates, frontier_urls = _probe_seed_page(seed_url, families=normalized_families)
         except Exception:
             continue
-        for item in items:
-            current = candidate_map.get(item.url)
-            if current is not None and current.score >= item.score:
-                continue
-            candidate_map[item.url] = item
 
-    ranked_candidates = sorted(candidate_map.values(), key=lambda item: (-item.score, item.url))[:max_sections]
+        for candidate in candidates:
+            key = (
+                candidate.page_url,
+                candidate.section_type,
+                candidate.probe_candidate.container_signature,
+            )
+            current = candidate_map.get(key)
+            if current is None or candidate.score > current.score:
+                candidate_map[key] = candidate
+
+        for frontier_url in frontier_urls:
+            if frontier_url in seen_pages or frontier_url in queue:
+                continue
+            queue.insert(0, frontier_url)
+
+    ranked_candidates = sorted(candidate_map.values(), key=lambda item: (-item.score, item.page_url))[:max_sections]
     created_sections = 0
     existing_sections = 0
     job_ids: list[str] = []
     touched_sections: list[SiteSection] = []
 
     for candidate in ranked_candidates:
-        section = db.query(SiteSection).filter(SiteSection.section_url == candidate.url).one_or_none()
+        section = _find_existing_section(db, school=school, department=department, candidate=candidate)
         if section is None:
             section = SiteSection(
                 school_id=school.id,
@@ -383,21 +450,26 @@ def bootstrap_site_sections(
                 source_id=source.id,
                 name=candidate.name,
                 section_type=candidate.section_type,
-                section_url=candidate.url,
+                section_url=candidate.page_url,
                 discovery_category=candidate.discovery_category,
                 enabled=1 if enabled else 0,
                 list_selector_config={},
                 detail_selector_config={},
             )
-            list_config = build_site_section_list_selector_config(section, {"allowed_path_prefixes": _build_allowed_path_prefixes(candidate.url)})
-            detail_config = build_site_section_detail_selector_config(section, {})
-            section.list_selector_config = list_config
-            section.detail_selector_config = detail_config
+            section.list_selector_config = _build_list_config_for_candidate(section, candidate)
+            section.detail_selector_config = build_site_section_detail_selector_config(section, {})
             db.add(section)
             db.flush()
             created_sections += 1
         else:
             existing_sections += 1
+            section.name = section.name or candidate.name
+            section.source_id = section.source_id or source.id
+            section.discovery_category = candidate.discovery_category
+            section.enabled = 1 if enabled else section.enabled
+            section.list_selector_config = _build_list_config_for_candidate(section, candidate)
+            section.detail_selector_config = build_site_section_detail_selector_config(section, section.detail_selector_config or {})
+            db.flush()
 
         touched_sections.append(section)
         if queue_discovery and bool(section.enabled):
@@ -421,11 +493,21 @@ def bootstrap_site_sections(
             job_ids.append(job.id)
 
     db.commit()
+    candidate_urls: list[str] = []
+    seen_candidate_urls: set[str] = set()
+    for section in touched_sections:
+        url = _normalize_url(section.section_url)
+        if not url or url in seen_candidate_urls:
+            continue
+        seen_candidate_urls.add(url)
+        candidate_urls.append(url)
+
     return {
         "school": school,
         "homepage_url": homepage_urls[0],
         "seed_urls": seed_pool,
-        "candidate_count": len(ranked_candidates),
+        "candidate_count": len(candidate_map),
+        "candidate_urls": candidate_urls,
         "created_sections": created_sections,
         "existing_sections": existing_sections,
         "job_ids": job_ids,

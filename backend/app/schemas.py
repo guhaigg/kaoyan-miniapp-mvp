@@ -673,12 +673,28 @@ class SiteSectionSelectorPreviewLinkItem(BaseModel):
     link_type: Literal["html", "pdf"]
 
 
+class SiteSectionContainerCandidateItem(BaseModel):
+    page_url: str
+    family: Literal["admissions", "adjustment", "notice"]
+    audience_scope: Literal["general", "masters", "doctoral", "unknown"]
+    role: Literal["hub", "leaf"]
+    container_selector: str | None = None
+    container_xpath: str | None = None
+    container_signature: str
+    heading_text: str | None = None
+    detail_link_count: int
+    sample_links: list[SiteSectionSelectorPreviewLinkItem] = Field(default_factory=list)
+    probe_source: Literal["static", "browser", "iframe", "xhr"]
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
 class SiteSectionSelectorPreviewResponse(BaseModel):
     section_url: str
     suggested_list_selector_config: dict[str, Any]
     suggested_detail_selector_config: dict[str, Any]
     list_match_count: int
     list_preview_items: list[SiteSectionSelectorPreviewLinkItem]
+    container_candidates: list[SiteSectionContainerCandidateItem] = Field(default_factory=list)
     detail_preview_url: str | None
     detail_title: str | None
     detail_excerpt: str | None

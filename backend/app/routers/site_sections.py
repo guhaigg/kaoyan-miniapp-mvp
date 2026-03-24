@@ -15,6 +15,7 @@ from ..schemas import (
     SiteSectionBootstrapResponse,
     SiteSectionBackfillSelectorConfigRequest,
     SiteSectionBackfillSelectorConfigResponse,
+    SiteSectionContainerCandidateItem,
     SiteSectionCreateRequest,
     SiteSectionDiscoverRequest,
     SiteSectionDiscoverResponse,
@@ -33,6 +34,7 @@ from ..schemas import (
 from ..services import crawler as crawler_service
 from ..services.crawler import build_site_section_detail_selector_config, build_site_section_list_selector_config
 from ..services.site_section_bootstrap import bootstrap_site_sections as bootstrap_site_sections_service
+from ..services.site_section_probe import ContainerCandidate, build_list_selector_overrides, probe_section_page, resolve_candidate_links_for_section
 
 router = APIRouter(prefix="/site-sections", tags=["site-sections"])
 
@@ -185,6 +187,54 @@ def _to_content_file_item(file_record: ContentFile) -> ContentFileItem:
         file_meta=file_record.file_meta or {},
         created_at=file_record.created_at,
         updated_at=file_record.updated_at,
+    )
+
+
+def _section_family_filter(section: SiteSection) -> set[str] | None:
+    family = str(section.section_type or "").strip()
+    if family in {"admissions", "adjustment", "notice"}:
+        return {family}
+    return None
+
+
+def _fetch_section_html(url: str) -> tuple[str, str | None]:
+    response = crawler_service._fetch_with_retry(url)
+    raw_html = response.text or ""
+    return raw_html, crawler_service._extract_title(raw_html)
+
+
+def _select_leaf_candidate(section: SiteSection, candidates: list[ContainerCandidate]) -> ContainerCandidate | None:
+    family_filter = _section_family_filter(section)
+    for candidate in candidates:
+        if candidate.role != "leaf":
+            continue
+        if family_filter and candidate.family not in family_filter:
+            continue
+        return candidate
+    return None
+
+
+def _to_container_candidate_item(candidate: ContainerCandidate) -> SiteSectionContainerCandidateItem:
+    return SiteSectionContainerCandidateItem(
+        page_url=candidate.page_url,
+        family=candidate.family,
+        audience_scope=candidate.audience_scope,
+        role=candidate.role,
+        container_selector=candidate.container_selector,
+        container_xpath=candidate.container_xpath,
+        container_signature=candidate.container_signature,
+        heading_text=candidate.heading_text,
+        detail_link_count=candidate.detail_link_count,
+        sample_links=[
+            SiteSectionSelectorPreviewLinkItem(
+                url=item.url,
+                text=item.text,
+                link_type=item.link_type,
+            )
+            for item in candidate.same_container_links
+        ],
+        probe_source=candidate.probe_source,
+        evidence=dict(candidate.evidence),
     )
 
 
@@ -418,12 +468,26 @@ def backfill_site_section_selector_config(
     for section in sections:
         existing_list_config = section.list_selector_config or {}
         existing_detail_config = section.detail_selector_config or {}
-        if existing_list_config and existing_detail_config and not payload.overwrite_existing:
+        has_probe_metadata = bool(str(existing_list_config.get("container_signature") or "").strip())
+        if existing_list_config and existing_detail_config and has_probe_metadata and not payload.overwrite_existing:
             continue
-        next_list_config = build_site_section_list_selector_config(
-            section,
-            {} if payload.overwrite_existing else existing_list_config,
-        )
+        list_overrides = {} if payload.overwrite_existing else dict(existing_list_config)
+        section_url = str(section.section_url or "").strip()
+        if section_url:
+            try:
+                probe_result = probe_section_page(
+                    section_url,
+                    fetch_html=_fetch_section_html,
+                    family_filter=_section_family_filter(section),
+                    allow_browser=True,
+                )
+            except Exception:
+                probe_result = None
+            if probe_result is not None:
+                candidate = _select_leaf_candidate(section, probe_result.candidates)
+                if candidate is not None:
+                    list_overrides.update(build_list_selector_overrides(candidate))
+        next_list_config = build_site_section_list_selector_config(section, list_overrides)
         next_detail_config = build_site_section_detail_selector_config(
             section,
             {} if payload.overwrite_existing else existing_detail_config,
@@ -598,7 +662,31 @@ def preview_site_section_selectors(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"failed to fetch section page: {exc}") from exc
 
     raw_html = response.text or ""
-    discovered_links = crawler_service._extract_links_by_selector(raw_html, list_config)
+    probe_result = probe_section_page(
+        section_url,
+        raw_html=raw_html,
+        page_title=crawler_service._extract_title(raw_html),
+        fetch_html=_fetch_section_html,
+        family_filter=_section_family_filter(section),
+        allow_browser=True,
+    )
+    warnings.extend(probe_result.warnings)
+
+    replay_links: list[dict[str, str]] = []
+    if any(
+        str(list_config.get(key) or "").strip()
+        for key in ["container_signature", "container_selector", "container_xpath", "probe_family", "probe_scope"]
+    ):
+        replay_links = resolve_candidate_links_for_section(
+            section_url,
+            list_config,
+            raw_html=raw_html,
+            fetch_html=_fetch_section_html,
+            family_hint=str(list_config.get("probe_family") or section.section_type or "").strip() or None,
+            allow_browser=True,
+        )
+
+    discovered_links = replay_links or crawler_service._extract_links_by_selector(raw_html, list_config)
     used_fallback_links = False
     if not discovered_links and list_config.get("fallback_to_all_links"):
         discovered_links = crawler_service._extract_links(raw_html)
@@ -681,6 +769,7 @@ def preview_site_section_selectors(
         suggested_detail_selector_config=suggested_detail_config,
         list_match_count=len(preview_items),
         list_preview_items=preview_items,
+        container_candidates=[_to_container_candidate_item(candidate) for candidate in probe_result.candidates],
         detail_preview_url=detail_preview_url,
         detail_title=detail_title,
         detail_excerpt=detail_excerpt,

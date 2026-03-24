@@ -11,7 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models import CrawlJob, School, SiteSection, SiteSectionLink, utcnow
-from .crawler import _extract_title, _fetch_with_retry
+from .crawler import _extract_links, _extract_title, _fetch_with_retry
 from .site_section_bootstrap import bootstrap_site_sections
 
 _SEARCH_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
@@ -41,6 +41,8 @@ _DOC_SEED_FILES = (
     "adjustment_supplemental_priority_targets_2024_2025.json",
     "adjustment_expanded_priority_targets_2024_2026.json",
 )
+_DEPARTMENT_ENTRY_RE = re.compile(r"(学院|学部|系|研究院)")
+_KNOWN_FAMILIES = {"notice", "admissions", "adjustment"}
 _SEARCH_QUERIES = (
     "{school_name} 研究生院",
     "{school_name} 研究生招生",
@@ -302,6 +304,65 @@ def _find_pending_discovery_jobs(db: Session, school_name: str, section_ids: set
     return result
 
 
+def _section_probe_family(section: SiteSection) -> str:
+    config = dict(section.list_selector_config or {})
+    return str(config.get("probe_family") or section.section_type or "").strip()
+
+
+def _section_probe_scope(section: SiteSection) -> str:
+    config = dict(section.list_selector_config or {})
+    return str(config.get("probe_scope") or "").strip()
+
+
+def _section_probe_role(section: SiteSection) -> str:
+    config = dict(section.list_selector_config or {})
+    return str(config.get("probe_role") or "").strip()
+
+
+def _section_is_compatible_for_families(section: SiteSection, families: set[str]) -> bool:
+    family = _section_probe_family(section)
+    if family not in families:
+        return False
+
+    role = _section_probe_role(section)
+    if role and role != "leaf":
+        return False
+
+    if families == {"notice", "admissions"} and family == "admissions":
+        scope = _section_probe_scope(section)
+        if scope == "doctoral":
+            return False
+    return True
+
+
+def _discover_department_seed_urls(seed_urls: list[str], *, max_seed_pages: int = 8, max_results: int = 16) -> list[str]:
+    results: list[str] = []
+    seen_urls: set[str] = set()
+    for seed_url in seed_urls[:max_seed_pages]:
+        try:
+            response = _fetch_with_retry(seed_url)
+        except Exception:
+            continue
+        raw_html = response.text or ""
+        for item in _extract_links(raw_html):
+            href = str(item.get("href") or "").strip()
+            text = str(item.get("text") or "").strip()
+            if not href or not text or not _DEPARTMENT_ENTRY_RE.search(text):
+                continue
+            absolute_url = _normalize_url(urljoin(seed_url, href))
+            if not absolute_url or absolute_url in seen_urls:
+                continue
+            if _looks_like_detail_section_url(absolute_url):
+                continue
+            if _url_origin(seed_url) and not absolute_url.startswith(_url_origin(seed_url)) and _host_scope(urlparse(seed_url).netloc or "") != _host_scope(urlparse(absolute_url).netloc or ""):
+                continue
+            seen_urls.add(absolute_url)
+            results.append(absolute_url)
+            if len(results) >= max_results:
+                return results
+    return results
+
+
 def _queue_existing_section_jobs(db: Session, *, school_name: str, sections: list[SiteSection]) -> list[str]:
     if not sections:
         return []
@@ -345,9 +406,12 @@ def _queue_existing_section_jobs(db: Session, *, school_name: str, sections: lis
     return job_ids
 
 
-def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[str, Any] | None:
+def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[str]) -> dict[str, Any] | None:
     normalized_school_name = str(school_name or "").strip()
     if not normalized_school_name:
+        return None
+    normalized_families = {family for family in families if family in _KNOWN_FAMILIES}
+    if not normalized_families:
         return None
 
     school = db.query(School).filter(School.name == normalized_school_name).one_or_none()
@@ -360,7 +424,7 @@ def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[
             .all()
         )
 
-    reusable_sections = existing_sections
+    reusable_sections = [section for section in existing_sections if _section_is_compatible_for_families(section, normalized_families)]
     recovery_seed_urls: list[str] = []
     if existing_sections:
         link_counts = {
@@ -375,7 +439,8 @@ def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[
         reusable_sections = [
             section
             for section in existing_sections
-            if not (_looks_like_detail_section_url(section.section_url) and int(link_counts.get(section.id, 0) or 0) == 0)
+            if _section_is_compatible_for_families(section, normalized_families)
+            and not (_looks_like_detail_section_url(section.section_url) and int(link_counts.get(section.id, 0) or 0) == 0)
         ]
         if not reusable_sections:
             for section in existing_sections:
@@ -388,8 +453,8 @@ def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[
             return {
                 "state": "in_progress",
                 "school_name": normalized_school_name,
-                "message": f"已自动启动 {normalized_school_name} 的公告补抓，正在拉取官网栏目，请稍后自动刷新。",
-                "candidate_urls": [section.section_url for section in reusable_sections[:5]],
+                "message": f"已自动启动 {normalized_school_name} 的栏目补抓，正在拉取官网栏目，请稍后自动刷新。",
+                "candidate_urls": _dedupe_texts([section.section_url for section in reusable_sections[:5]]),
                 "job_ids": [job.id for job in pending_jobs],
             }
 
@@ -397,8 +462,8 @@ def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[
         return {
             "state": "queued",
             "school_name": normalized_school_name,
-            "message": f"已发现 {normalized_school_name} 的现有栏目资产，正在补抓最新公告，请稍后自动刷新。",
-            "candidate_urls": [section.section_url for section in reusable_sections[:5]],
+            "message": f"已发现 {normalized_school_name} 的现有栏目资产，正在补抓最新内容，请稍后自动刷新。",
+            "candidate_urls": _dedupe_texts([section.section_url for section in reusable_sections[:5]]),
             "job_ids": job_ids,
         }
 
@@ -408,11 +473,13 @@ def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[
     if recovery_seed_urls:
         seed_urls = _dedupe_texts([*seed_urls, *recovery_seed_urls])
     expanded_seed_urls = _expand_seed_urls(seed_urls)
+    if "adjustment" in normalized_families:
+        expanded_seed_urls = _dedupe_texts([*expanded_seed_urls, *_discover_department_seed_urls(expanded_seed_urls or seed_urls)])
     if not expanded_seed_urls:
         return {
             "state": "no_candidate",
             "school_name": normalized_school_name,
-            "message": f"系统还没定位到 {normalized_school_name} 的官网候选，当前无法自动补抓这所学校的公告。",
+            "message": f"系统还没定位到 {normalized_school_name} 的官网候选，当前无法自动补抓这所学校的栏目。",
             "candidate_urls": [],
             "job_ids": [],
         }
@@ -428,14 +495,23 @@ def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[
         enabled=True,
         queue_discovery=True,
         max_sections=8,
+        families=normalized_families,
     )
     job_ids = list(result.get("job_ids") or [])
     state = "queued" if job_ids else "in_progress"
-    message = f"已自动为 {normalized_school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓公告，请稍后自动刷新。"
+    message = f"已自动为 {normalized_school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓内容，请稍后自动刷新。"
     return {
         "state": state,
         "school_name": normalized_school_name,
         "message": message,
-        "candidate_urls": expanded_seed_urls[:5],
+        "candidate_urls": list(result.get("candidate_urls") or expanded_seed_urls[:5]),
         "job_ids": job_ids,
     }
+
+
+def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[str, Any] | None:
+    return ensure_family_search_bootstrap(db, school_name, {"notice", "admissions"})
+
+
+def ensure_adjustment_search_bootstrap(db: Session, school_name: str) -> dict[str, Any] | None:
+    return ensure_family_search_bootstrap(db, school_name, {"adjustment"})

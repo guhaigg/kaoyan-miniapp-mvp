@@ -36,7 +36,7 @@ from ..services.historical_intelligence import (
     normalize_school_name,
 )
 from ..services.content_repair import resolve_content_display_fields
-from ..services.school_cold_start import ensure_announcement_search_bootstrap
+from ..services.school_cold_start import ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap
 from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -906,7 +906,7 @@ def _to_response(
         source_breakdown=source_breakdown,
         last_updated_at=last_updated,
         refresh_job_id=refresh_job_id,
-        cold_start=cold_start,
+        cold_start=SearchColdStartMeta.model_validate(cold_start) if cold_start is not None else None,
     )
 
 
@@ -1575,6 +1575,8 @@ def _merge_adjustment_search_responses(
     payload: AdjustmentSearchRequest,
     refresh_job_id: str | None,
     responses: list[SearchResponse],
+    *,
+    cold_start: dict | SearchColdStartMeta | None = None,
 ) -> SearchResponse:
     def _has_reference_links(item: SearchItem) -> bool:
         reference_urls = item.school_intelligence.reference_urls if item.school_intelligence is not None else []
@@ -1649,6 +1651,7 @@ def _merge_adjustment_search_responses(
         source_breakdown=source_breakdown,
         last_updated_at=max(last_updated_candidates, default=None),
         refresh_job_id=refresh_job_id,
+        cold_start=SearchColdStartMeta.model_validate(cold_start) if cold_start is not None else None,
     )
 
 
@@ -1814,6 +1817,8 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
 
     request_id = str(uuid4())
     cached = search_response_cache.get("adjustment", payload, request_id=request_id)
+    if cached is not None and cached.total == 0 and str(payload.school_name or "").strip() and payload.page == 1:
+        cached = None
     if cached is not None:
         _audit_search_event(
             db,
@@ -1925,13 +1930,30 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
         authenticated=True,
         lightweight=broad_query_mode,
     )
+    cold_start = None
     response = _merge_adjustment_search_responses(
         request_id,
         payload,
         refresh_job_id,
         [content_response, opportunity_response],
     )
-    search_response_cache.set("adjustment", payload, response)
+    if response.total == 0 and payload.page == 1 and str(payload.school_name or "").strip():
+        requested_school_name = str(payload.school_name or "").strip()
+        try:
+            cold_start = ensure_adjustment_search_bootstrap(db, requested_school_name)
+        except Exception:
+            cold_start = {
+                "state": "no_candidate",
+                "school_name": requested_school_name,
+                "message": f"{requested_school_name} 的调剂冷启动暂时失败，请稍后重试。",
+                "candidate_urls": [],
+                "job_ids": [],
+            }
+        response = response.model_copy(
+            update={"cold_start": SearchColdStartMeta.model_validate(cold_start) if cold_start is not None else None}
+        )
+    if cold_start is None:
+        search_response_cache.set("adjustment", payload, response)
     _audit_search_event(
         db,
         request,

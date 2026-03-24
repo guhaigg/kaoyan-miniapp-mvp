@@ -25,6 +25,7 @@ from .content import upsert_content
 from .content_repair import extract_content_published_at_from_body
 from .content_summary import summarize_text
 from .nlp import extract_domain_tags
+from .site_section_probe import resolve_candidate_links_for_section
 
 with suppress(Exception):
     from pypdf import PdfReader
@@ -254,6 +255,22 @@ def _to_optional_string(value: Any) -> str | None:
     return text or None
 
 
+def _normalize_probe_sample_links(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    items: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or item.get("href") or "").strip()
+        text = str(item.get("text") or item.get("title") or "").strip()
+        if not url:
+            continue
+        link_type = str(item.get("link_type") or ("pdf" if url.lower().endswith(".pdf") else "html")).strip() or "html"
+        items.append({"url": url, "text": text, "link_type": link_type})
+    return items
+
+
 def _derive_auto_include_url_regexes(section_url: str) -> list[str]:
     path = (urlparse(section_url).path or "").strip().lower()
     match = re.search(r"/(?P<column_id>\d+)/list\d*\.htm(?:l)?$", path)
@@ -305,6 +322,16 @@ def build_site_section_list_selector_config(section: SiteSection, overrides: dic
         "xpath_selector": "",
         "link_attribute": "href",
         "fallback_to_all_links": True,
+        "container_selector": "",
+        "container_xpath": "",
+        "container_signature": "",
+        "probe_family": "",
+        "probe_scope": "",
+        "probe_role": "",
+        "probe_source": "",
+        "probe_heading": "",
+        "probe_evidence": {},
+        "probe_sample_links": [],
     }
 
     raw_config = overrides if overrides is not None else (section.list_selector_config or {})
@@ -335,6 +362,19 @@ def build_site_section_list_selector_config(section: SiteSection, overrides: dic
         if key in raw_config:
             config[key] = _to_optional_string(raw_config.get(key)) or ""
 
+    for key in [
+        "container_selector",
+        "container_xpath",
+        "container_signature",
+        "probe_family",
+        "probe_scope",
+        "probe_role",
+        "probe_source",
+        "probe_heading",
+    ]:
+        if key in raw_config:
+            config[key] = _to_optional_string(raw_config.get(key)) or ""
+
     if "same_host_only" in raw_config:
         config["same_host_only"] = bool(raw_config.get("same_host_only"))
     if "min_text_length" in raw_config:
@@ -344,6 +384,10 @@ def build_site_section_list_selector_config(section: SiteSection, overrides: dic
             pass
     if "fallback_to_all_links" in raw_config:
         config["fallback_to_all_links"] = bool(raw_config.get("fallback_to_all_links"))
+    if isinstance(raw_config.get("probe_evidence"), dict):
+        config["probe_evidence"] = dict(raw_config.get("probe_evidence") or {})
+    if "probe_sample_links" in raw_config:
+        config["probe_sample_links"] = _normalize_probe_sample_links(raw_config.get("probe_sample_links"))
 
     for pattern in _derive_auto_include_url_regexes(str(getattr(section, "section_url", "") or "")):
         if pattern not in config["include_url_regexes"]:
@@ -373,6 +417,16 @@ def build_site_section_detail_selector_config(section: SiteSection, overrides: d
     if "fallback_to_full_text" in raw_config:
         config["fallback_to_full_text"] = bool(raw_config.get("fallback_to_full_text"))
     return config
+
+
+def _selector_config_has_probe_replay(config: dict[str, Any]) -> bool:
+    return bool(
+        _to_optional_string(config.get("container_signature"))
+        or _to_optional_string(config.get("container_selector"))
+        or _to_optional_string(config.get("container_xpath"))
+        or _to_optional_string(config.get("probe_family"))
+        or _normalize_probe_sample_links(config.get("probe_sample_links"))
+    )
 
 
 def _matches_keyword_list(text: str, keywords: list[str]) -> bool:
@@ -925,7 +979,24 @@ class CrawlEngine:
         response = _fetch_with_retry(section_url)
         raw_html = response.text or ""
         selector_config = build_site_section_list_selector_config(section)
-        discovered_links = _extract_links_by_selector(raw_html, selector_config)
+        discovered_links: list[dict[str, str]] = []
+        if _selector_config_has_probe_replay(selector_config):
+            def _fetch_probe_html(url: str) -> tuple[str, str | None]:
+                probe_response = _fetch_with_retry(url)
+                probe_html = probe_response.text or ""
+                return probe_html, _extract_title(probe_html)
+
+            discovered_links = resolve_candidate_links_for_section(
+                section_url,
+                selector_config,
+                raw_html=raw_html,
+                fetch_html=_fetch_probe_html,
+                family_hint=str(selector_config.get("probe_family") or section.section_type or "").strip() or None,
+                allow_browser=True,
+            )
+
+        if not discovered_links:
+            discovered_links = _extract_links_by_selector(raw_html, selector_config)
         if not discovered_links and selector_config.get("fallback_to_all_links"):
             discovered_links = _extract_links(raw_html)
         if not discovered_links:

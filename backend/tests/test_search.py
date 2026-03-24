@@ -6,7 +6,7 @@ from app.models import AdjustmentOpportunity, Content, ContentSnapshot, CrawlJob
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 from app.services.content_repair import extract_content_published_at_from_body, infer_non_detail_announcement_reason
-from app.services.school_cold_start import ensure_announcement_search_bootstrap
+from app.services.school_cold_start import ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap
 from app.routers.search import _build_adjustment_detail_from_opportunity
 from scripts.repair_stale_announcement_content import _repair_row_by_snapshot
 
@@ -2394,6 +2394,175 @@ def test_ensure_announcement_search_bootstrap_queues_existing_site_sections():
         assert job.query["school_name"] == "已建资产大学"
 
 
+def test_ensure_announcement_search_bootstrap_filters_doctoral_leaf_sections():
+    with SessionLocal() as db:
+        school = School(name="范围大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="范围大学官网",
+            source_type="official",
+            base_url="https://scope.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add_all(
+            [
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="通知公告",
+                    section_type="notice",
+                    section_url="https://scope.edu.cn/yjs/notices/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="硕士研究生招生信息",
+                    section_type="admissions",
+                    section_url="https://scope.edu.cn/yjs/masters/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "admissions", "probe_role": "leaf", "probe_scope": "masters"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="博士研究生招生信息",
+                    section_type="admissions",
+                    section_url="https://scope.edu.cn/yjs/doctoral/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "admissions", "probe_role": "leaf", "probe_scope": "doctoral"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+            ]
+        )
+        db.commit()
+
+        result = ensure_announcement_search_bootstrap(db, "范围大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"] == [
+        "https://scope.edu.cn/yjs/notices/",
+        "https://scope.edu.cn/yjs/masters/",
+    ]
+    with SessionLocal() as db:
+        jobs = db.query(CrawlJob).order_by(CrawlJob.requested_at.asc()).all()
+        queued_urls = [job.query["source_url"] for job in jobs]
+    assert queued_urls == [
+        "https://scope.edu.cn/yjs/notices/",
+        "https://scope.edu.cn/yjs/masters/",
+    ]
+
+
+def test_ensure_adjustment_search_bootstrap_queues_existing_adjustment_sections():
+    with SessionLocal() as db:
+        school = School(name="调剂大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="调剂大学官网",
+            source_type="official",
+            base_url="https://adjust.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add_all(
+            [
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="调剂公告",
+                    section_type="adjustment",
+                    section_url="https://adjust.edu.cn/cs/tiaoji/",
+                    discovery_category="adjustment",
+                    list_selector_config={"probe_family": "adjustment", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="通知公告",
+                    section_type="notice",
+                    section_url="https://adjust.edu.cn/yjs/notices/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+            ]
+        )
+        db.commit()
+
+        result = ensure_adjustment_search_bootstrap(db, "调剂大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"] == ["https://adjust.edu.cn/cs/tiaoji/"]
+    with SessionLocal() as db:
+        jobs = db.query(CrawlJob).all()
+        assert len(jobs) == 1
+        assert jobs[0].query["source_url"] == "https://adjust.edu.cn/cs/tiaoji/"
+
+
+def test_ensure_adjustment_search_bootstrap_expands_department_seed_urls(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_docs",
+        lambda school_name: ["https://seed.edu.cn/yjs/"],
+    )
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_search", lambda school_name: [])
+
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    def _fake_fetch(url: str):
+        if url in {"https://seed.edu.cn/yjs/", "https://seed.edu.cn"}:
+            return _DummyResponse(
+                """
+                <html>
+                  <body>
+                    <a href="https://seed.edu.cn/cs/">计算机学院</a>
+                    <a href="https://seed.edu.cn/materials/">材料学院</a>
+                  </body>
+                </html>
+                """
+            )
+        raise AssertionError(f"unexpected url: {url}")
+
+    def _fake_bootstrap_site_sections(db, **kwargs):
+        captured.update(kwargs)
+        return {"job_ids": ["job-1"], "candidate_urls": ["https://seed.edu.cn/cs/adjustment/"]}
+
+    monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
+    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
+
+    with SessionLocal() as db:
+        result = ensure_adjustment_search_bootstrap(db, "种子大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert "https://seed.edu.cn/cs/" in captured["seed_urls"]
+    assert "https://seed.edu.cn/materials/" in captured["seed_urls"]
+    assert captured["families"] == {"adjustment"}
+
+
 def test_ensure_announcement_search_bootstrap_rebuilds_when_existing_sections_are_detail_pages(monkeypatch):
     captured: dict[str, object] = {}
 
@@ -2533,6 +2702,32 @@ def test_ensure_announcement_search_bootstrap_accepts_matching_search_candidates
     assert result["state"] == "queued"
     assert captured["homepage_url"] == "https://lnnu.edu.cn/yjs/"
     assert captured["seed_urls"] == ["https://lnnu.edu.cn"]
+
+
+def test_search_adjustments_returns_cold_start_metadata_for_unknown_school(client, monkeypatch):
+    token = _register_and_login(client, "adjustment_cold_start_user")
+    monkeypatch.setattr(
+        "app.routers.search.ensure_adjustment_search_bootstrap",
+        lambda db, school_name: {
+            "school_name": school_name,
+            "state": "queued",
+            "message": f"已自动启动 {school_name} 的调剂补抓。",
+            "candidate_urls": ["https://unknown.edu.cn/cs/tiaoji/"],
+            "job_ids": ["job-adjust-1"],
+        },
+    )
+
+    response = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "陌生大学"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["cold_start"]["state"] == "queued"
+    assert payload["cold_start"]["candidate_urls"] == ["https://unknown.edu.cn/cs/tiaoji/"]
 
 
 def test_search_announcements_excludes_non_detail_and_test_rows(client):
