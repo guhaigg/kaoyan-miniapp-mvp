@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
@@ -6,7 +6,8 @@ from app.models import AdjustmentOpportunity, Content, ContentSnapshot, CrawlJob
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 from app.services.content_repair import extract_content_published_at_from_body, infer_non_detail_announcement_reason
-from app.services.school_cold_start import ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap
+from app.services.crawler import crawl_engine
+from app.services.school_cold_start import ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap, run_family_discovery_job
 from app.routers.search import _build_adjustment_detail_from_opportunity
 from scripts.repair_stale_announcement_content import _repair_row_by_snapshot
 
@@ -2689,45 +2690,26 @@ def test_ensure_announcement_search_bootstrap_excludes_department_sections_from_
     assert result["candidate_urls"] == ["https://scope.edu.cn/yjs/notices/"]
 
 
-def test_ensure_announcement_search_bootstrap_uses_shnu_canonical_override(monkeypatch):
-    captured: dict[str, object] = {}
-
-    monkeypatch.setattr(
-        "app.services.school_cold_start._discover_seed_urls_from_docs",
-        lambda school_name: ["http://web.shnu.edu.cn/yjspyzx/19513/list.htm"],
-    )
-    monkeypatch.setattr(
-        "app.services.school_cold_start._discover_seed_urls_from_search",
-        lambda school_name: ["http://web.shnu.edu.cn/yjspyzx/19513/list.htm"],
-    )
-
-    def _fake_bootstrap_site_sections(db, **kwargs):
-        captured.update(kwargs)
-        return {
-            "job_ids": ["job-1"],
-            "candidate_urls": [
-                "http://web.shnu.edu.cn/yjspyzx/19513/list.htm",
-                "https://yjsc.shnu.edu.cn/17206/list.htm",
-            ],
-        }
-
-    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
-
+def test_ensure_announcement_search_bootstrap_queues_family_discovery_with_shnu_canonical_candidates():
     with SessionLocal() as db:
         result = ensure_announcement_search_bootstrap(db, "上海师范大学")
 
     assert result is not None
     assert result["state"] == "queued"
-    assert captured["homepage_url"] == "https://yjsc.shnu.edu.cn/"
-    assert "https://yjsc.shnu.edu.cn/17204/" in captured["seed_urls"]
-    assert "https://yjsc.shnu.edu.cn/17206/list.htm" in captured["seed_urls"]
-    assert all("web.shnu.edu.cn/yjspyzx" not in url for url in captured["seed_urls"])
-    assert result["candidate_urls"] == ["https://yjsc.shnu.edu.cn/17206/list.htm"]
+    assert "https://yjsc.shnu.edu.cn/17204/list.htm" in result["candidate_urls"]
+    assert "https://yjsc.shnu.edu.cn/17206/list.htm" in result["candidate_urls"]
+    assert all("web.shnu.edu.cn/yjspyzx" not in url for url in result["candidate_urls"])
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
+        assert job.query["job_kind"] == "family_discovery"
+        assert job.query["school_name"] == "上海师范大学"
+        assert job.query["families"] == ["admissions", "notice"]
+        assert all("web.shnu.edu.cn/yjspyzx" not in url for url in job.query["candidate_urls"])
 
 
-def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_sections(monkeypatch):
-    captured: dict[str, object] = {}
-
+def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_sections():
+    
     with SessionLocal() as db:
         school = School(name="上海师范大学", aliases=[])
         db.add(school)
@@ -2757,19 +2739,18 @@ def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_section
         )
         db.commit()
 
-    def _fake_bootstrap_site_sections(db, **kwargs):
-        captured.update(kwargs)
-        return {"job_ids": ["job-1"], "candidate_urls": ["https://yjsc.shnu.edu.cn/17206/list.htm"]}
-
-    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
-
     with SessionLocal() as db:
         result = ensure_announcement_search_bootstrap(db, "上海师范大学")
 
     assert result is not None
     assert result["state"] == "queued"
-    assert captured["homepage_url"] == "https://yjsc.shnu.edu.cn/"
-    assert result["candidate_urls"] == ["https://yjsc.shnu.edu.cn/17206/list.htm"]
+    assert "https://yjsc.shnu.edu.cn/17206/list.htm" in result["candidate_urls"]
+    assert all("web.shnu.edu.cn/yjspyzx" not in url for url in result["candidate_urls"])
+
+    with SessionLocal() as db:
+        jobs = db.query(CrawlJob).all()
+        assert len(jobs) == 1
+        assert jobs[0].query["job_kind"] == "family_discovery"
 
 
 def test_ensure_adjustment_search_bootstrap_queues_existing_adjustment_sections():
@@ -2826,7 +2807,63 @@ def test_ensure_adjustment_search_bootstrap_queues_existing_adjustment_sections(
         assert jobs[0].query["source_url"] == "https://adjust.edu.cn/cs/tiaoji/"
 
 
-def test_ensure_adjustment_search_bootstrap_expands_department_seed_urls(monkeypatch):
+def test_ensure_adjustment_search_bootstrap_reuses_active_family_discovery_job():
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="adjustment",
+            status="pending",
+            message="queued family discovery",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "调剂未知大学",
+                "families": ["adjustment"],
+                "candidate_urls": ["https://adjust.edu.cn/cs/tiaoji/"],
+            },
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    with SessionLocal() as db:
+        result = ensure_adjustment_search_bootstrap(db, "调剂未知大学")
+
+    assert result is not None
+    assert result["state"] == "in_progress"
+    assert result["job_ids"] == [job_id]
+    assert result["candidate_urls"] == ["https://adjust.edu.cn/cs/tiaoji/"]
+
+
+def test_ensure_announcement_search_bootstrap_uses_recent_no_candidate_cooldown():
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="done",
+            message="family discovery finished",
+            finished_at=datetime.now(timezone.utc),
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "冷却大学",
+                "families": ["admissions", "notice"],
+                "result_state": "no_candidate",
+                "result_candidate_urls": ["https://cooldown.edu.cn/yjs/"],
+            },
+        )
+        db.add(job)
+        db.commit()
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "冷却大学")
+
+    assert result is not None
+    assert result["state"] == "no_candidate"
+    assert result["candidate_urls"] == ["https://cooldown.edu.cn/yjs/"]
+
+    with SessionLocal() as db:
+        jobs = db.query(CrawlJob).all()
+        assert len(jobs) == 1
+
+
+def test_run_family_discovery_job_expands_adjustment_department_seed_urls(monkeypatch):
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
@@ -2861,17 +2898,38 @@ def test_ensure_adjustment_search_bootstrap_expands_department_seed_urls(monkeyp
     monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
 
     with SessionLocal() as db:
-        result = ensure_adjustment_search_bootstrap(db, "种子大学")
+        job = CrawlJob(
+            category="adjustment",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "种子大学",
+                "families": ["adjustment"],
+                "bootstrap_origin": "adjustment_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
 
-    assert result is not None
-    assert result["state"] == "queued"
     assert "https://seed.edu.cn/cs/" in captured["seed_urls"]
     assert "https://seed.edu.cn/materials/" in captured["seed_urls"]
     assert captured["families"] == {"adjustment"}
+    assert "陌生院校冷启动" in message
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "queued"
+        assert job.query["result_candidate_urls"] == ["https://seed.edu.cn/cs/adjustment/"]
 
 
-def test_ensure_announcement_search_bootstrap_rebuilds_when_existing_sections_are_detail_pages(monkeypatch):
+def test_run_family_discovery_job_rebuilds_when_existing_sections_are_detail_pages(monkeypatch):
     captured: dict[str, object] = {}
+
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
 
     with SessionLocal() as db:
         school = School(name="坏资产大学", aliases=[])
@@ -2910,6 +2968,10 @@ def test_ensure_announcement_search_bootstrap_rebuilds_when_existing_sections_ar
         "app.services.school_cold_start._discover_seed_urls_from_search",
         lambda school_name: ["https://yjsc.bad.edu.cn/17205/list.htm"],
     )
+    monkeypatch.setattr(
+        "app.services.school_cold_start._fetch_with_retry",
+        lambda url: _DummyResponse("<html><head><title>坏资产大学研究生院</title></head><body>坏资产大学</body></html>"),
+    )
 
     def _fake_bootstrap_site_sections(db, **kwargs):
         captured.update(kwargs)
@@ -2918,23 +2980,46 @@ def test_ensure_announcement_search_bootstrap_rebuilds_when_existing_sections_ar
     monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
 
     with SessionLocal() as db:
-        result = ensure_announcement_search_bootstrap(db, "坏资产大学")
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "坏资产大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, _message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
 
-    assert result is not None
-    assert result["state"] == "queued"
     assert captured["homepage_url"] == "https://yjsc.bad.edu.cn/17205/list.htm"
     assert "https://web.bad.edu.cn/yjspyzx/main.htm" in captured["seed_urls"]
     assert "https://yjsc.bad.edu.cn/17205/" in captured["seed_urls"]
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "queued"
 
 
-def test_ensure_announcement_search_bootstrap_uses_list_seed_as_homepage(monkeypatch):
+def test_run_family_discovery_job_uses_list_seed_as_homepage(monkeypatch):
     captured: dict[str, object] = {}
+
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
 
     monkeypatch.setattr(
         "app.services.school_cold_start._discover_seed_urls_from_docs",
         lambda school_name: ["https://lnnu.edu.cn/yjs/tzgg/list.htm"],
     )
     monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_search", lambda school_name: [])
+    monkeypatch.setattr(
+        "app.services.school_cold_start._fetch_with_retry",
+        lambda url: _DummyResponse("<html><head><title>辽宁师范大学研究生院</title></head><body>辽宁师范大学 通知公告</body></html>"),
+    )
 
     def _fake_bootstrap_site_sections(db, **kwargs):
         captured.update(kwargs)
@@ -2943,18 +3028,33 @@ def test_ensure_announcement_search_bootstrap_uses_list_seed_as_homepage(monkeyp
     monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
 
     with SessionLocal() as db:
-        result = ensure_announcement_search_bootstrap(db, "辽宁师范大学")
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "辽宁师范大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, _message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
 
-    assert result is not None
-    assert result["state"] == "queued"
     assert captured["homepage_url"] == "https://lnnu.edu.cn/yjs/tzgg/list.htm"
     assert captured["seed_urls"] == [
         "https://lnnu.edu.cn/yjs/tzgg/",
         "https://lnnu.edu.cn",
     ]
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "queued"
 
 
-def test_ensure_announcement_search_bootstrap_rejects_unmatched_search_candidates(monkeypatch):
+def test_run_family_discovery_job_rejects_unmatched_search_candidates(monkeypatch):
     class _DummyResponse:
         def __init__(self, text: str):
             self.text = text
@@ -2971,15 +3071,29 @@ def test_ensure_announcement_search_bootstrap_rejects_unmatched_search_candidate
     monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
 
     with SessionLocal() as db:
-        result = ensure_announcement_search_bootstrap(db, "从未收录测试大学")
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "从未收录测试大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, _message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
 
-    assert result is not None
-    assert result["state"] == "no_candidate"
-    assert result["candidate_urls"] == []
-    assert result["job_ids"] == []
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "no_candidate"
+        assert job.query["result_candidate_urls"] == []
 
 
-def test_ensure_announcement_search_bootstrap_accepts_matching_search_candidates(monkeypatch):
+def test_run_family_discovery_job_accepts_matching_search_candidates(monkeypatch):
     class _DummyResponse:
         def __init__(self, text: str):
             self.text = text
@@ -3003,12 +3117,136 @@ def test_ensure_announcement_search_bootstrap_accepts_matching_search_candidates
     monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
 
     with SessionLocal() as db:
-        result = ensure_announcement_search_bootstrap(db, "辽宁师范大学")
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "辽宁师范大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, _message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
 
-    assert result is not None
-    assert result["state"] == "queued"
     assert captured["homepage_url"] == "https://lnnu.edu.cn/yjs/"
     assert captured["seed_urls"] == ["https://lnnu.edu.cn"]
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "queued"
+
+
+def test_run_family_discovery_job_prefers_jxau_navigation_seeds(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    pages = {
+        "https://yzb.jxau.edu.cn/": _DummyResponse(
+            """
+            <html>
+              <head><title>江西农业大学研究生招生网</title></head>
+              <body>
+                <a href="/sszs.htm">硕士招生</a>
+                <a href="/bszs.htm">博士招生</a>
+                <a href="/zsjz/sszsjz.htm">招生简章</a>
+                <a href="/info/1021/">通知公告频道</a>
+              </body>
+            </html>
+            """
+        ),
+        "https://yzb.jxau.edu.cn/sszs.htm": _DummyResponse("<html><head><title>江西农业大学 硕士招生</title></head></html>"),
+        "https://yzb.jxau.edu.cn/bszs.htm": _DummyResponse("<html><head><title>江西农业大学 博士招生</title></head></html>"),
+        "https://yzb.jxau.edu.cn/zsjz/sszsjz.htm": _DummyResponse("<html><head><title>江西农业大学 硕士招生简章</title></head></html>"),
+        "https://yzb.jxau.edu.cn/zsjz/bszsjz.htm": _DummyResponse("<html><head><title>江西农业大学 博士招生简章</title></head></html>"),
+    }
+
+    def _fake_fetch(url: str):
+        normalized = url.rstrip("/")
+        for candidate, response in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return response
+        raise AssertionError(f"unexpected url: {url}")
+
+    def _fake_bootstrap_site_sections(db, **kwargs):
+        captured.update(kwargs)
+        return {"job_ids": ["job-1"], "candidate_urls": ["https://yzb.jxau.edu.cn/sszs.htm"]}
+
+    monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
+    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
+
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "江西农业大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, _message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
+
+    assert captured["homepage_url"] == "https://yzb.jxau.edu.cn/"
+    assert "https://yzb.jxau.edu.cn/sszs.htm" in captured["seed_urls"]
+    assert "https://yzb.jxau.edu.cn/bszs.htm" in captured["seed_urls"]
+    assert "https://yzb.jxau.edu.cn/zsjz/sszsjz.htm" in captured["seed_urls"]
+    assert all("/info/1021/" not in url for url in captured["seed_urls"])
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_candidate_urls"] == ["https://yzb.jxau.edu.cn/sszs.htm"]
+
+
+def test_family_discovery_job_runs_in_worker_and_persists_results(monkeypatch):
+    def _fake_run_family_discovery_job(db, job, query):
+        job.query = {
+            **dict(job.query or {}),
+            "result_state": "queued",
+            "result_candidate_urls": ["https://yzb.jxau.edu.cn/sszs.htm"],
+            "result_job_ids": ["child-job-1"],
+        }
+        return None, "family discovery finished"
+
+    monkeypatch.setattr("app.services.school_cold_start.run_family_discovery_job", _fake_run_family_discovery_job)
+
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "江西农业大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        _content_id, message = crawl_engine._process_single_job(db, job)
+        job.status = "done"
+        job.message = message
+        db.commit()
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.status == "done"
+        assert job.query["result_state"] == "queued"
+        assert job.query["result_candidate_urls"] == ["https://yzb.jxau.edu.cn/sszs.htm"]
 
 
 def test_search_adjustments_returns_cold_start_metadata_for_unknown_school(client, monkeypatch):

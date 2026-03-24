@@ -168,6 +168,73 @@ def test_bootstrap_site_sections_persists_only_leaf_container_from_hybrid_page(m
     assert section.list_selector_config["probe_family"] == "adjustment"
 
 
+def test_bootstrap_site_sections_rejects_channel_prefix_pages_as_leaf_sections(monkeypatch):
+    pages = {
+        "https://yzb.jxau.edu.cn/": (
+            """
+            <html><body>
+              <a href="/sszs.htm">硕士招生</a>
+              <a href="/info/1021/">通知公告频道</a>
+            </body></html>
+            """,
+            "江西农业大学研究生招生网",
+        ),
+        "https://yzb.jxau.edu.cn/sszs.htm": (
+            """
+            <html><body>
+              <h2>硕士研究生招生信息</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1001/2001.htm">江西农业大学2026年硕士招生简章</a></td></tr>
+                <tr><td><a href="/info/1001/2002.htm">江西农业大学2026年硕士研究生复试通知</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "硕士研究生招生信息-江西农业大学研究生招生网",
+        ),
+        "https://yzb.jxau.edu.cn/info/1021/": (
+            """
+            <html><body>
+              <h2>通知公告</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1021/3001.htm">关于复试工作的公告</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "通知公告-江西农业大学研究生招生网",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    with SessionLocal() as db:
+        result = bootstrap_site_sections(
+            db,
+            school_name="江西农业大学",
+            homepage_url="https://yzb.jxau.edu.cn/",
+            department_name=None,
+            department_type="graduate_school",
+            seed_urls=[
+                "https://yzb.jxau.edu.cn/sszs.htm",
+                "https://yzb.jxau.edu.cn/info/1021/",
+            ],
+            enabled=True,
+            queue_discovery=False,
+            max_sections=8,
+            families={"notice", "admissions"},
+        )
+        urls = [item.section_url for item in result["items"]]
+
+    assert "https://yzb.jxau.edu.cn/sszs.htm" in urls
+    assert "https://yzb.jxau.edu.cn/info/1021/" not in urls
+
+
 def test_probe_section_page_keeps_general_admissions_scope_when_doctoral_articles_dominate():
     result = probe_section_page(
         "https://example.edu.cn/zhaosheng/dongtai/list.htm",

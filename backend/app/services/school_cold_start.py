@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..models import CrawlJob, School, SiteSection, SiteSectionLink, utcnow
 from .crawler import _extract_links, _extract_title, _fetch_with_retry
-from .site_section_bootstrap import bootstrap_site_sections
+from .site_section_bootstrap import _host_scope, bootstrap_site_sections
 
 _SEARCH_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -56,7 +57,31 @@ _DETAIL_SECTION_URL_PATTERNS = [
 ]
 _SCHOOL_LEVEL_SCOPE_HINTS = ("研究生院", "研工部", "研究生招生", "研招", "招生工作", "硕士研究生", "博士研究生")
 _DEPARTMENT_SCOPE_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|学部|系|研究院|研究所|中心))")
+_CHANNEL_PREFIX_PATH_RE = re.compile(r"/info/\d+/?$", re.IGNORECASE)
+_ANNOUNCEMENT_NAV_TEXT_HINTS = (
+    "硕士招生",
+    "博士招生",
+    "招生简章",
+    "专业目录",
+    "通知公告",
+    "政策文件",
+    "调剂",
+    "招生工作",
+    "硕士研究生招生信息",
+    "博士研究生招生信息",
+)
+_ANNOUNCEMENT_DOMAIN_PRIORITY_HINTS = ("yzb", "yjsc", "yjsy", "yjs", "graduate", "grad", "zhaosheng")
+_FAMILY_DISCOVERY_COOLDOWN = timedelta(minutes=10)
 _ANNOUNCEMENT_CANONICAL_SEEDS: dict[str, dict[str, Any]] = {
+    "江西农业大学": {
+        "homepage_url": "https://yzb.jxau.edu.cn/",
+        "seed_urls": [
+            "https://yzb.jxau.edu.cn/sszs.htm",
+            "https://yzb.jxau.edu.cn/bszs.htm",
+            "https://yzb.jxau.edu.cn/zsjz/sszsjz.htm",
+            "https://yzb.jxau.edu.cn/zsjz/bszsjz.htm",
+        ],
+    },
     "上海师范大学": {
         "homepage_url": "https://yjsc.shnu.edu.cn/",
         "seed_urls": [
@@ -70,6 +95,14 @@ _ANNOUNCEMENT_CANONICAL_SEEDS: dict[str, dict[str, Any]] = {
         ],
     }
 }
+
+
+def _coerce_utc(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _docs_data_dir() -> Path:
@@ -212,6 +245,227 @@ def _resolve_announcement_seed_override(school_name: str) -> dict[str, Any] | No
     return _ANNOUNCEMENT_CANONICAL_SEEDS.get(str(school_name or "").strip())
 
 
+def _families_key(families: set[str]) -> str:
+    return ",".join(sorted(family for family in families if family in _KNOWN_FAMILIES))
+
+
+def _job_matches_families(job: CrawlJob, *, school_name: str, families: set[str]) -> bool:
+    payload = dict(job.query or {})
+    if payload.get("job_kind") != "family_discovery":
+        return False
+    if str(payload.get("school_name") or "").strip() != school_name.strip():
+        return False
+    job_families = {
+        str(item or "").strip()
+        for item in (payload.get("families") or [])
+        if str(item or "").strip()
+    }
+    return job_families == {family for family in families if family in _KNOWN_FAMILIES}
+
+
+def _find_family_discovery_jobs(
+    db: Session,
+    *,
+    school_name: str,
+    families: set[str],
+    statuses: set[str] | None = None,
+    limit: int = 40,
+) -> list[CrawlJob]:
+    query = db.query(CrawlJob)
+    if statuses:
+        query = query.filter(CrawlJob.status.in_(sorted(statuses)))
+    rows = query.order_by(CrawlJob.requested_at.desc()).limit(limit).all()
+    return [row for row in rows if _job_matches_families(row, school_name=school_name, families=families)]
+
+
+def _latest_family_discovery_job(
+    db: Session,
+    *,
+    school_name: str,
+    families: set[str],
+    statuses: set[str] | None = None,
+) -> CrawlJob | None:
+    rows = _find_family_discovery_jobs(db, school_name=school_name, families=families, statuses=statuses)
+    return rows[0] if rows else None
+
+
+def _looks_like_channel_prefix_page(url: str) -> bool:
+    path = (urlparse(url).path or "").rstrip("/")
+    return bool(path) and bool(_CHANNEL_PREFIX_PATH_RE.search(path))
+
+
+def _looks_like_fragmentary_seed_url(url: str) -> bool:
+    path = (urlparse(url).path or "").strip("/")
+    if not path:
+        return False
+    if "/" in path:
+        return False
+    return len(path) <= 1 and "." not in path
+
+
+def _is_valid_school_seed_url(url: str, *, families: set[str]) -> bool:
+    normalized = _normalize_url(url)
+    if not normalized:
+        return False
+    if _looks_like_detail_section_url(normalized):
+        return False
+    if _looks_like_channel_prefix_page(normalized):
+        return False
+    if _looks_like_fragmentary_seed_url(normalized):
+        return False
+    if families == {"notice", "admissions"} and _looks_department_scoped_text(normalized):
+        return False
+    return True
+
+
+def _score_seed_hint_url(url: str) -> int:
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+    score = 0
+    if host.endswith(".edu.cn"):
+        score += 10
+    if host.endswith(".ac.cn"):
+        score += 8
+    if host.startswith("yzb.") or ".yzb." in host:
+        score += 24
+    elif host.startswith("yjsc.") or ".yjsc." in host:
+        score += 22
+    elif host.startswith("yjsy.") or ".yjsy." in host:
+        score += 20
+    elif host.startswith("yjs.") or ".yjs." in host:
+        score += 18
+    elif any(token in host for token in _ANNOUNCEMENT_DOMAIN_PRIORITY_HINTS):
+        score += 12
+    if any(token in path for token in ("sszs", "bszs", "zsjz", "tiaoji", "tzgg", "policy", "notice")):
+        score += 10
+    if path.endswith(("list.htm", "list.html", "main.htm", "index.htm")):
+        score += 6
+    if _looks_like_channel_prefix_page(url):
+        score -= 20
+    if _looks_like_fragmentary_seed_url(url):
+        score -= 20
+    if _looks_like_detail_section_url(url):
+        score -= 40
+    if _looks_department_scoped_text(url):
+        score -= 40
+    return score
+
+
+def _filter_candidate_urls_for_families(
+    candidate_urls: list[str],
+    *,
+    families: set[str],
+    deny_prefixes: list[str] | None = None,
+    max_items: int = 5,
+) -> list[str]:
+    filtered = []
+    for url in _dedupe_texts(candidate_urls):
+        if deny_prefixes and any(url.startswith(prefix) for prefix in deny_prefixes):
+            continue
+        if not _is_valid_school_seed_url(url, families=families):
+            continue
+        filtered.append(url)
+    ranked = sorted(filtered, key=lambda item: (-_score_seed_hint_url(item), item))
+    return ranked[:max_items]
+
+
+def _job_candidate_urls(job: CrawlJob) -> list[str]:
+    payload = dict(job.query or {})
+    result_urls = payload.get("result_candidate_urls")
+    if isinstance(result_urls, list):
+        return _dedupe_texts([str(item or "").strip() for item in result_urls if str(item or "").strip()])
+    seed_urls = payload.get("candidate_urls")
+    if isinstance(seed_urls, list):
+        return _dedupe_texts([str(item or "").strip() for item in seed_urls if str(item or "").strip()])
+    return []
+
+
+def _job_result_state(job: CrawlJob) -> str:
+    payload = dict(job.query or {})
+    result_state = str(payload.get("result_state") or "").strip()
+    if result_state:
+        return result_state
+    if job.status in {"pending", "running"}:
+        return "in_progress"
+    if job.status == "failed":
+        return "failed"
+    return ""
+
+
+def _build_school_level_page_text(raw_html: str, title: str | None) -> str:
+    normalized_html = _SPACE_RE.sub(" ", _HTML_TAG_RE.sub(" ", raw_html or " "))
+    return " ".join([str(title or "").strip(), normalized_html[:2500]]).strip()
+
+
+def _page_looks_school_level(raw_html: str, title: str | None, school_name: str) -> bool:
+    page_text = _build_school_level_page_text(raw_html, title)
+    if not page_text:
+        return False
+    compact_page_text = re.sub(r"\s+", "", page_text)
+    school_terms = _build_school_validation_terms(school_name)
+    if not any(term in page_text or term in compact_page_text for term in school_terms):
+        return False
+    if _looks_department_scoped_text(page_text):
+        return False
+    return _has_school_level_scope_hint(page_text) or "招生" in page_text
+
+
+def _is_announcement_navigation_link(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    return any(hint in normalized for hint in _ANNOUNCEMENT_NAV_TEXT_HINTS)
+
+
+def _discover_announcement_navigation_seed_urls(
+    school_name: str,
+    seed_urls: list[str],
+    *,
+    max_pages: int = 8,
+) -> list[str]:
+    seed_page_urls: list[str] = []
+    seen_seed_pages: set[str] = set()
+    for seed_url in seed_urls:
+        for candidate in (_normalize_url(seed_url), _parent_url(seed_url), _url_origin(seed_url)):
+            normalized = _normalize_url(candidate or "")
+            if not normalized or normalized in seen_seed_pages:
+                continue
+            seen_seed_pages.add(normalized)
+            seed_page_urls.append(normalized)
+
+    results: list[str] = []
+    seen_result_urls: set[str] = set()
+    for seed_page_url in seed_page_urls[:max_pages]:
+        try:
+            response = _fetch_with_retry(seed_page_url)
+        except Exception:
+            continue
+        raw_html = response.text or ""
+        title = _extract_title(raw_html) or ""
+        if not _page_looks_school_level(raw_html, title, school_name):
+            continue
+        base_scope = _host_scope(urlparse(seed_page_url).netloc or "")
+        for item in _extract_links(raw_html):
+            link_text = str(item.get("text") or "").strip()
+            href = str(item.get("href") or "").strip()
+            if not href or not _is_announcement_navigation_link(link_text):
+                continue
+            absolute_url = _normalize_url(urljoin(seed_page_url, href))
+            if not absolute_url:
+                continue
+            target_scope = _host_scope(urlparse(absolute_url).netloc or "")
+            if base_scope and target_scope and base_scope != target_scope:
+                continue
+            if not _is_valid_school_seed_url(absolute_url, families={"notice", "admissions"}):
+                continue
+            if absolute_url in seen_result_urls:
+                continue
+            seen_result_urls.add(absolute_url)
+            results.append(absolute_url)
+    return _filter_candidate_urls_for_families(results, families={"notice", "admissions"}, max_items=12)
+
+
 def _extract_candidate_urls_from_search_result(raw_html: str) -> list[str]:
     urls: list[str] = []
     for match in _SEARCH_URL_RE.findall(raw_html):
@@ -235,11 +489,7 @@ def _score_candidate_url(url: str) -> int:
     parsed = urlparse(url)
     host = (parsed.netloc or "").lower()
     path = (parsed.path or "").lower()
-    score = 0
-    if host.endswith(".edu.cn"):
-        score += 10
-    if host.endswith(".ac.cn"):
-        score += 8
+    score = _score_seed_hint_url(url)
     if any(hint in host or hint in path for hint in _HOST_HINTS):
         score += 6
     if path and path not in {"", "/"}:
@@ -288,6 +538,8 @@ def _discover_seed_urls_from_search(school_name: str) -> list[str]:
             continue
         raw_html = response.text or ""
         for candidate_url in _extract_candidate_urls_from_search_result(raw_html):
+            if not _is_valid_school_seed_url(candidate_url, families={"notice", "admissions"}):
+                continue
             score = _score_candidate_url(candidate_url)
             if score <= 0:
                 continue
@@ -420,7 +672,13 @@ def _discover_department_seed_urls(seed_urls: list[str], *, max_seed_pages: int 
     return results
 
 
-def _queue_existing_section_jobs(db: Session, *, school_name: str, sections: list[SiteSection]) -> list[str]:
+def _queue_existing_section_jobs(
+    db: Session,
+    *,
+    school_name: str,
+    sections: list[SiteSection],
+    bootstrap_origin: str,
+) -> list[str]:
     if not sections:
         return []
     section_ids = {section.id for section in sections}
@@ -452,7 +710,7 @@ def _queue_existing_section_jobs(db: Session, *, school_name: str, sections: lis
                 "department_name": department_name,
                 "school_id": school_id,
                 "department_id": department_id,
-                "bootstrap_origin": "announcement_search",
+                "bootstrap_origin": bootstrap_origin,
             },
         )
         db.add(job)
@@ -461,6 +719,326 @@ def _queue_existing_section_jobs(db: Session, *, school_name: str, sections: lis
 
     db.commit()
     return job_ids
+
+
+def _discovery_category_for_families(families: set[str]) -> str:
+    return "adjustment" if families == {"adjustment"} else "announcement"
+
+
+def _bootstrap_origin_for_families(families: set[str]) -> str:
+    return "adjustment_search" if families == {"adjustment"} else "announcement_search"
+
+
+def _load_existing_school_sections(
+    db: Session,
+    *,
+    school_name: str,
+    deny_prefixes: list[str],
+) -> tuple[School | None, list[SiteSection]]:
+    school = db.query(School).filter(School.name == school_name).one_or_none()
+    if school is None:
+        return None, []
+    existing_sections = (
+        db.query(SiteSection)
+        .filter(SiteSection.school_id == school.id, SiteSection.enabled == 1)
+        .order_by(SiteSection.created_at.asc())
+        .all()
+    )
+    if deny_prefixes:
+        existing_sections = [
+            section
+            for section in existing_sections
+            if not any(str(section.section_url or "").startswith(prefix) for prefix in deny_prefixes)
+        ]
+    return school, existing_sections
+
+
+def _collect_reusable_sections(
+    db: Session,
+    *,
+    existing_sections: list[SiteSection],
+    families: set[str],
+) -> tuple[list[SiteSection], list[str]]:
+    reusable_sections = [section for section in existing_sections if _section_is_compatible_for_families(section, families)]
+    recovery_seed_urls: list[str] = []
+    if not existing_sections:
+        return reusable_sections, recovery_seed_urls
+
+    link_counts = {
+        section_id: count
+        for section_id, count in (
+            db.query(SiteSectionLink.site_section_id, func.count(SiteSectionLink.id))
+            .filter(SiteSectionLink.site_section_id.in_([section.id for section in existing_sections]))
+            .group_by(SiteSectionLink.site_section_id)
+            .all()
+        )
+    }
+    reusable_sections = [
+        section
+        for section in existing_sections
+        if _section_is_compatible_for_families(section, families)
+        and not (_looks_like_detail_section_url(section.section_url) and int(link_counts.get(section.id, 0) or 0) == 0)
+    ]
+    if not reusable_sections:
+        for section in existing_sections:
+            recovery_seed_urls.extend(_derive_recovery_seed_urls_from_section_url(section.section_url))
+    return reusable_sections, _dedupe_texts(recovery_seed_urls)
+
+
+def _build_local_candidate_hints(
+    school_name: str,
+    *,
+    families: set[str],
+    announcement_override: dict[str, Any] | None,
+    deny_prefixes: list[str],
+    recovery_seed_urls: list[str],
+) -> list[str]:
+    hints: list[str] = []
+    if announcement_override and families == {"notice", "admissions"}:
+        homepage_url = _normalize_url(str(announcement_override.get("homepage_url") or ""))
+        if homepage_url:
+            hints.append(homepage_url)
+        hints.extend(_dedupe_texts([_normalize_url(url) for url in announcement_override.get("seed_urls") or [] if _normalize_url(url)]))
+    else:
+        hints.extend(_discover_seed_urls_from_docs(school_name))
+    hints.extend(recovery_seed_urls)
+    return _filter_candidate_urls_for_families(hints, families=families, deny_prefixes=deny_prefixes)
+
+
+def _queue_family_discovery_job(
+    db: Session,
+    *,
+    school_name: str,
+    families: set[str],
+    candidate_urls: list[str],
+    bootstrap_origin: str,
+) -> CrawlJob:
+    job = CrawlJob(
+        category=_discovery_category_for_families(families),
+        status="pending",
+        requested_at=utcnow(),
+        message=f"queued family discovery for {school_name.strip()}",
+        query={
+            "job_kind": "family_discovery",
+            "school_name": school_name.strip(),
+            "families": sorted(families),
+            "bootstrap_origin": bootstrap_origin,
+            "candidate_urls": list(candidate_urls),
+        },
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _build_no_candidate_response(
+    school_name: str,
+    *,
+    message: str,
+    candidate_urls: list[str],
+) -> dict[str, Any]:
+    return {
+        "state": "no_candidate",
+        "school_name": school_name,
+        "message": message,
+        "candidate_urls": candidate_urls,
+        "job_ids": [],
+    }
+
+
+def _completed_family_discovery_response(
+    school_name: str,
+    *,
+    job: CrawlJob,
+    candidate_urls: list[str],
+) -> dict[str, Any]:
+    result_state = _job_result_state(job)
+    if result_state == "failed" or job.status == "failed":
+        return _build_no_candidate_response(
+            school_name,
+            message=f"{school_name} 的陌生院校冷启动刚执行过一次，但本轮执行失败，请稍后再试。",
+            candidate_urls=candidate_urls,
+        )
+    return _build_no_candidate_response(
+        school_name,
+        message=f"系统刚完成一次 {school_name} 的官网探测，但还没定位到稳定栏目，请稍后再试。",
+        candidate_urls=candidate_urls,
+    )
+
+
+def _resolve_seed_urls_for_family_discovery(
+    school_name: str,
+    *,
+    families: set[str],
+    announcement_override: dict[str, Any] | None,
+    deny_prefixes: list[str],
+    recovery_seed_urls: list[str],
+) -> list[str]:
+    seed_urls = list(announcement_override.get("seed_urls") or []) if announcement_override else _discover_seed_urls_from_docs(school_name)
+    if families == {"notice", "admissions"} and seed_urls and not announcement_override:
+        validated_seed_urls = [url for url in seed_urls if _candidate_page_matches_school_name(url, school_name)]
+        if validated_seed_urls:
+            seed_urls = validated_seed_urls
+        navigation_seed_urls = _discover_announcement_navigation_seed_urls(school_name, seed_urls)
+        if navigation_seed_urls:
+            seed_urls = _dedupe_texts([*navigation_seed_urls, *seed_urls])
+    if deny_prefixes:
+        seed_urls = [url for url in seed_urls if not any(url.startswith(prefix) for prefix in deny_prefixes)]
+    if not seed_urls:
+        search_seed_urls = _discover_seed_urls_from_search(school_name)
+        if families == {"notice", "admissions"} and search_seed_urls:
+            navigation_seed_urls = _discover_announcement_navigation_seed_urls(school_name, search_seed_urls)
+            if navigation_seed_urls:
+                search_seed_urls = _dedupe_texts([*navigation_seed_urls, *search_seed_urls])
+        if deny_prefixes:
+            search_seed_urls = [url for url in search_seed_urls if not any(url.startswith(prefix) for prefix in deny_prefixes)]
+        seed_urls = _dedupe_texts(search_seed_urls)
+
+    return _dedupe_texts([*seed_urls, *recovery_seed_urls])
+
+
+def _bootstrap_family_sections(
+    db: Session,
+    *,
+    school_name: str,
+    families: set[str],
+    bootstrap_origin: str,
+) -> dict[str, Any]:
+    announcement_override = _resolve_announcement_seed_override(school_name) if families == {"notice", "admissions"} else None
+    deny_prefixes = [
+        str(prefix or "").strip()
+        for prefix in (announcement_override or {}).get("deny_prefixes") or []
+        if str(prefix or "").strip()
+    ]
+    _school, existing_sections = _load_existing_school_sections(
+        db,
+        school_name=school_name,
+        deny_prefixes=deny_prefixes,
+    )
+    reusable_sections, recovery_seed_urls = _collect_reusable_sections(
+        db,
+        existing_sections=existing_sections,
+        families=families,
+    )
+
+    if reusable_sections:
+        section_ids = {section.id for section in reusable_sections}
+        pending_jobs = _find_pending_discovery_jobs(db, school_name, section_ids)
+        if pending_jobs:
+            return {
+                "state": "queued",
+                "school_name": school_name,
+                "message": f"已自动启动 {school_name} 的栏目补抓，正在拉取官网栏目，请稍后自动刷新。",
+                "candidate_urls": _dedupe_texts([section.section_url for section in reusable_sections[:5]]),
+                "job_ids": [job.id for job in pending_jobs],
+            }
+        job_ids = _queue_existing_section_jobs(
+            db,
+            school_name=school_name,
+            sections=reusable_sections,
+            bootstrap_origin=bootstrap_origin,
+        )
+        return {
+            "state": "queued",
+            "school_name": school_name,
+            "message": f"已发现 {school_name} 的现有栏目资产，正在补抓最新内容，请稍后自动刷新。",
+            "candidate_urls": _dedupe_texts([section.section_url for section in reusable_sections[:5]]),
+            "job_ids": job_ids,
+        }
+
+    seed_urls = _resolve_seed_urls_for_family_discovery(
+        school_name,
+        families=families,
+        announcement_override=announcement_override,
+        deny_prefixes=deny_prefixes,
+        recovery_seed_urls=recovery_seed_urls,
+    )
+    expanded_seed_urls = _expand_seed_urls(seed_urls)
+    if "adjustment" in families:
+        expanded_seed_urls = _dedupe_texts([*expanded_seed_urls, *_discover_department_seed_urls(expanded_seed_urls or seed_urls)])
+
+    if not expanded_seed_urls:
+        return {
+            "state": "no_candidate",
+            "school_name": school_name,
+            "message": f"系统还没定位到 {school_name} 的官网候选，当前无法自动补抓这所学校的栏目。",
+            "candidate_urls": [],
+            "job_ids": [],
+        }
+
+    homepage_url, extra_seed_urls = _resolve_bootstrap_entrypoint(seed_urls, expanded_seed_urls)
+    if announcement_override:
+        homepage_url = str(announcement_override.get("homepage_url") or homepage_url or "").strip() or homepage_url
+    result = bootstrap_site_sections(
+        db,
+        school_name=school_name,
+        homepage_url=homepage_url,
+        department_name=None,
+        department_type="graduate_school",
+        seed_urls=extra_seed_urls,
+        enabled=True,
+        queue_discovery=True,
+        max_sections=8,
+        families=families,
+    )
+    job_ids = list(result.get("job_ids") or [])
+    visible_sections = [
+        section
+        for section in list(result.get("items") or [])
+        if isinstance(section, SiteSection) and _section_is_compatible_for_families(section, families)
+    ]
+    candidate_urls = _filter_candidate_urls_for_families(
+        _dedupe_texts(
+            [section.section_url for section in visible_sections]
+            if visible_sections
+            else list(result.get("candidate_urls") or expanded_seed_urls[:5])
+        ),
+        families=families,
+        deny_prefixes=deny_prefixes,
+    )
+    if not job_ids and not candidate_urls:
+        return {
+            "state": "empty",
+            "school_name": school_name,
+            "message": f"已完成 {school_name} 的官网探测，但还没定位到稳定栏目。",
+            "candidate_urls": [],
+            "job_ids": [],
+        }
+    return {
+        "state": "queued" if job_ids else "empty",
+        "school_name": school_name,
+        "message": f"已自动为 {school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓内容，请稍后自动刷新。",
+        "candidate_urls": candidate_urls,
+        "job_ids": job_ids,
+    }
+
+
+def run_family_discovery_job(db: Session, job: CrawlJob, query: dict[str, Any]) -> tuple[None, str]:
+    school_name = str(query.get("school_name") or "").strip()
+    families = {
+        str(item or "").strip()
+        for item in (query.get("families") or [])
+        if str(item or "").strip() in _KNOWN_FAMILIES
+    }
+    if not school_name or not families:
+        raise ValueError("family discovery job requires school_name and families")
+
+    result = _bootstrap_family_sections(
+        db,
+        school_name=school_name,
+        families=families,
+        bootstrap_origin=str(query.get("bootstrap_origin") or "family_discovery").strip() or "family_discovery",
+    )
+    next_query = dict(job.query or {})
+    next_query["families"] = sorted(families)
+    next_query["result_state"] = result.get("state")
+    next_query["result_candidate_urls"] = list(result.get("candidate_urls") or [])
+    next_query["result_job_ids"] = list(result.get("job_ids") or [])
+    if not next_query.get("candidate_urls"):
+        next_query["candidate_urls"] = list(result.get("candidate_urls") or [])
+    job.query = next_query
+    return None, str(result.get("message") or "family discovery finished")
 
 
 def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[str]) -> dict[str, Any] | None:
@@ -477,43 +1055,24 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
     )
     deny_prefixes = [str(prefix or "").strip() for prefix in (announcement_override or {}).get("deny_prefixes") or [] if str(prefix or "").strip()]
 
-    school = db.query(School).filter(School.name == normalized_school_name).one_or_none()
-    existing_sections: list[SiteSection] = []
-    if school is not None:
-        existing_sections = (
-            db.query(SiteSection)
-            .filter(SiteSection.school_id == school.id, SiteSection.enabled == 1)
-            .order_by(SiteSection.created_at.asc())
-            .all()
-        )
-        if deny_prefixes:
-            existing_sections = [
-                section
-                for section in existing_sections
-                if not any(str(section.section_url or "").startswith(prefix) for prefix in deny_prefixes)
-            ]
-
-    reusable_sections = [section for section in existing_sections if _section_is_compatible_for_families(section, normalized_families)]
-    recovery_seed_urls: list[str] = []
-    if existing_sections:
-        link_counts = {
-            section_id: count
-            for section_id, count in (
-                db.query(SiteSectionLink.site_section_id, func.count(SiteSectionLink.id))
-                .filter(SiteSectionLink.site_section_id.in_([section.id for section in existing_sections]))
-                .group_by(SiteSectionLink.site_section_id)
-                .all()
-            )
-        }
-        reusable_sections = [
-            section
-            for section in existing_sections
-            if _section_is_compatible_for_families(section, normalized_families)
-            and not (_looks_like_detail_section_url(section.section_url) and int(link_counts.get(section.id, 0) or 0) == 0)
-        ]
-        if not reusable_sections:
-            for section in existing_sections:
-                recovery_seed_urls.extend(_derive_recovery_seed_urls_from_section_url(section.section_url))
+    _school, existing_sections = _load_existing_school_sections(
+        db,
+        school_name=normalized_school_name,
+        deny_prefixes=deny_prefixes,
+    )
+    reusable_sections, recovery_seed_urls = _collect_reusable_sections(
+        db,
+        existing_sections=existing_sections,
+        families=normalized_families,
+    )
+    local_candidate_hints = _build_local_candidate_hints(
+        normalized_school_name,
+        families=normalized_families,
+        announcement_override=announcement_override,
+        deny_prefixes=deny_prefixes,
+        recovery_seed_urls=recovery_seed_urls,
+    )
+    bootstrap_origin = _bootstrap_origin_for_families(normalized_families)
 
     if reusable_sections:
         section_ids = {section.id for section in reusable_sections}
@@ -527,7 +1086,12 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
                 "job_ids": [job.id for job in pending_jobs],
             }
 
-        job_ids = _queue_existing_section_jobs(db, school_name=normalized_school_name, sections=reusable_sections)
+        job_ids = _queue_existing_section_jobs(
+            db,
+            school_name=normalized_school_name,
+            sections=reusable_sections,
+            bootstrap_origin=bootstrap_origin,
+        )
         return {
             "state": "queued",
             "school_name": normalized_school_name,
@@ -536,72 +1100,52 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
             "job_ids": job_ids,
         }
 
-    seed_urls = list(announcement_override.get("seed_urls") or []) if announcement_override else _discover_seed_urls_from_docs(normalized_school_name)
-    if normalized_families == {"notice", "admissions"} and seed_urls and not announcement_override:
-        validated_seed_urls = [url for url in seed_urls if _candidate_page_matches_school_name(url, normalized_school_name)]
-        if validated_seed_urls:
-            seed_urls = validated_seed_urls
-    if not seed_urls:
-        seed_urls = _discover_seed_urls_from_search(normalized_school_name)
-    if recovery_seed_urls:
-        seed_urls = _dedupe_texts([*seed_urls, *recovery_seed_urls])
-    if deny_prefixes:
-        seed_urls = [url for url in seed_urls if not any(url.startswith(prefix) for prefix in deny_prefixes)]
-    expanded_seed_urls = _expand_seed_urls(seed_urls)
-    if "adjustment" in normalized_families:
-        expanded_seed_urls = _dedupe_texts([*expanded_seed_urls, *_discover_department_seed_urls(expanded_seed_urls or seed_urls)])
-    if not expanded_seed_urls:
-        return {
-            "state": "no_candidate",
-            "school_name": normalized_school_name,
-            "message": f"系统还没定位到 {normalized_school_name} 的官网候选，当前无法自动补抓这所学校的栏目。",
-            "candidate_urls": [],
-            "job_ids": [],
-        }
-
-    homepage_url, extra_seed_urls = _resolve_bootstrap_entrypoint(seed_urls, expanded_seed_urls)
-    if announcement_override:
-        homepage_url = str(announcement_override.get("homepage_url") or homepage_url or "").strip() or homepage_url
-    result = bootstrap_site_sections(
+    active_job = _latest_family_discovery_job(
         db,
         school_name=normalized_school_name,
-        homepage_url=homepage_url,
-        department_name=None,
-        department_type="graduate_school",
-        seed_urls=extra_seed_urls,
-        enabled=True,
-        queue_discovery=True,
-        max_sections=8,
         families=normalized_families,
+        statuses={"pending", "running"},
     )
-    job_ids = list(result.get("job_ids") or [])
-    state = "queued" if job_ids else "in_progress"
-    message = f"已自动为 {normalized_school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓内容，请稍后自动刷新。"
-    visible_sections = [
-        section
-        for section in list(result.get("items") or [])
-        if isinstance(section, SiteSection) and _section_is_compatible_for_families(section, normalized_families)
-    ]
-    candidate_urls = (
-        _dedupe_texts([section.section_url for section in visible_sections])
-        if visible_sections
-        else list(result.get("candidate_urls") or expanded_seed_urls[:5])
+    if active_job is not None:
+        return {
+            "state": "in_progress",
+            "school_name": normalized_school_name,
+            "message": f"已自动为 {normalized_school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓内容，请稍后自动刷新。",
+            "candidate_urls": _job_candidate_urls(active_job) or local_candidate_hints,
+            "job_ids": [active_job.id],
+        }
+
+    latest_job = _latest_family_discovery_job(
+        db,
+        school_name=normalized_school_name,
+        families=normalized_families,
+        statuses={"done", "failed"},
     )
-    if deny_prefixes:
-        candidate_urls = [url for url in candidate_urls if not any(str(url or "").startswith(prefix) for prefix in deny_prefixes)]
-    if normalized_families == {"notice", "admissions"}:
-        candidate_urls = [
-            url
-            for url in candidate_urls
-            if not _looks_like_detail_section_url(url)
-            and not _looks_department_scoped_text(url)
-        ]
+    if latest_job is not None:
+        latest_finished_at = _coerce_utc(latest_job.finished_at or latest_job.updated_at or latest_job.requested_at)
+        cooldown_deadline = (latest_finished_at or utcnow()) + _FAMILY_DISCOVERY_COOLDOWN
+        if cooldown_deadline > utcnow():
+            if _job_result_state(latest_job) in {"empty", "no_candidate", "failed"} or latest_job.status == "failed":
+                candidate_urls = _job_candidate_urls(latest_job) or local_candidate_hints
+                return _completed_family_discovery_response(
+                    normalized_school_name,
+                    job=latest_job,
+                    candidate_urls=candidate_urls,
+                )
+
+    queued_job = _queue_family_discovery_job(
+        db,
+        school_name=normalized_school_name,
+        families=normalized_families,
+        candidate_urls=local_candidate_hints,
+        bootstrap_origin=bootstrap_origin,
+    )
     return {
-        "state": state,
+        "state": "queued",
         "school_name": normalized_school_name,
-        "message": message,
-        "candidate_urls": candidate_urls,
-        "job_ids": job_ids,
+        "message": f"已自动为 {normalized_school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓内容，请稍后自动刷新。",
+        "candidate_urls": local_candidate_hints,
+        "job_ids": [queued_job.id],
     }
 
 

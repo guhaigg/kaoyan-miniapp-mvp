@@ -109,6 +109,20 @@ def looks_like_detail_page_url(url: str) -> bool:
     )
 
 
+def _looks_like_channel_prefix_page_url(url: str) -> bool:
+    path = (urlparse(url).path or "").rstrip("/")
+    return bool(path) and bool(re.search(r"/info/\d+$", path))
+
+
+def _looks_like_fragmentary_page_url(url: str) -> bool:
+    path = (urlparse(url).path or "").strip("/")
+    if not path:
+        return False
+    if "/" in path:
+        return False
+    return len(path) <= 1 and "." not in path
+
+
 def _normalize_label(text: str, fallback_url: str) -> str:
     label = " ".join(str(text or "").split()).strip()
     if label:
@@ -341,6 +355,8 @@ def _probe_seed_page(seed_url: str, *, families: set[str] | None) -> tuple[list[
     candidates: list[CandidateSection] = []
     for item in result.candidates:
         if item.role != "leaf":
+            continue
+        if _looks_like_channel_prefix_page_url(item.page_url) or _looks_like_fragmentary_page_url(item.page_url):
             continue
         candidates.append(_build_candidate_section(item, page_title=page_title))
 

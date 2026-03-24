@@ -947,6 +947,10 @@ class CrawlEngine:
         source_url = str(query.get("source_url") or "").strip()
         content_payload = query.get("content")
 
+        if query.get("job_kind") == "family_discovery":
+            from .school_cold_start import run_family_discovery_job
+
+            return run_family_discovery_job(db, job, query)
         if query.get("job_kind") == "site_section_discovery":
             return self._discover_site_section(db, job, query)
         if query.get("job_kind") == "file_parse":
@@ -1370,6 +1374,9 @@ class CrawlEngine:
                     }
                     if file_record.site_section_link is not None:
                         file_record.site_section_link.status = "parse_failed"
+            if query_payload.get("job_kind") == "family_discovery":
+                query_payload["result_state"] = "failed"
+                job.query = query_payload
             job.status = "failed"
             job.finished_at = utcnow()
             job.message = str(exc)[:1000]
