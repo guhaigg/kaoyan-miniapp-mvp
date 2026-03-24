@@ -67,6 +67,37 @@ def test_search_announcements_and_adjustments(client):
     assert denied_adjustments.status_code == 401
 
 
+def test_search_announcements_refresh_queues_job_without_portal_user_fk(client):
+    response = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "江西农业大学2026年硕士招生公告",
+            "body": "学校级公告样本。",
+            "school_name": "江西农业大学",
+            "source_type": "crawler",
+            "source_url": "https://yzb.jxau.edu.cn/sszs/sample-1",
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert response.status_code == 200
+
+    token = _register_and_login(client, "refresh_portal_user")
+    search = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "江西农业大学", "refresh": True},
+        headers={"X-User-Token": token},
+    )
+    assert search.status_code == 200
+    refresh_job_id = search.json()["refresh_job_id"]
+    assert refresh_job_id
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == refresh_job_id).one()
+        assert job.category == "announcement"
+        assert job.requested_by_user_id is None
+
+
 def test_announcement_search_school_filter_matches_extra_school_name_when_school_fk_is_missing(client):
     with SessionLocal() as db:
         db.add(

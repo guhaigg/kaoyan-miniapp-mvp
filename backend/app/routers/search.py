@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
 from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional
-from ..models import AdjustmentOpportunity, Content, CrawlJob, HistoricalAdjustmentProfile, School, SiteSection
+from ..models import AdjustmentOpportunity, Content, CrawlJob, HistoricalAdjustmentProfile, School, SiteSection, User
 from ..schemas import (
     AdjustmentSearchDetailResponse,
     AdjustmentSearchLinkItem,
@@ -1864,12 +1864,20 @@ def _audit_search_event(
     )
 
 
+def _resolve_refresh_job_request_user_id(db: Session, user_id: str | None) -> str | None:
+    resolved = str(user_id or "").strip()
+    if not resolved:
+        return None
+    exists = db.query(User.id).filter(User.id == resolved).limit(1).scalar()
+    return resolved if exists else None
+
+
 def _create_refresh_job(db: Session, category: str, payload: dict, user_id: str | None) -> str:
     job = CrawlJob(
         category=category,
         status="pending",
         query=payload,
-        requested_by_user_id=user_id,
+        requested_by_user_id=_resolve_refresh_job_request_user_id(db, user_id),
         requested_at=datetime.now(timezone.utc),
         message="queued by api",
     )
