@@ -2,7 +2,7 @@ from datetime import datetime
 
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
-from app.models import AdjustmentOpportunity, Content, ContentSnapshot, CrawlJob, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School, SiteSection, Source
+from app.models import AdjustmentOpportunity, Content, ContentSnapshot, CrawlJob, Department, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School, SiteSection, Source
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 from app.services.content_repair import extract_content_published_at_from_body, infer_non_detail_announcement_reason
@@ -91,6 +91,176 @@ def test_announcement_search_school_filter_matches_extra_school_name_when_school
     assert payload["total"] == 1
     assert payload["items"][0]["school_name"] == "辽宁师范大学"
     assert payload["items"][0]["title"] == "辽宁师范大学研究生招生通知"
+
+
+def test_search_announcements_school_scope_excludes_department_rows_by_default(client):
+    with SessionLocal() as db:
+        school = School(name="上海师范大学", aliases=[])
+        db.add(school)
+        db.flush()
+        department = Department(school_id=school.id, name="教育学院", aliases=[], department_type="college", enabled=1)
+        db.add(department)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="上海师范大学研究生院",
+            source_type="official",
+            base_url="https://yjsc.shnu.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        school_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="硕士研究生招生信息",
+            section_type="admissions",
+            section_url="https://yjsc.shnu.edu.cn/17206/list.htm",
+            discovery_category="announcement",
+            list_selector_config={"probe_family": "admissions", "probe_role": "leaf", "probe_scope": "general"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        department_section = SiteSection(
+            school_id=school.id,
+            department_id=department.id,
+            source_id=source.id,
+            name="教育学院通知公告",
+            section_type="notice",
+            section_url="https://web.shnu.edu.cn/yjspyzx/19513/list.htm",
+            discovery_category="announcement",
+            list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        db.add_all([school_section, department_section])
+        db.flush()
+        db.add_all(
+            [
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="上海师范大学2026年硕士研究生招生信息",
+                    body="这是学校研究生院发布的硕士研究生招生信息。",
+                    summary="学校级招生公告",
+                    source_type="crawler",
+                    source_url="https://yjsc.shnu.edu.cn/17206/1001.htm",
+                    extra={"school_name": "上海师范大学", "site_section_id": school_section.id},
+                ),
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="教育学院2026年博士研究生招生办法",
+                    body="这是教育学院发布的博士招生内容。",
+                    summary="院系级公告",
+                    source_type="crawler",
+                    source_url="https://web.shnu.edu.cn/yjspyzx/19513/2001.htm",
+                    extra={
+                        "school_name": "上海师范大学",
+                        "department_name": "教育学院",
+                        "site_section_id": department_section.id,
+                    },
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.post("/api/v1/search/announcements", json={"school_name": "上海师范大学"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [item["title"] for item in payload["items"]] == ["上海师范大学2026年硕士研究生招生信息"]
+
+
+def test_search_announcements_school_scope_keeps_school_level_rows_when_keywords_include_department(client):
+    with SessionLocal() as db:
+        school = School(name="上海师范大学", aliases=[])
+        db.add(school)
+        db.flush()
+        department = Department(school_id=school.id, name="教育学院", aliases=[], department_type="college", enabled=1)
+        db.add(department)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="上海师范大学研究生院",
+            source_type="official",
+            base_url="https://yjsc.shnu.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        school_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="硕士研究生招生信息",
+            section_type="admissions",
+            section_url="https://yjsc.shnu.edu.cn/17206/list.htm",
+            discovery_category="announcement",
+            list_selector_config={"probe_family": "admissions", "probe_role": "leaf", "probe_scope": "general"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        department_section = SiteSection(
+            school_id=school.id,
+            department_id=department.id,
+            source_id=source.id,
+            name="教育学院通知公告",
+            section_type="notice",
+            section_url="https://web.shnu.edu.cn/yjspyzx/19513/list.htm",
+            discovery_category="announcement",
+            list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        db.add_all([school_section, department_section])
+        db.flush()
+        db.add_all(
+            [
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="上海师范大学2026年硕士研究生招生信息",
+                    body="学校研究生院发布的学校级招生信息。",
+                    summary="学校级招生公告",
+                    source_type="crawler",
+                    source_url="https://yjsc.shnu.edu.cn/17206/1002.htm",
+                    extra={"school_name": "上海师范大学", "site_section_id": school_section.id},
+                ),
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="教育学院2026年博士研究生招生办法",
+                    body="这是教育学院发布的博士招生内容。",
+                    summary="院系级公告",
+                    source_type="crawler",
+                    source_url="https://web.shnu.edu.cn/yjspyzx/19513/2002.htm",
+                    extra={
+                        "school_name": "上海师范大学",
+                        "department_name": "教育学院",
+                        "site_section_id": department_section.id,
+                    },
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/v1/search/announcements",
+        json={"school_name": "上海师范大学", "keywords": "教育学院"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert {item["title"] for item in payload["items"]} == {
+        "上海师范大学2026年硕士研究生招生信息",
+        "教育学院2026年博士研究生招生办法",
+    }
 
 
 def test_announcement_search_full_school_name_does_not_match_other_schools_with_same_city_prefix(client, monkeypatch):
@@ -2463,6 +2633,96 @@ def test_ensure_announcement_search_bootstrap_filters_doctoral_leaf_sections():
         "https://scope.edu.cn/yjs/notices/",
         "https://scope.edu.cn/yjs/masters/",
     ]
+
+
+def test_ensure_announcement_search_bootstrap_excludes_department_sections_from_reuse():
+    with SessionLocal() as db:
+        school = School(name="复用范围大学", aliases=[])
+        db.add(school)
+        db.flush()
+        department = Department(school_id=school.id, name="教育学院", aliases=[], department_type="college", enabled=1)
+        db.add(department)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="复用范围大学官网",
+            source_type="official",
+            base_url="https://scope.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add_all(
+            [
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="通知公告",
+                    section_type="notice",
+                    section_url="https://scope.edu.cn/yjs/notices/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    department_id=department.id,
+                    source_id=source.id,
+                    name="教育学院通知公告",
+                    section_type="notice",
+                    section_url="https://scope.edu.cn/education/notices/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+            ]
+        )
+        db.commit()
+
+        result = ensure_announcement_search_bootstrap(db, "复用范围大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"] == ["https://scope.edu.cn/yjs/notices/"]
+
+
+def test_ensure_announcement_search_bootstrap_uses_shnu_canonical_override(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_docs",
+        lambda school_name: ["http://web.shnu.edu.cn/yjspyzx/19513/list.htm"],
+    )
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_search",
+        lambda school_name: ["http://web.shnu.edu.cn/yjspyzx/19513/list.htm"],
+    )
+
+    def _fake_bootstrap_site_sections(db, **kwargs):
+        captured.update(kwargs)
+        return {
+            "job_ids": ["job-1"],
+            "candidate_urls": [
+                "http://web.shnu.edu.cn/yjspyzx/19513/list.htm",
+                "https://yjsc.shnu.edu.cn/17206/list.htm",
+            ],
+        }
+
+    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "上海师范大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert captured["homepage_url"] == "https://yjsc.shnu.edu.cn/"
+    assert "https://yjsc.shnu.edu.cn/17204/" in captured["seed_urls"]
+    assert "https://yjsc.shnu.edu.cn/17206/list.htm" in captured["seed_urls"]
+    assert all("web.shnu.edu.cn/yjspyzx" not in url for url in captured["seed_urls"])
+    assert result["candidate_urls"] == ["https://yjsc.shnu.edu.cn/17206/list.htm"]
 
 
 def test_ensure_adjustment_search_bootstrap_queues_existing_adjustment_sections():

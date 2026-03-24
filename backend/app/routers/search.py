@@ -6,11 +6,11 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import Text, and_, cast, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
 from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional
-from ..models import AdjustmentOpportunity, Content, CrawlJob, HistoricalAdjustmentProfile, School
+from ..models import AdjustmentOpportunity, Content, CrawlJob, HistoricalAdjustmentProfile, School, SiteSection
 from ..schemas import (
     AdjustmentSearchDetailResponse,
     AdjustmentSearchLinkItem,
@@ -57,6 +57,9 @@ SCHOOL_SUFFIXES = (
 )
 EXPLICIT_SCHOOL_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]{2,40}?(?:大学|研究院|研究所))")
 DEPARTMENT_HINT_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|研究院|研究所|中心))")
+DEPARTMENT_SCOPE_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|学部|系|研究院|研究所|中心))")
+SCHOOL_LEVEL_SCOPE_HINTS = ("研究生院", "研工部", "研究生招生", "研招", "招生工作", "硕士研究生", "博士研究生")
+DEPARTMENT_SCOPE_EXCLUDE_HINTS = ("研究生院", "研工部")
 SCHOOL_TIER_FILTER_MAP = {
     "普本": ["普本", "普通本科", "普通本科院校", "双非"],
     "普通本科": ["普本", "普通本科", "普通本科院校", "双非"],
@@ -144,6 +147,163 @@ def _extract_department_hints(*texts: str | None) -> list[str]:
             if normalized and not normalized.endswith("大学"):
                 values.append(normalized)
     return _dedupe_terms(values)
+
+
+def _normalize_department_hints(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized_value = normalize_department_name(value)
+        if not normalized_value or normalized_value in seen:
+            continue
+        seen.add(normalized_value)
+        normalized.append(normalized_value)
+    return normalized
+
+
+def _extract_requested_department_terms(payload: AnnouncementSearchRequest) -> list[str]:
+    return _normalize_department_hints(
+        _extract_department_hints(str(payload.keywords or "").strip())
+    )
+
+
+def _extract_non_department_keyword_terms(raw_keywords: str, requested_departments: list[str]) -> list[str]:
+    text = str(raw_keywords or "").strip()
+    if not text:
+        return []
+    if not requested_departments:
+        return _build_keyword_terms(text)
+
+    requested_set = set(requested_departments)
+    split_terms = [part.strip() for part in re.split(r"[\s,，、/|;；]+", text) if part.strip()]
+    filtered_terms = [
+        part
+        for part in split_terms
+        if normalize_department_name(part) not in requested_set
+    ]
+    if not filtered_terms:
+        return []
+    filtered_text = " ".join(filtered_terms)
+    compact = re.sub(r"\s+", "", filtered_text)
+    return _dedupe_terms([filtered_text, compact, *filtered_terms])
+
+
+def _has_school_level_scope_hint(*texts: str | None) -> bool:
+    haystack = "".join(str(text or "").strip() for text in texts)
+    return any(hint in haystack for hint in SCHOOL_LEVEL_SCOPE_HINTS)
+
+
+def _extract_row_department_scope_hint(row: Content) -> str | None:
+    extra = dict(row.extra or {})
+    explicit_department = normalize_department_name(extra.get("department_name"))
+    if explicit_department:
+        return explicit_department
+
+    title = str(row.title or "").strip()
+    summary = str(row.summary or "").strip()
+    body = str(row.body or "").strip()[:1200]
+    combined = f"{title} {summary} {body}".strip()
+    if not combined or _has_school_level_scope_hint(title, summary, body):
+        return None
+
+    values: list[str] = []
+    for match in DEPARTMENT_SCOPE_PATTERN.findall(combined):
+        normalized = normalize_department_name(match)
+        if not normalized:
+            continue
+        if any(hint in normalized for hint in DEPARTMENT_SCOPE_EXCLUDE_HINTS):
+            continue
+        values.append(normalized)
+    unique = _normalize_department_hints(values)
+    if len(unique) == 1:
+        return unique[0]
+    return None
+
+
+def _load_section_scope_lookup(db: Session, rows: list[Content]) -> dict[str, SiteSection]:
+    section_ids = {
+        str((row.extra or {}).get("site_section_id") or "").strip()
+        for row in rows
+        if isinstance(row.extra, dict) and str((row.extra or {}).get("site_section_id") or "").strip()
+    }
+    if not section_ids:
+        return {}
+    sections = (
+        db.query(SiteSection)
+        .options(joinedload(SiteSection.department))
+        .filter(SiteSection.id.in_(section_ids))
+        .all()
+    )
+    return {section.id: section for section in sections}
+
+
+def _is_school_level_announcement_row(
+    row: Content,
+    *,
+    section_lookup: dict[str, SiteSection],
+) -> bool:
+    extra = dict(row.extra or {})
+    site_section_id = str(extra.get("site_section_id") or "").strip()
+    if site_section_id:
+        section = section_lookup.get(site_section_id)
+        if section is not None:
+            if section.department_id:
+                return False
+            return True
+
+    if normalize_department_name(extra.get("department_name")):
+        return False
+
+    return _extract_row_department_scope_hint(row) is None
+
+
+def _row_matches_requested_announcement_scope(
+    row: Content,
+    *,
+    section_lookup: dict[str, SiteSection],
+    requested_departments: list[str],
+) -> bool:
+    if _is_school_level_announcement_row(row, section_lookup=section_lookup):
+        return True
+    if not requested_departments:
+        return False
+
+    extra = dict(row.extra or {})
+    site_section_id = str(extra.get("site_section_id") or "").strip()
+    department_name = normalize_department_name(extra.get("department_name"))
+    if site_section_id:
+        section = section_lookup.get(site_section_id)
+        if section is not None and section.department is not None:
+            department_name = normalize_department_name(section.department.name) or department_name
+    if department_name:
+        return department_name in requested_departments
+    inferred_department = _extract_row_department_scope_hint(row)
+    return inferred_department in requested_departments if inferred_department else False
+
+
+def _row_matches_keyword_terms(row: Content, keyword_terms: list[str]) -> bool:
+    if not keyword_terms:
+        return True
+
+    extra = dict(row.extra or {})
+    values = [
+        str(row.title or ""),
+        str(row.body or ""),
+        str(row.summary or ""),
+        str(row.major or ""),
+        str(row.region or ""),
+        str(extra.get("department_name") or ""),
+        str(extra.get("school_name") or ""),
+        *[str(tag or "") for tag in (extra.get("tags") or [])],
+    ]
+    haystacks = [value.lower() for value in values if value]
+    for term in keyword_terms:
+        normalized_term = str(term or "").strip().lower()
+        if not normalized_term:
+            continue
+        if not any(normalized_term in haystack for haystack in haystacks):
+            return False
+    return True
 
 
 def _extract_explicit_school_mentions(*texts: str | None) -> list[str]:
@@ -1728,15 +1888,38 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
     if str(effective_payload.school_name or "").strip() and any(
         str(effective_payload.school_name or "").strip().endswith(suffix) for suffix in SCHOOL_SUFFIXES
     ):
+        requested_departments = _extract_requested_department_terms(effective_payload)
+        residual_keyword_terms = _extract_non_department_keyword_terms(
+            str(effective_payload.keywords or "").strip(),
+            requested_departments,
+        )
         known_school_names = {
             normalize_school_name(name)
             for (name,) in db.query(School.name).all()
             if normalize_school_name(name)
         }
-        candidate_rows = ordered_query.all()
+        candidate_ordered_query = ordered_query
+        if requested_departments:
+            scope_payload = effective_payload.model_copy(update={"keywords": None})
+            candidate_scope_query = db.query(Content).filter(Content.category == "announcement")
+            candidate_scope_query = _apply_common_filters(candidate_scope_query, scope_payload)
+            candidate_scope_query = _apply_announcement_quality_filters(candidate_scope_query)
+            candidate_ordered_query = candidate_scope_query.order_by(
+                Content.published_at.is_(None),
+                Content.published_at.desc(),
+                Content.updated_at.desc(),
+            )
+        candidate_rows = candidate_ordered_query.all()
+        section_lookup = _load_section_scope_lookup(db, candidate_rows)
         filtered_rows = [
             row
             for row in candidate_rows
+            if _row_matches_requested_announcement_scope(
+                row,
+                section_lookup=section_lookup,
+                requested_departments=requested_departments,
+            )
+            if _row_matches_keyword_terms(row, residual_keyword_terms)
             if not _row_conflicts_with_requested_school(
                 row,
                 str(effective_payload.school_name or "").strip(),

@@ -54,6 +54,22 @@ _DETAIL_SECTION_URL_PATTERNS = [
     r"/c\d+[a-z]?\d+/page\.htm(?:l)?$",
     r"/[a-z0-9_-]{0,12}\d{4,}\.htm(?:l)?$",
 ]
+_SCHOOL_LEVEL_SCOPE_HINTS = ("研究生院", "研工部", "研究生招生", "研招", "招生工作", "硕士研究生", "博士研究生")
+_DEPARTMENT_SCOPE_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|学部|系|研究院|研究所|中心))")
+_ANNOUNCEMENT_CANONICAL_SEEDS: dict[str, dict[str, Any]] = {
+    "上海师范大学": {
+        "homepage_url": "https://yjsc.shnu.edu.cn/",
+        "seed_urls": [
+            "https://yjsc.shnu.edu.cn/17204/list.htm",
+            "https://yjsc.shnu.edu.cn/17205/list.htm",
+            "https://yjsc.shnu.edu.cn/17206/list.htm",
+        ],
+        "deny_prefixes": [
+            "http://web.shnu.edu.cn/yjspyzx/",
+            "https://web.shnu.edu.cn/yjspyzx/",
+        ],
+    }
+}
 
 
 def _docs_data_dir() -> Path:
@@ -161,6 +177,41 @@ def _build_school_validation_terms(school_name: str) -> list[str]:
     return [term for term in _dedupe_texts(terms) if len(term) >= 2]
 
 
+def _has_school_level_scope_hint(*texts: str | None) -> bool:
+    haystack = "".join(str(text or "").strip() for text in texts)
+    return any(hint in haystack for hint in _SCHOOL_LEVEL_SCOPE_HINTS)
+
+
+def _looks_department_scoped_text(*texts: str | None) -> bool:
+    combined = " ".join(str(text or "").strip() for text in texts if str(text or "").strip())
+    if not combined:
+        return False
+    if _has_school_level_scope_hint(combined):
+        return False
+    return bool(_DEPARTMENT_SCOPE_PATTERN.search(combined))
+
+
+def _section_looks_department_scoped(section: SiteSection) -> bool:
+    if section.department_id:
+        return True
+    list_config = dict(section.list_selector_config or {})
+    probe_heading = str(list_config.get("probe_heading") or "").strip()
+    probe_evidence = dict(list_config.get("probe_evidence") or {})
+    stable_text = " ".join(
+        [
+            str(section.name or "").strip(),
+            str(section.section_url or "").strip(),
+            probe_heading,
+            str(probe_evidence.get("stable_text") or "").strip(),
+        ]
+    )
+    return _looks_department_scoped_text(stable_text)
+
+
+def _resolve_announcement_seed_override(school_name: str) -> dict[str, Any] | None:
+    return _ANNOUNCEMENT_CANONICAL_SEEDS.get(str(school_name or "").strip())
+
+
 def _extract_candidate_urls_from_search_result(raw_html: str) -> list[str]:
     urls: list[str] = []
     for match in _SEARCH_URL_RE.findall(raw_html):
@@ -219,6 +270,9 @@ def _candidate_page_matches_school_name(candidate_url: str, school_name: str) ->
             re.sub(r"\s+", "", normalized_html[:4000]),
         ]
         if any(term in haystack for term in terms for haystack in haystacks if haystack):
+            page_scope_text = " ".join([title, normalized_html[:400]])
+            if _looks_department_scoped_text(page_scope_text):
+                continue
             return True
     return False
 
@@ -322,6 +376,9 @@ def _section_probe_role(section: SiteSection) -> str:
 def _section_is_compatible_for_families(section: SiteSection, families: set[str]) -> bool:
     family = _section_probe_family(section)
     if family not in families:
+        return False
+
+    if families == {"notice", "admissions"} and _section_looks_department_scoped(section):
         return False
 
     role = _section_probe_role(section)
@@ -467,11 +524,23 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
             "job_ids": job_ids,
         }
 
-    seed_urls = _discover_seed_urls_from_docs(normalized_school_name)
+    announcement_override = (
+        _resolve_announcement_seed_override(normalized_school_name)
+        if normalized_families == {"notice", "admissions"}
+        else None
+    )
+    seed_urls = list(announcement_override.get("seed_urls") or []) if announcement_override else _discover_seed_urls_from_docs(normalized_school_name)
+    if normalized_families == {"notice", "admissions"} and seed_urls and not announcement_override:
+        validated_seed_urls = [url for url in seed_urls if _candidate_page_matches_school_name(url, normalized_school_name)]
+        if validated_seed_urls:
+            seed_urls = validated_seed_urls
     if not seed_urls:
         seed_urls = _discover_seed_urls_from_search(normalized_school_name)
     if recovery_seed_urls:
         seed_urls = _dedupe_texts([*seed_urls, *recovery_seed_urls])
+    deny_prefixes = [str(prefix or "").strip() for prefix in (announcement_override or {}).get("deny_prefixes") or [] if str(prefix or "").strip()]
+    if deny_prefixes:
+        seed_urls = [url for url in seed_urls if not any(url.startswith(prefix) for prefix in deny_prefixes)]
     expanded_seed_urls = _expand_seed_urls(seed_urls)
     if "adjustment" in normalized_families:
         expanded_seed_urls = _dedupe_texts([*expanded_seed_urls, *_discover_department_seed_urls(expanded_seed_urls or seed_urls)])
@@ -485,6 +554,8 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         }
 
     homepage_url, extra_seed_urls = _resolve_bootstrap_entrypoint(seed_urls, expanded_seed_urls)
+    if announcement_override:
+        homepage_url = str(announcement_override.get("homepage_url") or homepage_url or "").strip() or homepage_url
     result = bootstrap_site_sections(
         db,
         school_name=normalized_school_name,
@@ -500,11 +571,30 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
     job_ids = list(result.get("job_ids") or [])
     state = "queued" if job_ids else "in_progress"
     message = f"已自动为 {normalized_school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓内容，请稍后自动刷新。"
+    visible_sections = [
+        section
+        for section in list(result.get("items") or [])
+        if isinstance(section, SiteSection) and _section_is_compatible_for_families(section, normalized_families)
+    ]
+    candidate_urls = (
+        _dedupe_texts([section.section_url for section in visible_sections])
+        if visible_sections
+        else list(result.get("candidate_urls") or expanded_seed_urls[:5])
+    )
+    if deny_prefixes:
+        candidate_urls = [url for url in candidate_urls if not any(str(url or "").startswith(prefix) for prefix in deny_prefixes)]
+    if normalized_families == {"notice", "admissions"}:
+        candidate_urls = [
+            url
+            for url in candidate_urls
+            if not _looks_like_detail_section_url(url)
+            and not _looks_department_scoped_text(url)
+        ]
     return {
         "state": state,
         "school_name": normalized_school_name,
         "message": message,
-        "candidate_urls": list(result.get("candidate_urls") or expanded_seed_urls[:5]),
+        "candidate_urls": candidate_urls,
         "job_ids": job_ids,
     }
 
