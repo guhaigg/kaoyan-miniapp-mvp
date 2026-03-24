@@ -2725,6 +2725,53 @@ def test_ensure_announcement_search_bootstrap_uses_shnu_canonical_override(monke
     assert result["candidate_urls"] == ["https://yjsc.shnu.edu.cn/17206/list.htm"]
 
 
+def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_sections(monkeypatch):
+    captured: dict[str, object] = {}
+
+    with SessionLocal() as db:
+        school = School(name="上海师范大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="上海师范大学官网",
+            source_type="official",
+            base_url="https://shnu.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            SiteSection(
+                school_id=school.id,
+                source_id=source.id,
+                name="通知公告",
+                section_type="notice",
+                section_url="http://web.shnu.edu.cn/yjspyzx/19513/list.htm",
+                discovery_category="announcement",
+                list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                detail_selector_config={},
+                enabled=1,
+            )
+        )
+        db.commit()
+
+    def _fake_bootstrap_site_sections(db, **kwargs):
+        captured.update(kwargs)
+        return {"job_ids": ["job-1"], "candidate_urls": ["https://yjsc.shnu.edu.cn/17206/list.htm"]}
+
+    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "上海师范大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert captured["homepage_url"] == "https://yjsc.shnu.edu.cn/"
+    assert result["candidate_urls"] == ["https://yjsc.shnu.edu.cn/17206/list.htm"]
+
+
 def test_ensure_adjustment_search_bootstrap_queues_existing_adjustment_sections():
     with SessionLocal() as db:
         school = School(name="调剂大学", aliases=[])

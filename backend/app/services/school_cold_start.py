@@ -470,6 +470,12 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
     normalized_families = {family for family in families if family in _KNOWN_FAMILIES}
     if not normalized_families:
         return None
+    announcement_override = (
+        _resolve_announcement_seed_override(normalized_school_name)
+        if normalized_families == {"notice", "admissions"}
+        else None
+    )
+    deny_prefixes = [str(prefix or "").strip() for prefix in (announcement_override or {}).get("deny_prefixes") or [] if str(prefix or "").strip()]
 
     school = db.query(School).filter(School.name == normalized_school_name).one_or_none()
     existing_sections: list[SiteSection] = []
@@ -480,6 +486,12 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
             .order_by(SiteSection.created_at.asc())
             .all()
         )
+        if deny_prefixes:
+            existing_sections = [
+                section
+                for section in existing_sections
+                if not any(str(section.section_url or "").startswith(prefix) for prefix in deny_prefixes)
+            ]
 
     reusable_sections = [section for section in existing_sections if _section_is_compatible_for_families(section, normalized_families)]
     recovery_seed_urls: list[str] = []
@@ -524,11 +536,6 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
             "job_ids": job_ids,
         }
 
-    announcement_override = (
-        _resolve_announcement_seed_override(normalized_school_name)
-        if normalized_families == {"notice", "admissions"}
-        else None
-    )
     seed_urls = list(announcement_override.get("seed_urls") or []) if announcement_override else _discover_seed_urls_from_docs(normalized_school_name)
     if normalized_families == {"notice", "admissions"} and seed_urls and not announcement_override:
         validated_seed_urls = [url for url in seed_urls if _candidate_page_matches_school_name(url, normalized_school_name)]
@@ -538,7 +545,6 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         seed_urls = _discover_seed_urls_from_search(normalized_school_name)
     if recovery_seed_urls:
         seed_urls = _dedupe_texts([*seed_urls, *recovery_seed_urls])
-    deny_prefixes = [str(prefix or "").strip() for prefix in (announcement_override or {}).get("deny_prefixes") or [] if str(prefix or "").strip()]
     if deny_prefixes:
         seed_urls = [url for url in seed_urls if not any(url.startswith(prefix) for prefix in deny_prefixes)]
     expanded_seed_urls = _expand_seed_urls(seed_urls)
