@@ -25,6 +25,54 @@ Important:
 - Those files are no longer the source of truth for the production web UI.
 - Do not sync `infra/nginx/` into `/var/www/html` during normal deployment.
 
+## 0.2) Current Production SSH Management Baseline
+
+Production SSH on `38.76.215.159` is now managed as key-only access.
+
+Current hardening file:
+
+- `/etc/ssh/sshd_config.d/99-gewu-ssh-hardening.conf`
+
+Repo copy:
+
+- `infra/ssh/99-gewu-ssh-hardening.conf`
+
+Current effective expectations:
+
+- `PasswordAuthentication no`
+- `KbdInteractiveAuthentication no`
+- `PermitRootLogin prohibit-password`
+- `PubkeyAuthentication yes`
+- `LoginGraceTime 20`
+- `MaxStartups 100:30:200`
+- `MaxSessions 50`
+- `UseDNS no`
+
+Why this was added:
+
+- Production SSH was intermittently dropping new sessions during preauth / banner exchange.
+- Root cause was not local key failure, but the combination of:
+  - internet password-scan noise against `root`
+  - our bursty deploy / diagnostic connections
+  - the default-ish `MaxStartups 10:30:100` preauth window being too small
+
+Operational rule:
+
+- Prefer a small number of longer-lived SSH sessions for deploy/debug work.
+- Avoid spawning many parallel SSH commands unless required.
+- After changing SSH config on the host, always run:
+
+```bash
+sshd -t
+systemctl reload ssh
+```
+
+- Then verify with:
+
+```bash
+ssh -o BatchMode=yes root@38.76.215.159 'echo ok'
+```
+
 ## 1) Environment Variables
 
 Copy `backend/.env.example` to `backend/.env` and fill values:
