@@ -56,6 +56,7 @@ npm run test:backend
 - [Legacy Claude Quickstart](./docs/archive/claude_quickstart.md)
 - [Docs Index](./docs/README.md)
 - [Current Status (2026-03-18)](./docs/current_status_2026-03-18.md)
+- [Crawler V2 Full Migration Architecture (2026-03-26)](./docs/crawler_v2_full_migration_architecture_2026-03-26.md)
 - [Development Protocol](./docs/development_protocol.md)
 - [Git Workflow](./docs/git_workflow.md)
 - [Deployment Handbook](./docs/deployment.md)

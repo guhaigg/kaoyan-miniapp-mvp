@@ -9,15 +9,16 @@
 - 以后默认只看“当前有效文档”
 - 旧阶段记录和一次性材料，统一按“历史/归档”处理，不再当主入口
 
-## 1. 先读这 5 份
+## 1. 先读这 6 份
 
-如果你刚接手项目，先读下面 5 份，足够建立当前全局认识：
+如果你刚接手项目，先读下面 6 份，足够建立当前全局认识：
 
 1. [主路线图](./plan.md)
 2. [当前进度（2026-03-18，最近更新到 2026-03-19）](./current_status_2026-03-18.md)
 3. [注册登录架构（Portal 用户）](./auth_login_architecture.md)
 4. [Backend and Crawler Spec](./backend_and_crawler.md)
-5. [Deployment Handbook](./deployment.md)
+5. [Crawler V2 完全迁移总体架构（2026-03-26）](./crawler_v2_full_migration_architecture_2026-03-26.md)
+6. [Deployment Handbook](./deployment.md)
 
 ## 2. 当前有效文档
 
@@ -33,6 +34,7 @@
 
 - [注册登录架构（Portal 用户）](./auth_login_architecture.md)
 - [Backend and Crawler Spec](./backend_and_crawler.md)
+- [Crawler V2 完全迁移总体架构（2026-03-26）](./crawler_v2_full_migration_architecture_2026-03-26.md)
 - [通知实时链路（Outbox + SSE）](./notification_realtime_architecture_2026-03-17.md)
 - [高校官网发现与公告情报管线方案（2026-03-18）](./school_notice_discovery_pipeline_2026-03-18.md)
 
@@ -122,7 +124,8 @@
 2. [当前进度](./current_status_2026-03-18.md)
 3. [注册登录架构](./auth_login_architecture.md)
 4. [Backend and Crawler Spec](./backend_and_crawler.md)
-5. 对应专题文档
+5. [Crawler V2 完全迁移总体架构](./crawler_v2_full_migration_architecture_2026-03-26.md)
+6. 对应专题文档
 
 ### 路径 B：准备上线或排障
 
