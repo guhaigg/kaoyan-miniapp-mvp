@@ -36,6 +36,11 @@ def test_search_announcements_and_adjustments(client):
             "school_name": "XX大学",
             "source_type": "crawler",
             "source_url": "https://example.com/a1",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "硕士招生",
+                "channel_tier": "core",
+            },
         },
         headers={"X-Admin-Token": "test-admin-token"},
     )
@@ -109,7 +114,13 @@ def test_announcement_search_school_filter_matches_extra_school_name_when_school
                 school_id=None,
                 source_type="manual",
                 source_url="https://example.com/lnnu-announcement",
-                extra={"school_name": "辽宁师范大学", "tags": ["招生简章"]},
+                extra={
+                    "school_name": "辽宁师范大学",
+                    "tags": ["招生简章"],
+                    "portal_scope": "graduate_admissions",
+                    "channel_label": "招生简章",
+                    "channel_tier": "core",
+                },
             )
         )
         db.commit()
@@ -179,7 +190,13 @@ def test_search_announcements_school_scope_excludes_department_rows_by_default(c
                     summary="学校级招生公告",
                     source_type="crawler",
                     source_url="https://yjsc.shnu.edu.cn/17206/1001.htm",
-                    extra={"school_name": "上海师范大学", "site_section_id": school_section.id},
+                    extra={
+                        "school_name": "上海师范大学",
+                        "site_section_id": school_section.id,
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "硕士招生",
+                        "channel_tier": "core",
+                    },
                 ),
                 Content(
                     school_id=school.id,
@@ -261,7 +278,13 @@ def test_search_announcements_school_scope_keeps_school_level_rows_when_keywords
                     summary="学校级招生公告",
                     source_type="crawler",
                     source_url="https://yjsc.shnu.edu.cn/17206/1002.htm",
-                    extra={"school_name": "上海师范大学", "site_section_id": school_section.id},
+                    extra={
+                        "school_name": "上海师范大学",
+                        "site_section_id": school_section.id,
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "硕士招生",
+                        "channel_tier": "core",
+                    },
                 ),
                 Content(
                     school_id=school.id,
@@ -2306,6 +2329,9 @@ def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):
                 "tags": ["复试线", "招生简章"],
                 "notice_kind": "link_notice",
                 "pdf_parse_status": "needs_ocr",
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
             },
         },
         headers={"X-Admin-Token": "test-admin-token"},
@@ -2324,7 +2350,7 @@ def test_search_announcements_exposes_notice_kind_and_pdf_parse_status(client):
     assert payload["items"][0]["notice_kind"] == "link_notice"
     assert payload["items"][0]["pdf_parse_status"] == "needs_ocr"
     assert payload["items"][0]["system_tags"] == ["通知公告"]
-    assert payload["items"][0]["tags"] == ["复试线", "招生简章", "通知公告"]
+    assert payload["items"][0]["tags"] == ["通知公告", "复试线", "招生简章"]
 
 
 def test_search_announcements_matches_department_name_and_tags_from_extra(client):
@@ -2462,6 +2488,52 @@ def test_search_announcements_filters_portal_visibility_and_system_tags(client):
     assert filtered_payload["items"][0]["channel_tier"] == "core"
 
 
+def test_search_announcements_hides_unarchived_history_rows_by_default(client):
+    admin_headers = {"X-Admin-Token": "test-admin-token"}
+
+    hidden = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "严格大学校内新闻",
+            "body": "这是学校普通新闻，不属于研招公告。",
+            "summary": "历史普通新闻",
+            "school_name": "严格大学",
+            "source_type": "crawler",
+            "source_url": "https://news.strict.example.edu.cn/2026/notice-1",
+        },
+        headers=admin_headers,
+    )
+    assert hidden.status_code == 200
+
+    visible = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "严格大学2026年硕士研究生招生简章",
+            "body": "现发布2026年硕士研究生招生简章。",
+            "summary": "研招核心公告",
+            "school_name": "严格大学",
+            "source_type": "crawler",
+            "source_url": "https://yz.strict.example.edu.cn/guide/2026.html",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "招生简章",
+                "channel_tier": "core",
+                "system_tags": ["招生简章"],
+            },
+        },
+        headers=admin_headers,
+    )
+    assert visible.status_code == 200
+
+    search = client.post("/api/v1/search/announcements", json={"school_name": "严格大学"})
+    assert search.status_code == 200
+    payload = search.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["title"] == "严格大学2026年硕士研究生招生简章"
+
+
 def test_content_upsert_dedupes_by_fingerprint_when_source_url_changes(client):
     first = client.post(
         "/api/v1/content",
@@ -2551,7 +2623,12 @@ def test_search_announcements_recovers_stale_content_fields_from_body(client):
                 published_at=None,
                 region=None,
                 major=None,
-                extra={"tags": ["招生简章", "同等学力"]},
+                extra={
+                    "tags": ["招生简章", "同等学力"],
+                    "portal_scope": "graduate_admissions",
+                    "channel_label": "招生简章",
+                    "channel_tier": "core",
+                },
             )
         )
         db.commit()
@@ -3446,6 +3523,11 @@ def test_search_announcements_excludes_non_detail_and_test_rows(client):
             "school_name": "湖北师范大学",
             "source_type": "crawler",
             "source_url": "https://fld.hbnu.edu.cn/info/1234/5678.htm",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "招生信息",
+                "channel_tier": "core",
+            },
         },
         headers=headers,
     )
@@ -3677,8 +3759,8 @@ def test_anonymous_search_is_limited_to_first_two_records(client):
             "/api/v1/content",
             json={
                 "category": "announcement",
-                "title": f"匿名预览公告 {index}",
-                "body": "用于验证匿名搜索只展示前两条。",
+                "title": f"匿名预览招生公告 {index}",
+                "body": "用于验证匿名搜索只展示前两条，公告内容涉及硕士研究生招生安排。",
                 "school_name": "预览大学",
                 "source_type": "crawler",
                 "source_url": f"https://example.com/public-preview-{index}",
@@ -3711,6 +3793,11 @@ def test_portal_logged_in_user_gets_full_announcement_search(client):
                 "school_name": "登录大学",
                 "source_type": "crawler",
                 "source_url": f"https://example.com/auth-preview-{index}",
+                "extra": {
+                    "portal_scope": "graduate_admissions",
+                    "channel_label": "通知公告",
+                    "channel_tier": "core",
+                },
             },
             headers={"X-Admin-Token": "test-admin-token"},
         )

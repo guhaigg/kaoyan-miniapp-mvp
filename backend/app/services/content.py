@@ -9,15 +9,25 @@ from ..models import Content, ContentSnapshot, Department, NotificationOutbox, S
 from ..schemas import ContentIn
 from .announcement_portal import (
     announcement_extra_is_visible,
+    clear_announcement_portal_metadata,
     derive_announcement_system_tags,
     merge_announcement_tags,
     normalize_portal_tags,
+    resolve_announcement_portal_metadata,
 )
 from .content_repair import infer_non_detail_announcement_reason
 from .content_summary import normalize_text_whitespace, summarize_text
 from .nlp import extract_adjustment_meta, extract_domain_tags, infer_content_category
 from .premium_monitoring import evaluate_content_for_premium_monitoring
 from .search_cache import search_response_cache
+
+_ANNOUNCEMENT_PORTAL_KEYS = (
+    "portal_scope",
+    "portal_entry_url",
+    "channel_label",
+    "channel_tier",
+    "portal_path_evidence",
+)
 
 
 def _resolve_school(db: Session, school_name: str | None) -> School | None:
@@ -99,7 +109,7 @@ def _resolve_site_section(
     return rows[0]
 
 
-def _normalize_scope_extra(db: Session, *, school: School | None, incoming_extra: dict) -> tuple[School | None, dict]:
+def _normalize_scope_extra(db: Session, *, school: School | None, incoming_extra: dict) -> tuple[School | None, dict, SiteSection | None]:
     normalized_extra = dict(incoming_extra)
     resolved_school = school or _resolve_school_by_id(db, normalized_extra.get("school_id"))
     department = _resolve_department(
@@ -133,7 +143,7 @@ def _normalize_scope_extra(db: Session, *, school: School | None, incoming_extra
     if resolved_school is not None:
         normalized_extra["school_id"] = resolved_school.id
 
-    return resolved_school, normalized_extra
+    return resolved_school, normalized_extra, section
 
 
 def _normalize_fingerprint_part(value: str | None, *, strip_all_spaces: bool = False) -> str:
@@ -189,6 +199,97 @@ def _apply_payload_to_content(
     content.major = payload.major
     content.content_fingerprint = content_fingerprint
     content.extra = merged_extra
+
+
+def _merge_explicit_announcement_portal_overrides(extra: dict) -> tuple[dict, list[str], list[str]]:
+    explicit = dict(extra or {})
+    portal_overrides: dict[str, object] = {}
+    for key in _ANNOUNCEMENT_PORTAL_KEYS:
+        value = explicit.get(key)
+        if isinstance(value, dict):
+            if value:
+                portal_overrides[key] = dict(value)
+            continue
+        text = str(value or "").strip()
+        if text:
+            portal_overrides[key] = text
+
+    channel_keywords = normalize_portal_tags(explicit.get("channel_keywords") or [])
+    system_tags = normalize_portal_tags(explicit.get("system_tags") or [])
+    return portal_overrides, channel_keywords, system_tags
+
+
+def _preserve_announcement_scope_meta(extra: dict, *, section: SiteSection | None) -> dict[str, str]:
+    preserved: dict[str, str] = {}
+    if section is not None:
+        preserved["site_section_id"] = section.id
+        preserved["site_section_name"] = section.name
+        return preserved
+
+    for key in ("site_section_id", "site_section_name"):
+        text = str(extra.get(key) or "").strip()
+        if text:
+            preserved[key] = text
+    return preserved
+
+
+def _normalize_announcement_extra(
+    *,
+    extra: dict,
+    source_url: str | None,
+    title: str | None,
+    summary: str | None,
+    body: str | None,
+    section: SiteSection | None,
+) -> dict:
+    explicit_portal_overrides, explicit_channel_keywords, explicit_system_tags = _merge_explicit_announcement_portal_overrides(
+        extra
+    )
+    preserved_scope_meta = _preserve_announcement_scope_meta(extra, section=section)
+    next_extra = clear_announcement_portal_metadata(extra)
+    next_extra.update(preserved_scope_meta)
+    next_extra.update(
+        resolve_announcement_portal_metadata(
+            source_url=source_url,
+            title=title,
+            summary=summary,
+            body=body,
+            section_config=dict(section.list_selector_config or {}) if section is not None else None,
+            site_section_id=section.id if section is not None else None,
+            site_section_name=section.name if section is not None else None,
+        )
+    )
+    next_extra.update(preserved_scope_meta)
+    next_extra.update(explicit_portal_overrides)
+    if explicit_channel_keywords:
+        next_extra["channel_keywords"] = normalize_portal_tags(
+            [*list(next_extra.get("channel_keywords") or []), *explicit_channel_keywords]
+        )
+
+    if explicit_system_tags:
+        system_tags = explicit_system_tags
+    else:
+        system_tags = derive_announcement_system_tags(
+            title,
+            summary,
+            body,
+            channel_label=str(next_extra.get("channel_label") or ""),
+            channel_tier=str(next_extra.get("channel_tier") or ""),
+            channel_keywords=[
+                str(item)
+                for item in (next_extra.get("channel_keywords") or [])
+                if str(item or "").strip()
+            ],
+        )
+
+    next_extra["system_tags"] = system_tags
+    next_extra["tags"] = merge_announcement_tags(
+        next_extra.get("tags") or [],
+        system_tags,
+        channel_label=str(next_extra.get("channel_label") or ""),
+        prepend_channel_label=bool(section is not None or explicit_portal_overrides.get("channel_label")),
+    )
+    return next_extra
 
 
 def _find_existing_content(db: Session, *, source_url: str | None, content_fingerprint: str) -> Content | None:
@@ -262,7 +363,16 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
             incoming_extra.pop("content_quality", None)
             incoming_extra.pop("content_quality_reason", None)
     school = _resolve_school(db, payload.school_name)
-    school, incoming_extra = _normalize_scope_extra(db, school=school, incoming_extra=incoming_extra)
+    school, incoming_extra, section = _normalize_scope_extra(db, school=school, incoming_extra=incoming_extra)
+    if resolved_category == "announcement":
+        incoming_extra = _normalize_announcement_extra(
+            extra=incoming_extra,
+            source_url=payload.source_url,
+            title=payload.title,
+            summary=effective_summary,
+            body=payload.body,
+            section=section,
+        )
     content_fingerprint = _build_content_fingerprint(
         payload,
         school.name if school else payload.school_name,
@@ -286,7 +396,16 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     except IntegrityError:
         db.rollback()
         school = _resolve_school(db, payload.school_name)
-        school, incoming_extra = _normalize_scope_extra(db, school=school, incoming_extra=incoming_extra)
+        school, incoming_extra, section = _normalize_scope_extra(db, school=school, incoming_extra=incoming_extra)
+        if resolved_category == "announcement":
+            incoming_extra = _normalize_announcement_extra(
+                extra=incoming_extra,
+                source_url=payload.source_url,
+                title=payload.title,
+                summary=effective_summary,
+                body=payload.body,
+                section=section,
+            )
         existing = _find_existing_content(db, source_url=payload.source_url, content_fingerprint=content_fingerprint)
         if existing is None:
             raise

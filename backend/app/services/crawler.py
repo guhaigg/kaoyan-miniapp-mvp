@@ -22,9 +22,10 @@ from ..db import SessionLocal
 from ..models import ContentFile, CrawlError, CrawlJob, SiteSection, SiteSectionLink, utcnow
 from ..schemas import ContentIn
 from .announcement_portal import (
+    clear_announcement_portal_metadata,
     derive_announcement_system_tags,
-    extract_announcement_portal_metadata,
     merge_announcement_tags,
+    resolve_announcement_portal_metadata,
 )
 from .content import upsert_content
 from .content_repair import extract_content_published_at_from_body
@@ -890,16 +891,6 @@ def _scope_meta_from_query(db: Session, query: dict[str, Any]) -> dict[str, str]
     return meta
 
 
-def _announcement_extra_from_section(section: SiteSection | None) -> dict[str, Any]:
-    if section is None:
-        return {}
-    return extract_announcement_portal_metadata(
-        dict(section.list_selector_config or {}),
-        site_section_id=section.id,
-        site_section_name=section.name,
-    )
-
-
 def _finalize_ingest_extra(
     db: Session,
     *,
@@ -916,7 +907,26 @@ def _finalize_ingest_extra(
     if category != "announcement":
         return normalized_extra
 
-    normalized_extra.update(_announcement_extra_from_section(section))
+    prefer_channel_label_first = bool(section is not None or str(normalized_extra.get("channel_label") or "").strip())
+    preserved_scope_meta = {
+        key: str(normalized_extra.get(key) or "").strip()
+        for key in ("site_section_id", "site_section_name")
+        if str(normalized_extra.get(key) or "").strip()
+    }
+    normalized_extra = clear_announcement_portal_metadata(normalized_extra)
+    normalized_extra.update(preserved_scope_meta)
+    normalized_extra.update(
+        resolve_announcement_portal_metadata(
+            source_url=str(query.get("source_url") or ""),
+            title=title,
+            summary=summary,
+            body=body,
+            section_config=dict(section.list_selector_config or {}) if section is not None else None,
+            site_section_id=section.id if section is not None else None,
+            site_section_name=section.name if section is not None else None,
+        )
+    )
+    normalized_extra.update(preserved_scope_meta)
     system_tags = derive_announcement_system_tags(
         title,
         summary,
@@ -934,6 +944,7 @@ def _finalize_ingest_extra(
         normalized_extra.get("tags") or _build_content_tags(title, summary, body),
         system_tags,
         channel_label=str(normalized_extra.get("channel_label") or ""),
+        prepend_channel_label=prefer_channel_label_first,
     )
     return normalized_extra
 

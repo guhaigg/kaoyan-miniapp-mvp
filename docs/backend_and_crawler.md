@@ -169,3 +169,11 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - Text-based PDF extraction is supported, but scanned/image PDF still requires a later OCR stage.
   - NLP is currently limited to domain keyword tagging (`jieba` + custom dictionary), not full ranking/semantic analysis.
   - No per-user dedicated crawler workers.
+
+## 9.1) Announcement Portal Visibility Rules
+
+- Search and premium monitoring only expose announcement rows that are considered visible in the graduate-admissions portal scope, unless the row is explicitly department-scoped.
+- `site_section_id / site_section_name` are treated as scope-matching metadata and must be preserved during content upsert/backfill even when portal classification is recomputed.
+- Explicitly provided `system_tags` are authoritative and should not be broadened again during upsert.
+- Automatically inferred `channel_label` may enrich tags, but should not override the original tag ordering unless the label came from an explicit payload or a maintained `site_section`.
+- Negative phrasing such as `不属于研招` / `与研究生招生无关` must not auto-promote ordinary history/news rows into visible graduate-admissions announcements.

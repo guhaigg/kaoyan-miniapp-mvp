@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 PORTAL_SCOPE_GRADUATE_ADMISSIONS = "graduate_admissions"
 
@@ -170,6 +171,74 @@ _SUPPLEMENTAL_GATEWAY_TAGS = {
     "招生宣传",
 }
 
+_GRADUATE_ADMISSIONS_CONTENT_TAGS = {
+    "硕士招生",
+    "博士招生",
+    "招生简章",
+    "专业目录",
+    "政策文件",
+    "调剂",
+}
+
+_GRADUATE_ADMISSIONS_TEXT_HINTS = (
+    "研究生招生",
+    "研招",
+    "硕士招生",
+    "博士招生",
+    "招生简章",
+    "招生目录",
+    "专业目录",
+    "招生章程",
+    "报考",
+    "初试",
+    "复试",
+    "调剂",
+    "拟录取",
+    "录取名单",
+    "推免",
+    "夏令营",
+    "成绩查询",
+)
+
+_GRADUATE_ADMISSIONS_NEGATIVE_HINTS = (
+    "不属于研招",
+    "不属于研究生招生",
+    "不是研招",
+    "不是研究生招生",
+    "非研招",
+    "非研究生招生",
+    "与研招无关",
+    "与研究生招生无关",
+)
+
+_GRADUATE_ADMISSIONS_URL_HINTS = (
+    "yz.",
+    ".yz.",
+    "yzb.",
+    "zsw",
+    "yjsc",
+    "yjsy",
+    "graduate",
+    "postgraduate",
+    "admission",
+    "admissions",
+    "zhaosheng",
+    "master",
+    "doctor",
+    "phd",
+)
+
+_PORTAL_METADATA_KEYS = (
+    "portal_scope",
+    "portal_entry_url",
+    "channel_label",
+    "channel_tier",
+    "channel_keywords",
+    "portal_path_evidence",
+    "site_section_id",
+    "site_section_name",
+)
+
 
 def normalize_portal_text(value: Any) -> str:
     return _SPACE_RE.sub(" ", str(value or "")).strip()
@@ -191,6 +260,13 @@ def normalize_portal_tags(values: Iterable[Any] | None) -> list[str]:
     if values is None:
         return []
     return _dedupe_strings(str(value or "") for value in values)
+
+
+def clear_announcement_portal_metadata(extra: dict[str, Any] | None) -> dict[str, Any]:
+    payload = dict(extra or {})
+    for key in _PORTAL_METADATA_KEYS:
+        payload.pop(key, None)
+    return payload
 
 
 def is_graduate_portal_entry_text(text: str) -> bool:
@@ -270,11 +346,14 @@ def merge_announcement_tags(
     system_tags: Iterable[Any] | None,
     *,
     channel_label: str | None = None,
+    prepend_channel_label: bool = True,
 ) -> list[str]:
     merged: list[str] = []
-    if channel_label:
+    if channel_label and prepend_channel_label:
         merged.append(channel_label)
     merged.extend(str(tag or "") for tag in (tags or []))
+    if channel_label and not prepend_channel_label:
+        merged.append(channel_label)
     merged.extend(str(tag or "") for tag in (system_tags or []))
     return _dedupe_strings(merged)
 
@@ -309,6 +388,81 @@ def extract_announcement_portal_metadata(
     return metadata
 
 
+def announcement_source_url_looks_like_graduate_admissions(source_url: str | None) -> bool:
+    text = normalize_portal_text(source_url).lower()
+    if not text:
+        return False
+    parsed = urlparse(text if "://" in text else f"https://{text}")
+    host = str(parsed.netloc or parsed.path or "").lower()
+    path = str(parsed.path or "").lower()
+    combined = " ".join(part for part in (host, path, text) if part)
+    return any(hint in combined for hint in _GRADUATE_ADMISSIONS_URL_HINTS)
+
+
+def announcement_text_looks_like_graduate_admissions(
+    title: str | None,
+    summary: str | None,
+    body: str | None,
+) -> bool:
+    combined = normalize_portal_text(
+        " ".join(part for part in (title, summary, str(body or "")[:1600]) if str(part or "").strip())
+    )
+    if any(hint in combined for hint in _GRADUATE_ADMISSIONS_NEGATIVE_HINTS):
+        return False
+
+    derived_tags = set(
+        derive_announcement_system_tags(
+            title,
+            summary,
+            body,
+        )
+    )
+    if derived_tags & _GRADUATE_ADMISSIONS_CONTENT_TAGS:
+        return True
+    return any(hint in combined for hint in _GRADUATE_ADMISSIONS_TEXT_HINTS)
+
+
+def resolve_announcement_portal_metadata(
+    *,
+    source_url: str | None,
+    title: str | None,
+    summary: str | None,
+    body: str | None,
+    section_config: dict[str, Any] | None = None,
+    site_section_id: str | None = None,
+    site_section_name: str | None = None,
+) -> dict[str, Any]:
+    source_confident = announcement_source_url_looks_like_graduate_admissions(source_url)
+    text_confident = announcement_text_looks_like_graduate_admissions(title, summary, body)
+    if not source_confident and not text_confident:
+        return {}
+
+    metadata = extract_announcement_portal_metadata(
+        section_config,
+        site_section_id=site_section_id,
+        site_section_name=site_section_name,
+    )
+    if not normalize_portal_text(metadata.get("portal_scope")):
+        metadata["portal_scope"] = PORTAL_SCOPE_GRADUATE_ADMISSIONS
+
+    channel_meta = classify_announcement_channel(
+        source_url,
+        title,
+        summary,
+        str(body or "")[:1600],
+    )
+    if channel_meta is not None:
+        metadata.setdefault("channel_label", str(channel_meta["label"]))
+        metadata.setdefault("channel_tier", str(channel_meta["tier"]))
+        metadata["channel_keywords"] = normalize_portal_tags(
+            [
+                *list(metadata.get("channel_keywords") or []),
+                *list(channel_meta.get("keywords") or []),
+            ]
+        )
+    return metadata
+
+
 def supplemental_content_is_visible(channel_tier: str | None, system_tags: Iterable[str]) -> bool:
     if channel_tier != "supplemental":
         return True
@@ -323,7 +477,7 @@ def announcement_content_is_visible(
     system_tags: Iterable[Any] | None,
     department_id: str | None = None,
     department_name: str | None = None,
-    default_visible: bool = True,
+    default_visible: bool = False,
 ) -> bool:
     if normalize_portal_text(department_id) or normalize_portal_text(department_name):
         return True
@@ -336,7 +490,7 @@ def announcement_content_is_visible(
     return supplemental_content_is_visible(normalize_portal_text(channel_tier), normalize_portal_tags(system_tags))
 
 
-def announcement_extra_is_visible(extra: dict[str, Any] | None, *, default_visible: bool = True) -> bool:
+def announcement_extra_is_visible(extra: dict[str, Any] | None, *, default_visible: bool = False) -> bool:
     payload = dict(extra or {})
     system_tags = payload.get("system_tags")
     if not isinstance(system_tags, list):

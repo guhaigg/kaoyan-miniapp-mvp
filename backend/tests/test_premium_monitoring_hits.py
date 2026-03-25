@@ -204,6 +204,11 @@ def test_updated_content_does_not_duplicate_hit_or_monitor_outbox(client):
             "body": "第一版通知内容",
             "school_name": "北京大学",
             "source_url": "https://example.com/pm-hit-2",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+            },
         },
         headers=_admin_headers(),
     )
@@ -218,6 +223,11 @@ def test_updated_content_does_not_duplicate_hit_or_monitor_outbox(client):
             "body": "第二版通知内容（updated）",
             "school_name": "北京大学",
             "source_url": "https://example.com/pm-hit-2",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+            },
         },
         headers=_admin_headers(),
     )
@@ -366,6 +376,11 @@ def test_monitor_hit_generates_bark_delivery_when_enabled(client):
             "body": "这是新的公告内容",
             "school_name": "同济大学",
             "source_url": "https://example.com/pm-hit-4",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+            },
         },
         headers=_admin_headers(),
     )
@@ -396,6 +411,11 @@ def test_scope_only_school_target_generates_hit_without_keywords(client):
             "body": "这里是最新招生公告正文",
             "school_name": "厦门大学",
             "source_url": "https://example.com/pm-hit-scope-only",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+            },
         },
         headers=_admin_headers(),
     )

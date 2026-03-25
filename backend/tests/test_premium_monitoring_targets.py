@@ -316,13 +316,13 @@ def test_target_list_includes_recent_three_day_announcement_signal_summary(clien
     assert overview["tracked_target_count"] == 3
     assert overview["active_target_count"] == 3
     assert overview["recruitment_target_count"] == 3
-    assert overview["total_recent_announcements"] == 2
+    assert overview["total_recent_announcements"] == 1
     assert overview["total_recruitment_announcements"] == 1
     assert overview["latest_announcement"]["title"] == "计算机学院2026年硕士研究生招生简章"
 
     items = {item["scope_type"]: item for item in payload["items"]}
     school_signal = items["school"]["recent_signal"]
-    assert school_signal["recent_announcement_count"] == 2
+    assert school_signal["recent_announcement_count"] == 1
     assert school_signal["recruitment_announcement_count"] == 1
 
     department_signal = items["department"]["recent_signal"]

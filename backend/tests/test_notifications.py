@@ -300,6 +300,11 @@ def test_live_notice_is_skipped_after_pending_fetch_claims_same_delivery(client)
             "summary": "SSE race 测试",
             "school_name": "中南大学",
             "source_url": "https://example.com/notice-live-race",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+            },
         },
         headers=admin_headers,
     )
@@ -432,6 +437,11 @@ def test_bark_delivery_failure_marks_retry_or_failed(client, monkeypatch):
             "body": "最新通知",
             "school_name": "北京大学",
             "source_url": "https://example.com/notice-3",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+            },
         },
         headers=admin_headers,
     )
@@ -481,6 +491,11 @@ def test_expired_premium_user_school_subscription_is_recycled_and_no_school_deli
             "summary": "测试到期回收逻辑",
             "school_name": "南京大学",
             "source_url": "https://example.com/notice-expired-school",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+            },
         },
         headers=admin_headers,
     )

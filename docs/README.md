@@ -43,6 +43,7 @@
 - [Deployment Handbook](./deployment.md)
 - [Release and Rollback Checklist（2026-03-18）](./release_and_rollback_checklist_2026-03-18.md)
 - [服务器目录与部署路径说明（2026-03-19）](./server_layout_and_deploy_paths_2026-03-19.md)
+- [研招公告可见性收口交接文档（2026-03-25）](./handoff_announcement_portal_visibility_2026-03-25.md)
 
 ### 2.4 账号与会员专题
 

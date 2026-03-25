@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..models import Content, SiteSection, SiteSectionLink
 from .announcement_portal import (
+    clear_announcement_portal_metadata,
     derive_announcement_system_tags,
-    extract_announcement_portal_metadata,
     merge_announcement_tags,
     normalize_portal_tags,
     normalize_portal_text,
+    resolve_announcement_portal_metadata,
 )
+from .search_cache import search_response_cache
 
 
 def _resolve_section_lookup(db: Session, rows: list[Content]) -> dict[str, SiteSection]:
@@ -96,6 +98,7 @@ def backfill_announcement_portal_metadata(
     updated = 0
     skipped_no_section = 0
     skipped_school = 0
+    inferred_without_section = 0
 
     for row in rows:
         scanned += 1
@@ -110,15 +113,21 @@ def backfill_announcement_portal_metadata(
         section = _resolve_content_section(row, section_lookup, link_lookup)
         if section is None:
             skipped_no_section += 1
-            continue
-        matched += 1
+        else:
+            matched += 1
 
         next_extra = dict(extra)
-        metadata = extract_announcement_portal_metadata(
-            dict(section.list_selector_config or {}),
-            site_section_id=section.id,
-            site_section_name=section.name,
+        metadata = resolve_announcement_portal_metadata(
+            source_url=row.source_url,
+            title=row.title,
+            summary=row.summary,
+            body=row.body,
+            section_config=dict(section.list_selector_config or {}) if section is not None else None,
+            site_section_id=section.id if section is not None else None,
+            site_section_name=section.name if section is not None else None,
         )
+        if overwrite:
+            next_extra = clear_announcement_portal_metadata(next_extra)
         for key, value in metadata.items():
             if key == "channel_keywords":
                 current = normalize_portal_tags(next_extra.get(key) or [])
@@ -136,8 +145,11 @@ def backfill_announcement_portal_metadata(
             if overwrite or not normalize_portal_text(next_extra.get(key)):
                 next_extra[key] = value
 
-        next_extra["site_section_id"] = section.id
-        next_extra["site_section_name"] = section.name
+        if section is not None:
+            next_extra["site_section_id"] = section.id
+            next_extra["site_section_name"] = section.name
+        elif metadata:
+            inferred_without_section += 1
         if row_school_name and not normalize_portal_text(next_extra.get("school_name")):
             next_extra["school_name"] = row_school_name
 
@@ -160,6 +172,7 @@ def backfill_announcement_portal_metadata(
             next_extra.get("tags") or [],
             system_tags,
             channel_label=channel_label,
+            prepend_channel_label=section is not None,
         )
 
         if next_extra == extra:
@@ -172,6 +185,7 @@ def backfill_announcement_portal_metadata(
         db.rollback()
     else:
         db.commit()
+        search_response_cache.clear()
 
     return {
         "scanned": scanned,
@@ -179,5 +193,6 @@ def backfill_announcement_portal_metadata(
         "updated": updated,
         "skipped_no_section": skipped_no_section,
         "skipped_school": skipped_school,
+        "inferred_without_section": inferred_without_section,
         "dry_run": dry_run,
     }
