@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 from sqlalchemy.orm import Session
 
 from ..models import CrawlJob, Department, School, Source, SiteSection, utcnow
-from .announcement_portal import PORTAL_SCOPE_GRADUATE_ADMISSIONS
+from .announcement_portal import PORTAL_SCOPE_GRADUATE_ADMISSIONS, portal_candidate_host, portal_candidate_hosts, score_announcement_portal_candidate
 from .crawler import _extract_links, _extract_title, _fetch_with_retry, build_site_section_detail_selector_config, build_site_section_list_selector_config
 from .site_section_probe import (
     ContainerCandidate,
@@ -279,14 +279,44 @@ def _candidate_score(candidate: ContainerCandidate) -> int:
     return score
 
 
-def _build_candidate_section(candidate: ContainerCandidate, *, page_title: str | None) -> CandidateSection:
+def _normalize_preferred_hosts(
+    preferred_hosts: set[str] | list[str] | tuple[str, ...] | None,
+    *,
+    portal_entry_url: str | None = None,
+) -> set[str]:
+    hosts = portal_candidate_hosts(preferred_hosts or [])
+    portal_host = portal_candidate_host(portal_entry_url)
+    if portal_host:
+        hosts.add(portal_host)
+    return hosts
+
+
+def _candidate_portal_score(candidate: ContainerCandidate, *, preferred_hosts: set[str]) -> int:
+    evidence = dict(candidate.evidence or {})
+    return score_announcement_portal_candidate(
+        candidate.page_url,
+        candidate.heading_text,
+        str(evidence.get("stable_text") or ""),
+        str(evidence.get("weak_text") or ""),
+        preferred_hosts=preferred_hosts,
+        channel_label=candidate.channel_label,
+        channel_tier=candidate.channel_tier,
+    )
+
+
+def _build_candidate_section(
+    candidate: ContainerCandidate,
+    *,
+    page_title: str | None,
+    preferred_hosts: set[str],
+) -> CandidateSection:
     name = _normalize_label(candidate.heading_text or page_title or "", candidate.page_url)
     return CandidateSection(
         page_url=candidate.page_url,
         name=name,
         section_type=family_to_section_type(candidate.family),
         discovery_category=family_to_discovery_category(candidate.family),
-        score=_candidate_score(candidate),
+        score=_candidate_score(candidate) + _candidate_portal_score(candidate, preferred_hosts=preferred_hosts),
         probe_candidate=candidate,
     )
 
@@ -364,7 +394,12 @@ def _build_list_config_for_candidate(
     return build_site_section_list_selector_config(section, overrides)
 
 
-def _probe_seed_page(seed_url: str, *, families: set[str] | None) -> tuple[list[CandidateSection], list[str]]:
+def _probe_seed_page(
+    seed_url: str,
+    *,
+    families: set[str] | None,
+    preferred_hosts: set[str],
+) -> tuple[list[CandidateSection], list[str]]:
     raw_html, page_title = _fetch_html(seed_url)
     result = probe_section_page(
         seed_url,
@@ -381,7 +416,7 @@ def _probe_seed_page(seed_url: str, *, families: set[str] | None) -> tuple[list[
             continue
         if _looks_like_channel_prefix_page_url(item.page_url) or _looks_like_fragmentary_page_url(item.page_url):
             continue
-        candidates.append(_build_candidate_section(item, page_title=page_title))
+        candidates.append(_build_candidate_section(item, page_title=page_title, preferred_hosts=preferred_hosts))
 
     frontier_urls: list[str] = []
     seen_frontier: set[str] = set()
@@ -412,6 +447,7 @@ def bootstrap_site_sections(
     families: set[str] | None = None,
     portal_entry_url: str | None = None,
     portal_scope: str | None = None,
+    preferred_hosts: set[str] | list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     school = _resolve_school(db, school_name)
     department = _resolve_department(
@@ -443,6 +479,7 @@ def bootstrap_site_sections(
     resolved_portal_scope = portal_scope
     if resolved_portal_scope is None and normalized_families == {"admissions", "notice"}:
         resolved_portal_scope = PORTAL_SCOPE_GRADUATE_ADMISSIONS
+    resolved_preferred_hosts = _normalize_preferred_hosts(preferred_hosts, portal_entry_url=portal_entry_url)
     source = _ensure_source(db, school=school, homepage_url=homepage_urls[0])
     seed_pool = _collect_seed_urls(
         homepage_urls=homepage_urls,
@@ -460,7 +497,11 @@ def bootstrap_site_sections(
             continue
         seen_pages.add(seed_url)
         try:
-            candidates, frontier_urls = _probe_seed_page(seed_url, families=normalized_families)
+            candidates, frontier_urls = _probe_seed_page(
+                seed_url,
+                families=normalized_families,
+                preferred_hosts=resolved_preferred_hosts,
+            )
         except Exception:
             continue
 

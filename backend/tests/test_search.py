@@ -1,8 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.schemas import AnnouncementSearchRequest, SearchItem, SearchResponse
 from app.db import SessionLocal
-from app.models import AdjustmentOpportunity, Content, ContentSnapshot, CrawlJob, Department, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School, SiteSection, Source
+from app.models import AdjustmentOpportunity, AnnouncementPortalCache, Content, ContentSnapshot, CrawlJob, Department, HistoricalAdjustmentProfile, HistoricalReleaseTimingProfile, MentorEvaluation, RawDatasetArchive, School, SiteSection, Source
 from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 from app.services.content_repair import extract_content_published_at_from_body, infer_non_detail_announcement_reason
@@ -3019,6 +3019,261 @@ def test_ensure_announcement_search_bootstrap_prefers_canonical_site_over_existi
         assert job.query["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
 
 
+def test_ensure_announcement_search_bootstrap_prefers_discovered_two_hop_portal_host_before_reusing_existing_sections(monkeypatch):
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    pages = {
+        "https://www.chain.edu.cn/": _DummyResponse(
+            """
+            <html>
+              <head><title>两跳大学</title></head>
+              <body>
+                两跳大学欢迎你
+                <a href="https://gs.chain.edu.cn/">研究生院</a>
+              </body>
+            </html>
+            """
+        ),
+        "https://gs.chain.edu.cn/": _DummyResponse(
+            """
+            <html>
+              <head><title>两跳大学研究生院</title></head>
+              <body>
+                两跳大学研究生院
+                <a href="https://yz.chain.edu.cn/">招生工作</a>
+              </body>
+            </html>
+            """
+        ),
+        "https://yz.chain.edu.cn/": _DummyResponse(
+            """
+            <html>
+              <head><title>两跳大学研究生招生信息网</title></head>
+              <body>
+                两跳大学研究生招生信息网
+                <a href="/sszs/">硕士招生</a>
+                <a href="/tzgg/">通知公告</a>
+              </body>
+            </html>
+            """
+        ),
+    }
+
+    def _fake_fetch(url: str):
+        normalized = f"{url.rstrip('/')}/"
+        if normalized in pages:
+            return pages[normalized]
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_docs", lambda school_name: ["https://www.chain.edu.cn/"])
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_search", lambda school_name: [])
+    monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
+
+    with SessionLocal() as db:
+        school = School(name="两跳大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="两跳大学研究生院",
+            source_type="official",
+            base_url="https://gs.chain.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            SiteSection(
+                school_id=school.id,
+                source_id=source.id,
+                name="通知公告",
+                section_type="notice",
+                section_url="https://gs.chain.edu.cn/notices/",
+                discovery_category="announcement",
+                list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                detail_selector_config={},
+                enabled=1,
+            )
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "两跳大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"][0] == "https://yz.chain.edu.cn/"
+    assert "https://gs.chain.edu.cn/notices/" not in result["candidate_urls"]
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
+        assert job.query["job_kind"] == "family_discovery"
+        assert job.query["candidate_urls"][0] == "https://yz.chain.edu.cn/"
+
+
+def test_ensure_announcement_search_bootstrap_uses_fresh_cached_portal_candidates_before_live_discovery(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_docs",
+        lambda school_name: (_ for _ in ()).throw(AssertionError("docs discovery should not run")),
+    )
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_search",
+        lambda school_name: (_ for _ in ()).throw(AssertionError("search discovery should not run")),
+    )
+    monkeypatch.setattr(
+        "app.services.school_cold_start._fetch_with_retry",
+        lambda url: (_ for _ in ()).throw(AssertionError("navigation discovery should not run")),
+    )
+
+    with SessionLocal() as db:
+        school = School(name="缓存大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="缓存大学研究生院",
+            source_type="official",
+            base_url="https://gs.cache.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            SiteSection(
+                school_id=school.id,
+                source_id=source.id,
+                name="通知公告",
+                section_type="notice",
+                section_url="https://gs.cache.edu.cn/notices/",
+                discovery_category="announcement",
+                list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                detail_selector_config={},
+                enabled=1,
+            )
+        )
+        db.add(
+            AnnouncementPortalCache(
+                school_name="缓存大学",
+                families_key="admissions,notice",
+                candidate_urls=["https://yz.cache.edu.cn/", "https://yz.cache.edu.cn/sszs/"],
+                preferred_hosts=["yz.cache.edu.cn"],
+                last_verified_at=datetime.now(timezone.utc),
+            )
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "缓存大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert all(url.startswith("https://yz.cache.edu.cn/") for url in result["candidate_urls"])
+    assert "https://yz.cache.edu.cn/" in result["candidate_urls"]
+    assert "https://gs.cache.edu.cn/notices/" not in result["candidate_urls"]
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
+        assert job.query["job_kind"] == "family_discovery"
+        assert all(url.startswith("https://yz.cache.edu.cn/") for url in job.query["candidate_urls"])
+
+
+def test_ensure_announcement_search_bootstrap_keeps_reusing_existing_sections_without_strong_preferred_host(monkeypatch):
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_docs", lambda school_name: [])
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_search", lambda school_name: ["https://yz.balance.edu.cn/portal/"])
+    monkeypatch.setattr(
+        "app.services.school_cold_start._fetch_with_retry",
+        lambda url: _DummyResponse("<html><head><title>平衡大学研究生入口</title></head><body>平衡大学 研究生入口</body></html>"),
+    )
+
+    with SessionLocal() as db:
+        school = School(name="平衡大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="平衡大学研究生院",
+            source_type="official",
+            base_url="https://grad.balance.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            SiteSection(
+                school_id=school.id,
+                source_id=source.id,
+                name="通知公告",
+                section_type="notice",
+                section_url="https://grad.balance.edu.cn/notices/",
+                discovery_category="announcement",
+                list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                detail_selector_config={},
+                enabled=1,
+            )
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "平衡大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"] == ["https://grad.balance.edu.cn/notices/"]
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
+        assert job.query["job_kind"] == "site_section_discovery"
+        assert job.query["source_url"] == "https://grad.balance.edu.cn/notices/"
+
+
+def test_ensure_announcement_search_bootstrap_ignores_stale_cached_portal_candidates(monkeypatch):
+    calls: list[str] = []
+
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_docs",
+        lambda school_name: calls.append(school_name) or ["https://yz.fresh.edu.cn/"],
+    )
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_search", lambda school_name: [])
+    monkeypatch.setattr("app.services.school_cold_start._candidate_page_matches_school_name", lambda url, school_name: True)
+    monkeypatch.setattr(
+        "app.services.school_cold_start._fetch_with_retry",
+        lambda url: _DummyResponse("<html><head><title>过期大学研究生招生网</title></head><body>过期大学研究生招生网</body></html>"),
+    )
+
+    with SessionLocal() as db:
+        db.add(
+            AnnouncementPortalCache(
+                school_name="过期大学",
+                families_key="admissions,notice",
+                candidate_urls=["https://yz.stale.edu.cn/"],
+                preferred_hosts=["yz.stale.edu.cn"],
+                last_verified_at=datetime.now(timezone.utc) - timedelta(days=45),
+            )
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "过期大学")
+
+    assert calls == ["过期大学"]
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"] == ["https://yz.fresh.edu.cn/"]
+
+
 def test_candidate_page_matches_school_name_rejects_two_char_suffix_collisions(monkeypatch):
     class _DummyResponse:
         def __init__(self, text: str):
@@ -3142,6 +3397,64 @@ def test_ensure_announcement_search_bootstrap_uses_recent_no_candidate_cooldown(
     with SessionLocal() as db:
         jobs = db.query(CrawlJob).all()
         assert len(jobs) == 1
+
+
+def test_run_family_discovery_job_persists_verified_announcement_portal_cache(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_docs",
+        lambda school_name: ["https://yz.persist.edu.cn/"],
+    )
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_search", lambda school_name: [])
+    monkeypatch.setattr("app.services.school_cold_start._candidate_page_matches_school_name", lambda url, school_name: True)
+    monkeypatch.setattr(
+        "app.services.school_cold_start._fetch_with_retry",
+        lambda url: _DummyResponse("<html><head><title>持久大学研究生招生网</title></head><body>持久大学研究生招生网</body></html>"),
+    )
+
+    def _fake_bootstrap_site_sections(db, **kwargs):
+        captured.update(kwargs)
+        return {"job_ids": ["job-1"], "candidate_urls": ["https://yz.persist.edu.cn/sszs/"]}
+
+    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
+
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "持久大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, _message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
+
+    assert captured["homepage_url"] == "https://yz.persist.edu.cn/"
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        cache = (
+            db.query(AnnouncementPortalCache)
+            .filter(
+                AnnouncementPortalCache.school_name == "持久大学",
+                AnnouncementPortalCache.families_key == "admissions,notice",
+            )
+            .one()
+        )
+        assert job.query["result_state"] == "queued"
+        assert "https://yz.persist.edu.cn/" in cache.candidate_urls
+        assert cache.last_verified_at is not None
 
 
 def test_run_family_discovery_job_expands_adjustment_department_seed_urls(monkeypatch):
@@ -3528,6 +3841,97 @@ def test_family_discovery_job_runs_in_worker_and_persists_results(monkeypatch):
         assert job.status == "done"
         assert job.query["result_state"] == "queued"
         assert job.query["result_candidate_urls"] == ["https://yzb.jxau.edu.cn/sszs.htm"]
+
+
+def test_run_family_discovery_job_follows_two_hop_announcement_navigation_to_sibling_portal(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    pages = {
+        "https://www.chain.edu.cn/": _DummyResponse(
+            """
+            <html>
+              <head><title>两跳大学</title></head>
+              <body>
+                两跳大学欢迎你
+                <a href="https://gs.chain.edu.cn/">研究生院</a>
+              </body>
+            </html>
+            """
+        ),
+        "https://gs.chain.edu.cn/": _DummyResponse(
+            """
+            <html>
+              <head><title>两跳大学研究生院</title></head>
+              <body>
+                两跳大学研究生院
+                <a href="https://yz.chain.edu.cn/">招生工作</a>
+              </body>
+            </html>
+            """
+        ),
+        "https://yz.chain.edu.cn/": _DummyResponse(
+            """
+            <html>
+              <head><title>两跳大学研究生招生信息网</title></head>
+              <body>
+                两跳大学研究生招生信息网
+                <a href="/sszs/">硕士招生</a>
+                <a href="/tzgg/">通知公告</a>
+              </body>
+            </html>
+            """
+        ),
+        "https://yz.chain.edu.cn/sszs/": _DummyResponse(
+            "<html><head><title>两跳大学硕士招生</title></head><body>两跳大学硕士招生</body></html>"
+        ),
+        "https://yz.chain.edu.cn/tzgg/": _DummyResponse(
+            "<html><head><title>两跳大学通知公告</title></head><body>两跳大学通知公告</body></html>"
+        ),
+    }
+
+    def _fake_fetch(url: str):
+        normalized = f"{url.rstrip('/')}/"
+        if normalized in pages:
+            return pages[normalized]
+        raise AssertionError(f"unexpected url: {url}")
+
+    def _fake_bootstrap_site_sections(db, **kwargs):
+        captured.update(kwargs)
+        return {"job_ids": ["job-1"], "candidate_urls": ["https://yz.chain.edu.cn/sszs/"]}
+
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_docs", lambda school_name: ["https://www.chain.edu.cn/"])
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_search", lambda school_name: [])
+    monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
+    monkeypatch.setattr("app.services.school_cold_start.bootstrap_site_sections", _fake_bootstrap_site_sections)
+
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "两跳大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, _message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
+
+    assert captured["homepage_url"] == "https://yz.chain.edu.cn/"
+    assert "https://yz.chain.edu.cn/sszs/" in captured["seed_urls"]
+    assert "https://yz.chain.edu.cn/tzgg/" in captured["seed_urls"]
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "queued"
+        assert job.query["result_candidate_urls"] == ["https://yz.chain.edu.cn/sszs/"]
 
 
 def test_search_adjustments_returns_cold_start_metadata_for_unknown_school(client, monkeypatch):

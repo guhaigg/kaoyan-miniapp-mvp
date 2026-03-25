@@ -97,6 +97,23 @@ class SiteSection(Base):
     links: Mapped[list["SiteSectionLink"]] = relationship(back_populates="site_section", cascade="all, delete-orphan")
 
 
+class AnnouncementPortalCache(Base):
+    __tablename__ = "announcement_portal_caches"
+    __table_args__ = (
+        UniqueConstraint("school_name", "families_key", name="uq_announcement_portal_caches_school_families"),
+        Index("ix_announcement_portal_caches_lookup", "school_name", "families_key", "last_verified_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    school_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    families_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    candidate_urls: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    preferred_hosts: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    last_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+
 class SiteSectionLink(Base):
     __tablename__ = "site_section_links"
     __table_args__ = (UniqueConstraint("site_section_id", "link_url_hash", name="uq_site_section_links_section_url_hash"),)

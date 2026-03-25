@@ -301,6 +301,158 @@ def test_bootstrap_site_sections_rejects_channel_prefix_pages_as_leaf_sections(m
     assert "https://yzb.jxau.edu.cn/info/1021/" not in urls
 
 
+def test_bootstrap_site_sections_prioritizes_core_announcement_channels_over_supplemental_news(monkeypatch):
+    homepage_url = "https://rank.example.edu.cn/"
+    pages = {
+        homepage_url: (
+            """
+            <html><body>
+              <a href="/sszs.htm">硕士招生</a>
+              <a href="/notices.htm">通知公告</a>
+              <a href="/news.htm">工作动态</a>
+            </body></html>
+            """,
+            "排序大学研究生招生网",
+        ),
+        "https://rank.example.edu.cn/sszs.htm": (
+            """
+            <html><body>
+              <h2>硕士招生</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1001/2001.htm">排序大学2026年硕士招生简章</a></td></tr>
+                <tr><td><a href="/info/1001/2002.htm">排序大学2026年硕士招生复试安排</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "硕士招生-排序大学研究生招生网",
+        ),
+        "https://rank.example.edu.cn/notices.htm": (
+            """
+            <html><body>
+              <h2>通知公告</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1002/2001.htm">排序大学2026年报名公告</a></td></tr>
+                <tr><td><a href="/info/1002/2002.htm">排序大学2026年复试通知</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "通知公告-排序大学研究生招生网",
+        ),
+        "https://rank.example.edu.cn/news.htm": (
+            """
+            <html><body>
+              <h2>工作动态</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1003/2001.htm">排序大学2026年复试工作动态一</a></td></tr>
+                <tr><td><a href="/info/1003/2002.htm">排序大学2026年复试工作动态二</a></td></tr>
+                <tr><td><a href="/info/1003/2003.htm">排序大学2026年复试工作动态三</a></td></tr>
+                <tr><td><a href="/info/1003/2004.htm">排序大学2026年复试工作动态四</a></td></tr>
+                <tr><td><a href="/info/1003/2005.htm">排序大学2026年复试工作动态五</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "工作动态-排序大学研究生招生网",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    with SessionLocal() as db:
+        result = bootstrap_site_sections(
+            db,
+            school_name="排序大学",
+            homepage_url=homepage_url,
+            department_name=None,
+            department_type="graduate_school",
+            seed_urls=[],
+            enabled=True,
+            queue_discovery=False,
+            max_sections=1,
+            families={"notice", "admissions"},
+            portal_entry_url=homepage_url,
+            portal_scope="graduate_admissions",
+        )
+
+    assert result["items"][0].section_url == "https://rank.example.edu.cn/sszs.htm"
+
+
+def test_bootstrap_site_sections_prefers_sections_on_preferred_portal_hosts(monkeypatch):
+    homepage_url = "https://gs.rankhost.edu.cn/"
+    pages = {
+        homepage_url: (
+            """
+            <html><body>
+              <a href="https://yz.rankhost.edu.cn/sszs.htm">硕士招生</a>
+              <a href="/news.htm">工作动态</a>
+            </body></html>
+            """,
+            "排序大学研究生院",
+        ),
+        "https://yz.rankhost.edu.cn/sszs.htm": (
+            """
+            <html><body>
+              <h2>硕士招生</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1001/2001.htm">排序大学2026年硕士招生简章</a></td></tr>
+                <tr><td><a href="/info/1001/2002.htm">排序大学2026年硕士招生复试安排</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "硕士招生-排序大学研究生招生网",
+        ),
+        "https://gs.rankhost.edu.cn/news.htm": (
+            """
+            <html><body>
+              <h2>工作动态</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1003/2001.htm">排序大学2026年复试工作动态一</a></td></tr>
+                <tr><td><a href="/info/1003/2002.htm">排序大学2026年复试工作动态二</a></td></tr>
+                <tr><td><a href="/info/1003/2003.htm">排序大学2026年复试工作动态三</a></td></tr>
+                <tr><td><a href="/info/1003/2004.htm">排序大学2026年复试工作动态四</a></td></tr>
+                <tr><td><a href="/info/1003/2005.htm">排序大学2026年复试工作动态五</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "工作动态-排序大学研究生院",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    with SessionLocal() as db:
+        result = bootstrap_site_sections(
+            db,
+            school_name="排序大学",
+            homepage_url=homepage_url,
+            department_name=None,
+            department_type="graduate_school",
+            seed_urls=[],
+            enabled=True,
+            queue_discovery=False,
+            max_sections=1,
+            families={"notice", "admissions"},
+            portal_entry_url=homepage_url,
+            portal_scope="graduate_admissions",
+            preferred_hosts={"yz.rankhost.edu.cn"},
+        )
+
+    assert result["items"][0].section_url == "https://yz.rankhost.edu.cn/sszs.htm"
+
+
 def test_bootstrap_site_sections_handles_comment_nodes_before_list_content(monkeypatch):
     pages = {
         "https://yzb.jxau.edu.cn/": (

@@ -228,6 +228,24 @@ _GRADUATE_ADMISSIONS_URL_HINTS = (
     "phd",
 )
 
+_DETAIL_URL_PATTERNS = (
+    r"/page\.htm(?:l)?$",
+    r"/info/\d+/\d+\.htm(?:l)?$",
+    r"/c\d+[a-z]?\d+/page\.htm(?:l)?$",
+    r"/[a-z0-9_-]{0,12}\d{4,}\.htm(?:l)?$",
+)
+_CHANNEL_PREFIX_PATH_RE = re.compile(r"/info/\d+/?$", re.IGNORECASE)
+_CORE_CHANNEL_LABEL_SCORES = {
+    "硕士招生": 10,
+    "博士招生": 10,
+    "招生简章": 8,
+    "专业目录": 8,
+    "通知公告": 7,
+    "政策文件": 7,
+    "调剂": 8,
+    "招生信息": 6,
+}
+
 _PORTAL_METADATA_KEYS = (
     "portal_scope",
     "portal_entry_url",
@@ -274,6 +292,125 @@ def is_graduate_portal_entry_text(text: str) -> bool:
     if not normalized:
         return False
     return any(keyword in normalized for keyword in PORTAL_ENTRY_KEYWORDS)
+
+
+def portal_candidate_host(url: str | None) -> str:
+    normalized = normalize_portal_text(url)
+    if not normalized:
+        return ""
+    parsed = urlparse(normalized if "://" in normalized else f"https://{normalized}")
+    return str(parsed.netloc or "").lower()
+
+
+def portal_candidate_hosts(urls: Iterable[str | None]) -> set[str]:
+    return {
+        host
+        for host in (portal_candidate_host(url) for url in urls)
+        if host
+    }
+
+
+def looks_like_announcement_detail_page(url: str | None) -> bool:
+    normalized = normalize_portal_text(url)
+    if not normalized:
+        return False
+    path = (urlparse(normalized if "://" in normalized else f"https://{normalized}").path or "").lower()
+    if not path or path.endswith("/"):
+        return False
+    return any(re.search(pattern, path) for pattern in _DETAIL_URL_PATTERNS)
+
+
+def looks_like_announcement_channel_prefix_page(url: str | None) -> bool:
+    normalized = normalize_portal_text(url)
+    if not normalized:
+        return False
+    path = (urlparse(normalized if "://" in normalized else f"https://{normalized}").path or "").rstrip("/")
+    return bool(path) and bool(_CHANNEL_PREFIX_PATH_RE.search(path))
+
+
+def looks_like_announcement_fragmentary_page(url: str | None) -> bool:
+    normalized = normalize_portal_text(url)
+    if not normalized:
+        return False
+    path = (urlparse(normalized if "://" in normalized else f"https://{normalized}").path or "").strip("/")
+    if not path or "/" in path:
+        return False
+    return len(path) <= 1 and "." not in path
+
+
+def score_announcement_portal_candidate(
+    url: str | None,
+    *texts: str | None,
+    preferred_hosts: Iterable[str] | None = None,
+    channel_label: str | None = None,
+    channel_tier: str | None = None,
+) -> int:
+    normalized_url = normalize_portal_text(url)
+    if not normalized_url:
+        return 0
+
+    parsed = urlparse(normalized_url if "://" in normalized_url else f"https://{normalized_url}")
+    host = str(parsed.netloc or "").lower()
+    path = str(parsed.path or "").lower()
+    preferred_host_set = {str(item or "").strip().lower() for item in (preferred_hosts or []) if str(item or "").strip()}
+
+    score = 0
+    if host.endswith(".edu.cn"):
+        score += 10
+    if host.endswith(".ac.cn"):
+        score += 8
+    if host.startswith("yzb.") or ".yzb." in host:
+        score += 24
+    elif host.startswith("yjsc.") or ".yjsc." in host:
+        score += 22
+    elif host.startswith("yjsy.") or ".yjsy." in host:
+        score += 20
+    elif host.startswith("yjs.") or ".yjs." in host:
+        score += 18
+    elif host.startswith("yz.") or ".yz." in host:
+        score += 8
+    elif any(token in host for token in ("graduate", "grad", "zhaosheng", "admission", "admissions")):
+        score += 12
+
+    if any(token in path for token in ("sszs", "bszs", "zsjz", "tzgg", "policy", "tiaoji", "notice", "admission")):
+        score += 10
+    if path.endswith(("list.htm", "list.html", "main.htm", "index.htm")):
+        score += 6
+    if path and path not in {"", "/"}:
+        score += 2
+    if host.count(".") >= 2:
+        score += 1
+
+    normalized_text = normalize_portal_text(" ".join(str(text or "") for text in texts if str(text or "").strip()))
+    if page_looks_like_graduate_admissions_portal(normalized_text):
+        score += 8
+    if is_graduate_portal_entry_text(normalized_text):
+        score += 6
+
+    channel_meta = classify_announcement_channel(normalized_url, normalized_text)
+    resolved_channel_label = normalize_portal_text(channel_label) or (
+        str(channel_meta.get("label")) if channel_meta is not None else ""
+    )
+    resolved_channel_tier = normalize_portal_text(channel_tier) or (
+        str(channel_meta.get("tier")) if channel_meta is not None else ""
+    )
+
+    if resolved_channel_tier == "core":
+        score += 14
+    elif resolved_channel_tier == "supplemental":
+        score += 3
+    score += _CORE_CHANNEL_LABEL_SCORES.get(resolved_channel_label, 0)
+
+    if host and host in preferred_host_set:
+        score += 18
+
+    if looks_like_announcement_channel_prefix_page(normalized_url):
+        score -= 20
+    if looks_like_announcement_fragmentary_page(normalized_url):
+        score -= 20
+    if looks_like_announcement_detail_page(normalized_url):
+        score -= 40
+    return score
 
 
 def page_looks_like_graduate_admissions_portal(*texts: str | None) -> bool:

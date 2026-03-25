@@ -11,15 +11,24 @@ from urllib.parse import urljoin, urlparse, quote
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models import CrawlJob, School, SiteSection, SiteSectionLink, utcnow
-from .announcement_portal import PORTAL_SCOPE_GRADUATE_ADMISSIONS
+from ..models import AnnouncementPortalCache, CrawlJob, School, SiteSection, SiteSectionLink, utcnow
+from .announcement_portal import (
+    PORTAL_SCOPE_GRADUATE_ADMISSIONS,
+    is_graduate_portal_entry_text,
+    looks_like_announcement_channel_prefix_page,
+    looks_like_announcement_detail_page,
+    looks_like_announcement_fragmentary_page,
+    page_looks_like_graduate_admissions_portal,
+    portal_candidate_host,
+    portal_candidate_hosts,
+    score_announcement_portal_candidate,
+)
 from .crawler import _extract_links, _extract_title, _fetch_with_retry
 from .site_section_bootstrap import _host_scope, bootstrap_site_sections
 
 _SEARCH_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
-_HOST_HINTS = ("yjs", "yjsy", "yjsc", "yz", "zhaosheng", "graduate", "grad", "grs", "master")
 _SCHOOL_SUFFIXES = ("大学", "学院", "研究院", "研究所")
 _DENY_HOST_KEYWORDS = (
     "baidu.com",
@@ -71,8 +80,8 @@ _ANNOUNCEMENT_NAV_TEXT_HINTS = (
     "硕士研究生招生信息",
     "博士研究生招生信息",
 )
-_ANNOUNCEMENT_DOMAIN_PRIORITY_HINTS = ("yzb", "yjsc", "yjsy", "yjs", "graduate", "grad", "zhaosheng")
 _FAMILY_DISCOVERY_COOLDOWN = timedelta(minutes=10)
+_ANNOUNCEMENT_PORTAL_CACHE_TTL = timedelta(days=30)
 _ANNOUNCEMENT_CANONICAL_SEEDS: dict[str, dict[str, Any]] = {
     "湖北大学": {
         "homepage_url": "https://yz.hubu.edu.cn/",
@@ -147,10 +156,7 @@ def _parent_url(url: str) -> str | None:
 
 
 def _looks_like_detail_section_url(url: str) -> bool:
-    path = (urlparse(url).path or "").lower()
-    if not path or path.endswith("/"):
-        return False
-    return any(re.search(pattern, path) for pattern in _DETAIL_SECTION_URL_PATTERNS)
+    return looks_like_announcement_detail_page(url)
 
 
 def _derive_recovery_seed_urls_from_section_url(url: str) -> list[str]:
@@ -265,34 +271,28 @@ def _resolve_announcement_seed_override(school_name: str) -> dict[str, Any] | No
 def _announcement_override_hosts(announcement_override: dict[str, Any] | None) -> set[str]:
     if not announcement_override:
         return set()
-    hosts: set[str] = set()
-    urls = [
-        announcement_override.get("homepage_url"),
-        *(announcement_override.get("seed_urls") or []),
-    ]
-    for url in urls:
-        normalized = _normalize_url(str(url or ""))
-        host = (urlparse(normalized).netloc or "").lower()
-        if host:
-            hosts.add(host)
-    return hosts
+    return portal_candidate_hosts(
+        [
+            announcement_override.get("homepage_url"),
+            *(announcement_override.get("seed_urls") or []),
+        ]
+    )
 
 
-def _filter_existing_sections_for_announcement_override(
+def _filter_existing_sections_for_preferred_hosts(
     existing_sections: list[SiteSection],
     *,
     families: set[str],
-    announcement_override: dict[str, Any] | None,
+    preferred_hosts: set[str],
 ) -> list[SiteSection]:
     if families != {"notice", "admissions"}:
         return existing_sections
-    preferred_hosts = _announcement_override_hosts(announcement_override)
     if not preferred_hosts:
         return existing_sections
     return [
         section
         for section in existing_sections
-        if (urlparse(_normalize_url(str(section.section_url or ""))).netloc or "").lower() in preferred_hosts
+        if portal_candidate_host(section.section_url) in preferred_hosts
     ]
 
 
@@ -341,17 +341,11 @@ def _latest_family_discovery_job(
 
 
 def _looks_like_channel_prefix_page(url: str) -> bool:
-    path = (urlparse(url).path or "").rstrip("/")
-    return bool(path) and bool(_CHANNEL_PREFIX_PATH_RE.search(path))
+    return looks_like_announcement_channel_prefix_page(url)
 
 
 def _looks_like_fragmentary_seed_url(url: str) -> bool:
-    path = (urlparse(url).path or "").strip("/")
-    if not path:
-        return False
-    if "/" in path:
-        return False
-    return len(path) <= 1 and "." not in path
+    return looks_like_announcement_fragmentary_page(url)
 
 
 def _is_valid_school_seed_url(url: str, *, families: set[str]) -> bool:
@@ -370,34 +364,7 @@ def _is_valid_school_seed_url(url: str, *, families: set[str]) -> bool:
 
 
 def _score_seed_hint_url(url: str) -> int:
-    parsed = urlparse(url)
-    host = (parsed.netloc or "").lower()
-    path = (parsed.path or "").lower()
-    score = 0
-    if host.endswith(".edu.cn"):
-        score += 10
-    if host.endswith(".ac.cn"):
-        score += 8
-    if host.startswith("yzb.") or ".yzb." in host:
-        score += 24
-    elif host.startswith("yjsc.") or ".yjsc." in host:
-        score += 22
-    elif host.startswith("yjsy.") or ".yjsy." in host:
-        score += 20
-    elif host.startswith("yjs.") or ".yjs." in host:
-        score += 18
-    elif any(token in host for token in _ANNOUNCEMENT_DOMAIN_PRIORITY_HINTS):
-        score += 12
-    if any(token in path for token in ("sszs", "bszs", "zsjz", "tiaoji", "tzgg", "policy", "notice")):
-        score += 10
-    if path.endswith(("list.htm", "list.html", "main.htm", "index.htm")):
-        score += 6
-    if _looks_like_channel_prefix_page(url):
-        score -= 20
-    if _looks_like_fragmentary_seed_url(url):
-        score -= 20
-    if _looks_like_detail_section_url(url):
-        score -= 40
+    score = score_announcement_portal_candidate(url)
     if _looks_department_scoped_text(url):
         score -= 40
     return score
@@ -408,6 +375,7 @@ def _filter_candidate_urls_for_families(
     *,
     families: set[str],
     deny_prefixes: list[str] | None = None,
+    preferred_hosts: set[str] | None = None,
     max_items: int = 5,
 ) -> list[str]:
     filtered = []
@@ -417,7 +385,23 @@ def _filter_candidate_urls_for_families(
         if not _is_valid_school_seed_url(url, families=families):
             continue
         filtered.append(url)
-    ranked = sorted(filtered, key=lambda item: (-_score_seed_hint_url(item), item))
+    distinct_hosts = {portal_candidate_host(url) for url in filtered if portal_candidate_host(url)}
+    promote_preferred_homepage = bool(preferred_hosts) and len(distinct_hosts) > 1
+
+    def _sort_key(item: str) -> tuple[int, int, str]:
+        host = portal_candidate_host(item)
+        path = (urlparse(item).path or "").strip()
+        preferred_homepage_rank = 0
+        if promote_preferred_homepage and preferred_hosts and host in preferred_hosts:
+            preferred_homepage_rank = 0 if path in {"", "/"} else 1
+        else:
+            preferred_homepage_rank = 2
+        score = score_announcement_portal_candidate(item, preferred_hosts=preferred_hosts or set())
+        if families == {"notice", "admissions"} and _looks_department_scoped_text(item):
+            score -= 40
+        return (preferred_homepage_rank, -score, item)
+
+    ranked = sorted(filtered, key=_sort_key)
     return ranked[:max_items]
 
 
@@ -449,14 +433,20 @@ def _build_school_level_page_text(raw_html: str, title: str | None) -> str:
     return " ".join([str(title or "").strip(), normalized_html[:2500]]).strip()
 
 
-def _page_looks_school_level(raw_html: str, title: str | None, school_name: str) -> bool:
+def _page_mentions_school(raw_html: str, title: str | None, school_name: str) -> bool:
     page_text = _build_school_level_page_text(raw_html, title)
     if not page_text:
         return False
     compact_page_text = re.sub(r"\s+", "", page_text)
     school_terms = _build_school_validation_terms(school_name)
-    if not any(term in page_text or term in compact_page_text for term in school_terms):
+    return any(term in page_text or term in compact_page_text for term in school_terms)
+
+
+def _page_looks_school_level(raw_html: str, title: str | None, school_name: str) -> bool:
+    if not _page_mentions_school(raw_html, title, school_name):
         return False
+    page_text = _build_school_level_page_text(raw_html, title)
+    compact_page_text = re.sub(r"\s+", "", page_text)
     if _looks_department_scoped_text(page_text):
         return False
     return _has_school_level_scope_hint(page_text) or "招生" in page_text
@@ -469,51 +459,95 @@ def _is_announcement_navigation_link(text: str) -> bool:
     return any(hint in normalized for hint in _ANNOUNCEMENT_NAV_TEXT_HINTS)
 
 
-def _discover_announcement_navigation_seed_urls(
+def _candidate_link_is_portalish(link_text: str, absolute_url: str) -> bool:
+    if _is_announcement_navigation_link(link_text) or is_graduate_portal_entry_text(link_text):
+        return True
+    return score_announcement_portal_candidate(absolute_url, link_text) > 0
+
+
+def _announcement_navigation_candidate_urls(
     school_name: str,
     seed_urls: list[str],
     *,
-    max_pages: int = 8,
+    max_hops: int = 2,
+    max_pages: int = 12,
 ) -> list[str]:
-    seed_page_urls: list[str] = []
+    seed_page_urls: list[tuple[str, bool]] = []
     seen_seed_pages: set[str] = set()
     for seed_url in seed_urls:
-        for candidate in (_normalize_url(seed_url), _parent_url(seed_url), _url_origin(seed_url)):
+        for index, candidate in enumerate((_normalize_url(seed_url), _parent_url(seed_url), _url_origin(seed_url))):
             normalized = _normalize_url(candidate or "")
             if not normalized or normalized in seen_seed_pages:
                 continue
             seen_seed_pages.add(normalized)
-            seed_page_urls.append(normalized)
+            seed_page_urls.append((normalized, index == 0))
 
+    queue: list[tuple[str, int, bool]] = [(url, 0, include_current) for url, include_current in seed_page_urls[:max_pages]]
+    seen_pages: set[str] = set()
     results: list[str] = []
     seen_result_urls: set[str] = set()
-    for seed_page_url in seed_page_urls[:max_pages]:
+
+    while queue and len(seen_pages) < max_pages:
+        page_url, depth, include_current = queue.pop(0)
+        normalized_page_url = _normalize_url(page_url)
+        if not normalized_page_url or normalized_page_url in seen_pages:
+            continue
+        seen_pages.add(normalized_page_url)
+
         try:
-            response = _fetch_with_retry(seed_page_url)
+            response = _fetch_with_retry(normalized_page_url)
         except Exception:
             continue
+
         raw_html = response.text or ""
         title = _extract_title(raw_html) or ""
-        if not _page_looks_school_level(raw_html, title, school_name):
+        page_text = _build_school_level_page_text(raw_html, title)
+        if not _page_mentions_school(raw_html, title, school_name):
             continue
-        base_scope = _host_scope(urlparse(seed_page_url).netloc or "")
+
+        if include_current and _page_looks_school_level(raw_html, title, school_name):
+            score = score_announcement_portal_candidate(normalized_page_url, title, page_text)
+            if score > 0 and _is_valid_school_seed_url(normalized_page_url, families={"notice", "admissions"}):
+                if normalized_page_url not in seen_result_urls:
+                    seen_result_urls.add(normalized_page_url)
+                    results.append(normalized_page_url)
+
+        base_scope = _host_scope(urlparse(normalized_page_url).netloc or "")
         for item in _extract_links(raw_html):
             link_text = str(item.get("text") or "").strip()
             href = str(item.get("href") or "").strip()
-            if not href or not _is_announcement_navigation_link(link_text):
+            if not href:
                 continue
-            absolute_url = _normalize_url(urljoin(seed_page_url, href))
+            absolute_url = _normalize_url(urljoin(normalized_page_url, href))
             if not absolute_url:
                 continue
             target_scope = _host_scope(urlparse(absolute_url).netloc or "")
             if base_scope and target_scope and base_scope != target_scope:
                 continue
-            if not _is_valid_school_seed_url(absolute_url, families={"notice", "admissions"}):
+            if not _candidate_link_is_portalish(link_text, absolute_url):
                 continue
-            if absolute_url in seen_result_urls:
+            if _is_valid_school_seed_url(absolute_url, families={"notice", "admissions"}) and absolute_url not in seen_result_urls:
+                seen_result_urls.add(absolute_url)
+                results.append(absolute_url)
+            if depth >= max_hops:
                 continue
-            seen_result_urls.add(absolute_url)
-            results.append(absolute_url)
+            if absolute_url not in seen_pages and all(queued_url != absolute_url for queued_url, _depth, _include in queue):
+                queue.append((absolute_url, depth + 1, True))
+
+    return results
+
+
+def _discover_announcement_navigation_seed_urls(
+    school_name: str,
+    seed_urls: list[str],
+    *,
+    max_pages: int = 12,
+) -> list[str]:
+    results = _announcement_navigation_candidate_urls(
+        school_name,
+        seed_urls,
+        max_pages=max_pages,
+    )
     return _filter_candidate_urls_for_families(results, families={"notice", "admissions"}, max_items=12)
 
 
@@ -537,16 +571,9 @@ def _extract_candidate_urls_from_search_result(raw_html: str) -> list[str]:
 
 
 def _score_candidate_url(url: str) -> int:
-    parsed = urlparse(url)
-    host = (parsed.netloc or "").lower()
-    path = (parsed.path or "").lower()
-    score = _score_seed_hint_url(url)
-    if any(hint in host or hint in path for hint in _HOST_HINTS):
-        score += 6
-    if path and path not in {"", "/"}:
-        score += 2
-    if host.count(".") >= 2:
-        score += 1
+    score = score_announcement_portal_candidate(url)
+    if _looks_department_scoped_text(url):
+        score -= 40
     return score
 
 
@@ -602,6 +629,208 @@ def _discover_seed_urls_from_search(school_name: str) -> list[str]:
     return [url for url, _score in ranked[:5]]
 
 
+def _build_announcement_candidate_pool(
+    school_name: str,
+    *,
+    announcement_override: dict[str, Any] | None,
+    deny_prefixes: list[str],
+    allow_search: bool,
+) -> list[str]:
+    seed_candidates: list[str] = []
+
+    if announcement_override:
+        homepage_url = _normalize_url(str(announcement_override.get("homepage_url") or ""))
+        if homepage_url:
+            seed_candidates.append(homepage_url)
+        seed_candidates.extend(
+            _normalize_url(str(url or ""))
+            for url in (announcement_override.get("seed_urls") or [])
+            if _normalize_url(str(url or ""))
+        )
+        return _filter_candidate_urls_for_families(
+            seed_candidates,
+            families={"notice", "admissions"},
+            deny_prefixes=deny_prefixes,
+            preferred_hosts=_announcement_override_hosts(announcement_override),
+            max_items=12,
+        )
+
+    search_seed_urls: list[str] = []
+    doc_seed_urls = [
+        url
+        for url in _discover_seed_urls_from_docs(school_name)
+        if _is_valid_school_seed_url(url, families={"notice", "admissions"})
+    ]
+    if doc_seed_urls:
+        validated_seed_urls = [url for url in doc_seed_urls if _candidate_page_matches_school_name(url, school_name)]
+        if validated_seed_urls:
+            doc_seed_urls = validated_seed_urls
+    if allow_search and not doc_seed_urls:
+        search_seed_urls = _discover_seed_urls_from_search(school_name)
+    seed_candidates.extend(doc_seed_urls)
+    seed_candidates.extend(search_seed_urls)
+
+    navigation_seed_urls = _discover_announcement_navigation_seed_urls(school_name, seed_candidates)
+    return _filter_candidate_urls_for_families(
+        [*navigation_seed_urls, *seed_candidates, *search_seed_urls],
+        families={"notice", "admissions"},
+        deny_prefixes=deny_prefixes,
+        max_items=12,
+    )
+
+
+def _resolve_preferred_announcement_hosts(
+    candidate_urls: list[str],
+    *,
+    announcement_override: dict[str, Any] | None,
+) -> set[str]:
+    override_hosts = _announcement_override_hosts(announcement_override)
+    if override_hosts:
+        return override_hosts
+
+    host_scores: dict[str, list[int]] = {}
+    for candidate_url in candidate_urls:
+        host = portal_candidate_host(candidate_url)
+        if not host:
+            continue
+        host_scores.setdefault(host, []).append(_score_candidate_url(candidate_url))
+
+    if not host_scores:
+        return set()
+
+    ordered_hosts = sorted(
+        host_scores.items(),
+        key=lambda item: (-max(item[1]), -len(item[1]), item[0]),
+    )
+    top_host, top_scores = ordered_hosts[0]
+    top_score = max(top_scores)
+    next_best_score = max((max(scores) for host, scores in ordered_hosts[1:]), default=0)
+
+    if len(top_scores) >= 2:
+        return {top_host}
+    if top_score >= 30 and top_score - next_best_score >= 8:
+        return {top_host}
+    return set()
+
+
+def _load_announcement_portal_cache(
+    db: Session,
+    *,
+    school_name: str,
+    families: set[str],
+    deny_prefixes: list[str],
+) -> tuple[list[str], set[str], bool]:
+    families_key = _families_key(families)
+    if families != {"notice", "admissions"} or not families_key:
+        return [], set(), False
+
+    cache = (
+        db.query(AnnouncementPortalCache)
+        .filter(
+            AnnouncementPortalCache.school_name == school_name.strip(),
+            AnnouncementPortalCache.families_key == families_key,
+        )
+        .order_by(AnnouncementPortalCache.last_verified_at.desc())
+        .first()
+    )
+    if cache is None:
+        return [], set(), False
+
+    verified_at = _coerce_utc(cache.last_verified_at)
+    if verified_at is None or verified_at + _ANNOUNCEMENT_PORTAL_CACHE_TTL <= utcnow():
+        return [], set(), False
+
+    preferred_hosts = {
+        str(host or "").strip().lower()
+        for host in (cache.preferred_hosts or [])
+        if str(host or "").strip()
+    }
+    candidate_urls = _filter_candidate_urls_for_families(
+        list(cache.candidate_urls or []),
+        families=families,
+        deny_prefixes=deny_prefixes,
+        preferred_hosts=preferred_hosts,
+        max_items=12,
+    )
+    if not candidate_urls:
+        return [], set(), False
+
+    candidate_hosts = portal_candidate_hosts(candidate_urls)
+    if preferred_hosts:
+        preferred_hosts &= candidate_hosts
+    if not preferred_hosts:
+        preferred_hosts = _resolve_preferred_announcement_hosts(candidate_urls, announcement_override=None)
+    return candidate_urls, preferred_hosts, True
+
+
+def _persist_announcement_portal_cache(
+    db: Session,
+    *,
+    school_name: str,
+    families: set[str],
+    candidate_urls: list[str],
+    preferred_hosts: set[str],
+):
+    families_key = _families_key(families)
+    normalized_school_name = school_name.strip()
+    if families != {"notice", "admissions"} or not normalized_school_name or not families_key:
+        return
+
+    normalized_preferred_hosts = {
+        str(host or "").strip().lower()
+        for host in preferred_hosts
+        if str(host or "").strip()
+    }
+    normalized_candidate_urls = _filter_candidate_urls_for_families(
+        list(candidate_urls),
+        families=families,
+        preferred_hosts=normalized_preferred_hosts,
+        max_items=12,
+    )
+    if not normalized_candidate_urls:
+        return
+
+    if not normalized_preferred_hosts:
+        normalized_preferred_hosts = _resolve_preferred_announcement_hosts(
+            normalized_candidate_urls,
+            announcement_override=None,
+        )
+
+    cache = (
+        db.query(AnnouncementPortalCache)
+        .filter(
+            AnnouncementPortalCache.school_name == normalized_school_name,
+            AnnouncementPortalCache.families_key == families_key,
+        )
+        .one_or_none()
+    )
+    if cache is None:
+        cache = AnnouncementPortalCache(
+            school_name=normalized_school_name,
+            families_key=families_key,
+        )
+    cache.candidate_urls = normalized_candidate_urls
+    cache.preferred_hosts = sorted(normalized_preferred_hosts)
+    cache.last_verified_at = utcnow()
+    db.add(cache)
+
+
+def _build_announcement_seed_urls(
+    candidate_urls: list[str],
+    *,
+    recovery_seed_urls: list[str],
+    deny_prefixes: list[str],
+    preferred_hosts: set[str],
+) -> list[str]:
+    return _filter_candidate_urls_for_families(
+        [*candidate_urls, *recovery_seed_urls],
+        families={"notice", "admissions"},
+        deny_prefixes=deny_prefixes,
+        preferred_hosts=preferred_hosts,
+        max_items=12,
+    )
+
+
 def _expand_seed_urls(seed_urls: list[str]) -> list[str]:
     expanded: list[str] = []
     seen: set[str] = set()
@@ -618,7 +847,12 @@ def _expand_seed_urls(seed_urls: list[str]) -> list[str]:
     return expanded
 
 
-def _resolve_bootstrap_entrypoint(seed_urls: list[str], expanded_seed_urls: list[str]) -> tuple[str, list[str]]:
+def _resolve_bootstrap_entrypoint(
+    seed_urls: list[str],
+    expanded_seed_urls: list[str],
+    *,
+    preferred_hosts: set[str] | None = None,
+) -> tuple[str, list[str]]:
     ordered = expanded_seed_urls or seed_urls
     if not ordered:
         return "", []
@@ -809,11 +1043,10 @@ def _collect_reusable_sections(
     *,
     existing_sections: list[SiteSection],
     families: set[str],
-) -> tuple[list[SiteSection], list[str]]:
+) -> list[SiteSection]:
     reusable_sections = [section for section in existing_sections if _section_is_compatible_for_families(section, families)]
-    recovery_seed_urls: list[str] = []
     if not existing_sections:
-        return reusable_sections, recovery_seed_urls
+        return reusable_sections
 
     link_counts = {
         section_id: count
@@ -830,30 +1063,45 @@ def _collect_reusable_sections(
         if _section_is_compatible_for_families(section, families)
         and not (_looks_like_detail_section_url(section.section_url) and int(link_counts.get(section.id, 0) or 0) == 0)
     ]
-    if not reusable_sections:
-        for section in existing_sections:
-            recovery_seed_urls.extend(_derive_recovery_seed_urls_from_section_url(section.section_url))
-    return reusable_sections, _dedupe_texts(recovery_seed_urls)
+    return reusable_sections
+
+
+def _collect_recovery_seed_urls(existing_sections: list[SiteSection]) -> list[str]:
+    recovery_seed_urls: list[str] = []
+    for section in existing_sections:
+        recovery_seed_urls.extend(_derive_recovery_seed_urls_from_section_url(section.section_url))
+    return _dedupe_texts(recovery_seed_urls)
 
 
 def _build_local_candidate_hints(
     school_name: str,
     *,
     families: set[str],
-    announcement_override: dict[str, Any] | None,
     deny_prefixes: list[str],
     recovery_seed_urls: list[str],
+    announcement_candidate_urls: list[str] | None = None,
+    preferred_hosts: set[str] | None = None,
 ) -> list[str]:
     hints: list[str] = []
-    if announcement_override and families == {"notice", "admissions"}:
-        homepage_url = _normalize_url(str(announcement_override.get("homepage_url") or ""))
-        if homepage_url:
-            hints.append(homepage_url)
-        hints.extend(_dedupe_texts([_normalize_url(url) for url in announcement_override.get("seed_urls") or [] if _normalize_url(url)]))
+    if families == {"notice", "admissions"}:
+        hints.extend(list(announcement_candidate_urls or []))
+        if preferred_hosts:
+            hints.extend(
+                url
+                for url in recovery_seed_urls
+                if portal_candidate_host(url) in preferred_hosts
+            )
+        else:
+            hints.extend(recovery_seed_urls)
     else:
         hints.extend(_discover_seed_urls_from_docs(school_name))
-    hints.extend(recovery_seed_urls)
-    return _filter_candidate_urls_for_families(hints, families=families, deny_prefixes=deny_prefixes)
+        hints.extend(recovery_seed_urls)
+    return _filter_candidate_urls_for_families(
+        hints,
+        families=families,
+        deny_prefixes=deny_prefixes,
+        preferred_hosts=preferred_hosts,
+    )
 
 
 def _queue_family_discovery_job(
@@ -922,30 +1170,27 @@ def _resolve_seed_urls_for_family_discovery(
     school_name: str,
     *,
     families: set[str],
-    announcement_override: dict[str, Any] | None,
     deny_prefixes: list[str],
     recovery_seed_urls: list[str],
+    announcement_candidate_urls: list[str] | None = None,
+    preferred_hosts: set[str] | None = None,
 ) -> list[str]:
-    seed_urls = list(announcement_override.get("seed_urls") or []) if announcement_override else _discover_seed_urls_from_docs(school_name)
-    if families == {"notice", "admissions"} and seed_urls and not announcement_override:
-        validated_seed_urls = [url for url in seed_urls if _candidate_page_matches_school_name(url, school_name)]
-        if validated_seed_urls:
-            seed_urls = validated_seed_urls
-        navigation_seed_urls = _discover_announcement_navigation_seed_urls(school_name, seed_urls)
-        if navigation_seed_urls:
-            seed_urls = _dedupe_texts([*navigation_seed_urls, *seed_urls])
+    if families == {"notice", "admissions"}:
+        return _build_announcement_seed_urls(
+            list(announcement_candidate_urls or []),
+            recovery_seed_urls=recovery_seed_urls,
+            deny_prefixes=deny_prefixes,
+            preferred_hosts=preferred_hosts or set(),
+        )
+
+    seed_urls = _discover_seed_urls_from_docs(school_name)
     if deny_prefixes:
         seed_urls = [url for url in seed_urls if not any(url.startswith(prefix) for prefix in deny_prefixes)]
     if not seed_urls:
         search_seed_urls = _discover_seed_urls_from_search(school_name)
-        if families == {"notice", "admissions"} and search_seed_urls:
-            navigation_seed_urls = _discover_announcement_navigation_seed_urls(school_name, search_seed_urls)
-            if navigation_seed_urls:
-                search_seed_urls = _dedupe_texts([*navigation_seed_urls, *search_seed_urls])
         if deny_prefixes:
             search_seed_urls = [url for url in search_seed_urls if not any(url.startswith(prefix) for prefix in deny_prefixes)]
         seed_urls = _dedupe_texts(search_seed_urls)
-
     return _dedupe_texts([*seed_urls, *recovery_seed_urls])
 
 
@@ -967,12 +1212,73 @@ def _bootstrap_family_sections(
         school_name=school_name,
         deny_prefixes=deny_prefixes,
     )
-    existing_sections = _filter_existing_sections_for_announcement_override(
+    preliminary_reusable_sections = _collect_reusable_sections(
+        db,
+        existing_sections=existing_sections,
+        families=families,
+    )
+    cached_candidate_urls: list[str] = []
+    cached_preferred_hosts: set[str] = set()
+    cache_hit = False
+    if families == {"notice", "admissions"} and announcement_override is None:
+        cached_candidate_urls, cached_preferred_hosts, cache_hit = _load_announcement_portal_cache(
+            db,
+            school_name=school_name,
+            families=families,
+            deny_prefixes=deny_prefixes,
+        )
+    announcement_candidate_urls = (
+        cached_candidate_urls
+        if cache_hit
+        else (
+            _build_announcement_candidate_pool(
+                school_name,
+                announcement_override=announcement_override,
+                deny_prefixes=deny_prefixes,
+                allow_search=not (
+                    announcement_override is None
+                    and preliminary_reusable_sections
+                    and len(
+                        {
+                            portal_candidate_host(section.section_url)
+                            for section in preliminary_reusable_sections
+                            if portal_candidate_host(section.section_url)
+                        }
+                    )
+                    <= 1
+                ),
+            )
+            if families == {"notice", "admissions"}
+            else []
+        )
+    )
+    preferred_hosts = (
+        cached_preferred_hosts
+        if cache_hit
+        else (
+            _resolve_preferred_announcement_hosts(
+                announcement_candidate_urls,
+                announcement_override=announcement_override,
+            )
+            if families == {"notice", "admissions"}
+            else set()
+        )
+    )
+    if families == {"notice", "admissions"} and announcement_override is None and announcement_candidate_urls and not cache_hit:
+        _persist_announcement_portal_cache(
+            db,
+            school_name=school_name,
+            families=families,
+            candidate_urls=announcement_candidate_urls,
+            preferred_hosts=preferred_hosts,
+        )
+    recovery_seed_urls = _collect_recovery_seed_urls(existing_sections)
+    existing_sections = _filter_existing_sections_for_preferred_hosts(
         existing_sections,
         families=families,
-        announcement_override=announcement_override,
+        preferred_hosts=preferred_hosts,
     )
-    reusable_sections, recovery_seed_urls = _collect_reusable_sections(
+    reusable_sections = _collect_reusable_sections(
         db,
         existing_sections=existing_sections,
         families=families,
@@ -1006,9 +1312,10 @@ def _bootstrap_family_sections(
     seed_urls = _resolve_seed_urls_for_family_discovery(
         school_name,
         families=families,
-        announcement_override=announcement_override,
         deny_prefixes=deny_prefixes,
         recovery_seed_urls=recovery_seed_urls,
+        announcement_candidate_urls=announcement_candidate_urls,
+        preferred_hosts=preferred_hosts,
     )
     expanded_seed_urls = _expand_seed_urls(seed_urls)
     if "adjustment" in families:
@@ -1023,7 +1330,11 @@ def _bootstrap_family_sections(
             "job_ids": [],
         }
 
-    homepage_url, extra_seed_urls = _resolve_bootstrap_entrypoint(seed_urls, expanded_seed_urls)
+    homepage_url, extra_seed_urls = _resolve_bootstrap_entrypoint(
+        seed_urls,
+        expanded_seed_urls,
+        preferred_hosts=preferred_hosts,
+    )
     if announcement_override:
         homepage_url = str(announcement_override.get("homepage_url") or homepage_url or "").strip() or homepage_url
     result = bootstrap_site_sections(
@@ -1039,6 +1350,7 @@ def _bootstrap_family_sections(
         families=families,
         portal_entry_url=homepage_url if families == {"notice", "admissions"} else None,
         portal_scope=PORTAL_SCOPE_GRADUATE_ADMISSIONS if families == {"notice", "admissions"} else None,
+        preferred_hosts=preferred_hosts,
     )
     job_ids = list(result.get("job_ids") or [])
     visible_sections = [
@@ -1054,6 +1366,7 @@ def _bootstrap_family_sections(
         ),
         families=families,
         deny_prefixes=deny_prefixes,
+        preferred_hosts=preferred_hosts,
     )
     if not job_ids and not candidate_urls:
         return {
@@ -1112,18 +1425,70 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         else None
     )
     deny_prefixes = [str(prefix or "").strip() for prefix in (announcement_override or {}).get("deny_prefixes") or [] if str(prefix or "").strip()]
-
     _school, existing_sections = _load_existing_school_sections(
         db,
         school_name=normalized_school_name,
         deny_prefixes=deny_prefixes,
     )
-    existing_sections = _filter_existing_sections_for_announcement_override(
+    preliminary_reusable_sections = _collect_reusable_sections(
+        db,
+        existing_sections=existing_sections,
+        families=normalized_families,
+    )
+    cached_candidate_urls: list[str] = []
+    cached_preferred_hosts: set[str] = set()
+    cache_hit = False
+    if normalized_families == {"notice", "admissions"} and announcement_override is None:
+        cached_candidate_urls, cached_preferred_hosts, cache_hit = _load_announcement_portal_cache(
+            db,
+            school_name=normalized_school_name,
+            families=normalized_families,
+            deny_prefixes=deny_prefixes,
+        )
+    announcement_candidate_urls = (
+        cached_candidate_urls
+        if cache_hit
+        else (
+            _build_announcement_candidate_pool(
+                normalized_school_name,
+                announcement_override=announcement_override,
+                deny_prefixes=deny_prefixes,
+                allow_search=not (
+                    announcement_override is None
+                    and preliminary_reusable_sections
+                    and len(
+                        {
+                            portal_candidate_host(section.section_url)
+                            for section in preliminary_reusable_sections
+                            if portal_candidate_host(section.section_url)
+                        }
+                    )
+                    <= 1
+                ),
+            )
+            if normalized_families == {"notice", "admissions"}
+            else []
+        )
+    )
+    preferred_hosts = (
+        cached_preferred_hosts
+        if cache_hit
+        else (
+            _resolve_preferred_announcement_hosts(
+                announcement_candidate_urls,
+                announcement_override=announcement_override,
+            )
+            if normalized_families == {"notice", "admissions"}
+            else set()
+        )
+    )
+    recovery_seed_urls = _collect_recovery_seed_urls(existing_sections)
+    existing_sections = _filter_existing_sections_for_preferred_hosts(
         existing_sections,
         families=normalized_families,
-        announcement_override=announcement_override,
+        preferred_hosts=preferred_hosts,
     )
-    reusable_sections, recovery_seed_urls = _collect_reusable_sections(
+    reusable_sections = _collect_reusable_sections(
         db,
         existing_sections=existing_sections,
         families=normalized_families,
@@ -1131,9 +1496,10 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
     local_candidate_hints = _build_local_candidate_hints(
         normalized_school_name,
         families=normalized_families,
-        announcement_override=announcement_override,
         deny_prefixes=deny_prefixes,
         recovery_seed_urls=recovery_seed_urls,
+        announcement_candidate_urls=announcement_candidate_urls,
+        preferred_hosts=preferred_hosts,
     )
     bootstrap_origin = _bootstrap_origin_for_families(normalized_families)
 
