@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.db import SessionLocal
 from app.models import (
+    AnnouncementPortalCache,
     Content,
     ContentSnapshot,
     CrawlJob,
@@ -425,6 +426,17 @@ def _seed_school_prefix_conflict_pollution() -> dict[str, str]:
                 },
             )
         )
+        db.add(
+            AnnouncementPortalCache(
+                school_name=school.name,
+                families_key="admissions,notice",
+                candidate_urls=[
+                    "https://yz.neu.edu.cn/tzgg/1001.htm",
+                    "https://yz.neu.edu.cn/ysxy/2001.htm",
+                ],
+                preferred_hosts=["yz.neu.edu.cn"],
+            )
+        )
         db.commit()
         return {
             "polluted_section_id": polluted_section.id,
@@ -498,10 +510,20 @@ def test_cleanup_polluted_announcement_data_dry_run_detects_school_prefix_confli
     assert stats["identified"]["contents"] == 1
     assert stats["identified"]["snapshots"] == 1
     assert stats["identified"]["crawl_jobs"] == 1
+    assert stats["identified"]["announcement_portal_caches"] == 1
 
     with SessionLocal() as db:
         assert db.query(SiteSection).filter(SiteSection.id == ids["polluted_section_id"]).one_or_none() is not None
         assert db.query(Content).filter(Content.id == ids["polluted_content_id"]).one_or_none() is not None
+        assert (
+            db.query(AnnouncementPortalCache)
+            .filter(
+                AnnouncementPortalCache.school_name == "东北大学",
+                AnnouncementPortalCache.families_key == "admissions,notice",
+            )
+            .one_or_none()
+            is not None
+        )
 
 
 def test_cleanup_polluted_announcement_data_deletes_school_prefix_conflict_rows():
@@ -514,8 +536,18 @@ def test_cleanup_polluted_announcement_data_deletes_school_prefix_conflict_rows(
     assert stats["deleted"]["contents"] == 1
     assert stats["deleted"]["snapshots"] == 1
     assert stats["deleted"]["crawl_jobs"] == 1
+    assert stats["deleted"]["announcement_portal_caches"] == 1
 
     with SessionLocal() as db:
         assert db.query(SiteSection).filter(SiteSection.id == ids["polluted_section_id"]).one_or_none() is None
         assert db.query(Content).filter(Content.id == ids["polluted_content_id"]).one_or_none() is None
         assert db.query(Content).filter(Content.id == ids["correct_content_id"]).one_or_none() is not None
+        assert (
+            db.query(AnnouncementPortalCache)
+            .filter(
+                AnnouncementPortalCache.school_name == "东北大学",
+                AnnouncementPortalCache.families_key == "admissions,notice",
+            )
+            .one_or_none()
+            is None
+        )

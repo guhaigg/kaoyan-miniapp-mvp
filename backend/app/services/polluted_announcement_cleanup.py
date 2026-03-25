@@ -306,6 +306,7 @@ def cleanup_polluted_announcement_data(
     polluted_content_ids: set[str] = set()
     polluted_job_ids: set[str] = set()
     polluted_error_ids: set[str] = set()
+    polluted_cache_school_names: set[str] = set()
     polluted_pairs: dict[tuple[str, str, str], dict[str, int]] = defaultdict(lambda: {"sections": 0, "contents": 0, "jobs": 0, "errors": 0})
 
     def _suffix_allowed(host_key: str) -> bool:
@@ -347,6 +348,7 @@ def cleanup_polluted_announcement_data(
         if not polluted:
             continue
         polluted_section_ids.add(section.id)
+        polluted_cache_school_names.add(bound_school_name)
         polluted_pairs[(bound_school_name, owner_school_name or bound_school_name, host_key or section_host)]["sections"] += 1
 
     for content in db.query(Content).filter(Content.category == "announcement").all():
@@ -393,6 +395,7 @@ def cleanup_polluted_announcement_data(
         if not polluted:
             continue
         polluted_content_ids.add(content.id)
+        polluted_cache_school_names.add(bound_school_name)
         if host_key:
             polluted_pairs[(bound_school_name, owner_school_name or bound_school_name, host_key)]["contents"] += 1
 
@@ -414,6 +417,7 @@ def cleanup_polluted_announcement_data(
         payload_urls = _payload_urls(payload)
         if polluted_content_urls and any(_normalize_url(url) in polluted_content_urls for url in payload_urls):
             polluted_job_ids.add(job.id)
+            polluted_cache_school_names.add(bound_school_name)
             matched = True
         if matched:
             continue
@@ -423,11 +427,13 @@ def cleanup_polluted_announcement_data(
             owner_school_name = owner_map.get(host_key, "")
             if host_key and owner_school_name and owner_school_name != bound_school_name and _suffix_allowed(host_key):
                 polluted_job_ids.add(job.id)
+                polluted_cache_school_names.add(bound_school_name)
                 polluted_pairs[(bound_school_name, owner_school_name, host_key)]["jobs"] += 1
                 matched = True
                 break
             if preferred_hosts and source_host and source_host not in preferred_hosts:
                 polluted_job_ids.add(job.id)
+                polluted_cache_school_names.add(bound_school_name)
                 polluted_pairs[(bound_school_name, bound_school_name, source_host)]["jobs"] += 1
                 matched = True
                 break
@@ -452,11 +458,20 @@ def cleanup_polluted_announcement_data(
         preferred_hosts = preferred_host_map.get(bound_school_name, set())
         if host_key and owner_school_name and owner_school_name != bound_school_name and _suffix_allowed(host_key):
             polluted_error_ids.add(error.id)
+            polluted_cache_school_names.add(bound_school_name)
             polluted_pairs[(bound_school_name, owner_school_name, host_key)]["errors"] += 1
             continue
         if preferred_hosts and source_host and source_host not in preferred_hosts:
             polluted_error_ids.add(error.id)
+            polluted_cache_school_names.add(bound_school_name)
             polluted_pairs[(bound_school_name, bound_school_name, source_host)]["errors"] += 1
+
+    polluted_cache_ids = {
+        row.id
+        for row in db.query(AnnouncementPortalCache.id)
+        .filter(AnnouncementPortalCache.school_name.in_(sorted(polluted_cache_school_names)))
+        .all()
+    } if polluted_cache_school_names else set()
 
     polluted_link_ids = {
         row.id
@@ -538,6 +553,7 @@ def cleanup_polluted_announcement_data(
             "snapshots": len(polluted_snapshot_ids),
             "crawl_jobs": len(polluted_job_ids),
             "crawl_errors": len(polluted_error_ids),
+            "announcement_portal_caches": len(polluted_cache_ids),
             "monitor_targets": len(polluted_monitor_target_ids),
             "monitor_keywords": len(polluted_monitor_keyword_ids),
             "monitor_hits": len(polluted_monitor_hit_ids),
@@ -564,6 +580,9 @@ def cleanup_polluted_announcement_data(
     deleted["contents"] = _delete_rows(db.query(Content), polluted_content_ids) if polluted_content_ids else 0
     deleted["sections"] = _delete_rows(db.query(SiteSection), polluted_section_ids) if polluted_section_ids else 0
     deleted["crawl_jobs"] = _delete_rows(db.query(CrawlJob), polluted_job_ids) if polluted_job_ids else 0
+    deleted["announcement_portal_caches"] = (
+        _delete_rows(db.query(AnnouncementPortalCache), polluted_cache_ids) if polluted_cache_ids else 0
+    )
     db.commit()
     search_response_cache.clear()
     stats["deleted"] = deleted
