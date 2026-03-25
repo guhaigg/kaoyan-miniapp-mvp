@@ -83,11 +83,41 @@ npm run test:backend
 
 - `214 passed`
 
+## 4.1 生产执行记录
+
+已在生产机执行正式回填：
+
+```bash
+cd /root/code/kaoyan-miniapp-mvp
+backend/.venv/bin/python backend/scripts/backfill_announcement_portal_metadata.py --overwrite
+```
+
+执行结果：
+
+- `scanned=468`
+- `updated=468`
+- `matched=438`
+- `skipped_no_section=30`
+- `inferred_without_section=28`
+
+执行后已验证：
+
+- `http://127.0.0.1:8000/api/v1/health`
+- `https://api.gewujl.cloud/api/v1/health`
+
+均返回：
+
+- `status=ok`
+- `db=up`
+- `redis=down`
+
+其中 `redis=down` 是当前系统的既有降级状态，不是本轮回填引入的新问题。
+
 ## 5. 上线后建议做的事情
 
 ### 5.1 先做一次存量回填
 
-这轮逻辑不仅影响新入库内容，也影响旧公告是否应该继续可见。部署后建议至少先做一次 dry-run，再决定是否全量覆盖：
+这轮逻辑不仅影响新入库内容，也影响旧公告是否应该继续可见。生产已经完成一次全量 `--overwrite` 回填；如果后续继续调整规则，建议先做 dry-run，再决定是否重新覆盖：
 
 ```bash
 cd /root/code/kaoyan-miniapp-mvp
