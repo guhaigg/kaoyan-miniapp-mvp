@@ -4,7 +4,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Content, ContentFile, CrawlError, CrawlJob, School, SiteSection, SiteSectionLink, Source
 from app.services.crawler import crawl_engine
-from app.services.site_section_bootstrap import bootstrap_site_sections
+from app.services.site_section_bootstrap import _discover_entry_pages, bootstrap_site_sections
 from app.services.site_section_probe import probe_section_page
 
 
@@ -177,6 +177,132 @@ def test_bootstrap_site_sections_persists_portal_metadata_in_list_selector_confi
     assert list_config["portal_path_evidence"]["section_url"] == section_url
     assert list_config["portal_path_evidence"]["channel_label"] == "硕士招生"
     assert list_config["portal_path_evidence"]["channel_tier"] == "core"
+
+
+def test_discover_entry_pages_uses_breadcrumbs_from_generic_gateway_targets(monkeypatch):
+    homepage_url = "https://portal.example.edu.cn/"
+    pages = {
+        homepage_url: (
+            """
+            <html><body>
+              <a href="/zsxy.htm">招生学院</a>
+            </body></html>
+            """,
+            "示例大学研究生招生信息网",
+        ),
+        "https://portal.example.edu.cn/zsxy.htm": (
+            """
+            <html><body>
+              <a href="/channels/101/list.htm">更多&gt;&gt;</a>
+            </body></html>
+            """,
+            "招生学院-示例大学研究生招生信息网",
+        ),
+        "https://portal.example.edu.cn/channels/101/list.htm": (
+            """
+            <html><body>
+              <div class="breadcrumb">当前位置: <a href="/index.htm">网站首页</a> >> <a href="/zsxy.htm">招生学院</a> >> <a href="/channels/101/list.htm">硕士招生</a></div>
+              <h2>列表页</h2>
+            </body></html>
+            """,
+            "列表页-示例大学研究生招生信息网",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    entry_pages = _discover_entry_pages(homepage_urls=[homepage_url], max_extra_pages=6)
+
+    assert "https://portal.example.edu.cn/channels/101/list.htm" in entry_pages
+
+
+def test_bootstrap_site_sections_follows_admissions_gateway_pages_backed_by_breadcrumbs(monkeypatch):
+    homepage_url = "https://portal.example.edu.cn/"
+    gateway_url = "https://portal.example.edu.cn/zsxy.htm"
+    masters_url = "https://portal.example.edu.cn/zsxy/sszs.htm"
+    notices_url = "https://portal.example.edu.cn/zsxy/tzgg.htm"
+    pages = {
+        homepage_url: (
+            """
+            <html><body>
+              <a href="/zsxy.htm">招生学院</a>
+            </body></html>
+            """,
+            "示例大学研究生招生信息网",
+        ),
+        gateway_url: (
+            """
+            <html><body>
+              <div class="daqaar">当前位置: <a href="index.htm">网站首页</a> >> <a href="zsxy.htm">招生学院</a></div>
+              <div class="lane"><a href="zsxy/sszs.htm">硕士招生</a></div>
+              <div class="lane"><a href="zsxy/tzgg.htm">通知公告</a></div>
+            </body></html>
+            """,
+            "招生学院-示例大学研究生招生信息网",
+        ),
+        masters_url: (
+            """
+            <html><body>
+              <div class="daqaar">当前位置: <a href="../index.htm">网站首页</a> >> <a href="../zsxy.htm">招生学院</a> >> <a href="sszs.htm">硕士招生</a></div>
+              <h2>硕士招生</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1011/2001.htm">示例大学2026年硕士研究生招生简章</a></td></tr>
+                <tr><td><a href="/info/1011/2002.htm">示例大学2026年硕士研究生复试办法</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "硕士招生-示例大学研究生招生信息网",
+        ),
+        notices_url: (
+            """
+            <html><body>
+              <div class="daqaar">当前位置: <a href="../index.htm">网站首页</a> >> <a href="../zsxy.htm">招生学院</a> >> <a href="tzgg.htm">通知公告</a></div>
+              <h2>通知公告</h2>
+              <table class="ArticleList">
+                <tr><td><a href="/info/1012/3001.htm">示例大学2026年报名须知</a></td></tr>
+                <tr><td><a href="/info/1012/3002.htm">示例大学2026年复试公告</a></td></tr>
+              </table>
+            </body></html>
+            """,
+            "通知公告-示例大学研究生招生信息网",
+        ),
+    }
+
+    def _fake_fetch_html(url: str):
+        normalized = url.rstrip("/")
+        for candidate, payload in pages.items():
+            if candidate.rstrip("/") == normalized:
+                return payload
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.site_section_bootstrap._fetch_html", _fake_fetch_html)
+
+    with SessionLocal() as db:
+        result = bootstrap_site_sections(
+            db,
+            school_name="示例大学",
+            homepage_url=homepage_url,
+            department_name=None,
+            department_type="graduate_school",
+            seed_urls=[],
+            enabled=True,
+            queue_discovery=False,
+            max_sections=4,
+            families={"notice", "admissions"},
+            portal_entry_url=homepage_url,
+            portal_scope="graduate_admissions",
+        )
+        urls = [item.section_url for item in result["items"]]
+
+    assert masters_url in urls
+    assert notices_url in urls
 
 
 def test_bootstrap_site_sections_persists_only_leaf_container_from_hybrid_page(monkeypatch):

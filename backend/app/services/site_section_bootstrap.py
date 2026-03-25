@@ -36,8 +36,29 @@ _ENTRY_KEYWORDS = [
     "研招",
     "招生信息网",
     "招生工作",
+    "招生学院",
+    "招生简章",
+    "招生政策",
+    "招生动态",
+    "通知公告",
+    "专业目录",
     "硕士招生",
     "博士招生",
+]
+
+_ENTRY_PATH_KEYWORDS = [
+    "zsxy",
+    "sszs",
+    "bszs",
+    "zsjz",
+    "tzgg",
+    "zszc",
+    "zsdt",
+    "notice",
+    "policy",
+    "catalog",
+    "admission",
+    "admissions",
 ]
 
 _ENTRY_EXCLUDE_KEYWORDS = [
@@ -48,10 +69,15 @@ _ENTRY_EXCLUDE_KEYWORDS = [
     "留学生",
     "博士后",
     "培训",
+    "学校简介",
+    "信息查询",
+    "下载空间",
 ]
 
 _KNOWN_FAMILIES = {"admissions", "adjustment", "notice"}
 _FAMILY_PRIORITY = {"adjustment": 30, "admissions": 20, "notice": 10}
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_SPACE_RE = re.compile(r"\s+")
 
 
 @dataclass(slots=True)
@@ -132,14 +158,45 @@ def _normalize_label(text: str, fallback_url: str) -> str:
     return (path.split("/")[-1] or fallback_url)[:255]
 
 
-def _entry_score(text: str, absolute_url: str) -> int:
-    haystack = f"{text} {absolute_url}".lower()
+def _build_entry_page_text(raw_html: str, page_title: str | None) -> str:
+    normalized_html = _SPACE_RE.sub(" ", _HTML_TAG_RE.sub(" ", raw_html or " "))
+    parts = [str(page_title or "").strip(), normalized_html[:2500]]
+    return " ".join(part for part in parts if part).strip()
+
+
+def _entry_score(
+    text: str,
+    absolute_url: str,
+    *,
+    page_title: str | None = None,
+    page_text: str | None = None,
+) -> int:
+    path = (urlparse(absolute_url).path or "").lower()
+    stable_haystack = " ".join(
+        part for part in [str(text or "").strip(), str(page_title or "").strip(), str(page_text or "").strip()] if part
+    ).lower()
+    haystack = f"{stable_haystack} {absolute_url}".lower()
     if any(keyword.lower() in haystack for keyword in _ENTRY_EXCLUDE_KEYWORDS):
         return 0
     score = 0
     for keyword in _ENTRY_KEYWORDS:
-        if keyword.lower() in haystack:
+        if keyword.lower() in stable_haystack:
             score += len(keyword)
+    for keyword in _ENTRY_PATH_KEYWORDS:
+        if keyword in path:
+            score += max(4, len(keyword))
+    if score <= 0 and not page_title and not page_text:
+        return 0
+    score += max(
+        0,
+        score_announcement_portal_candidate(
+            absolute_url,
+            text,
+            page_title or "",
+            page_text or "",
+        )
+        - 12,
+    )
     return score
 
 
@@ -247,22 +304,47 @@ def _collect_seed_urls(*, homepage_urls: list[str], extra_seed_urls: list[str], 
 
 def _discover_entry_pages(*, homepage_urls: list[str], max_extra_pages: int) -> list[str]:
     scored: dict[str, int] = {}
-    for homepage_url in homepage_urls:
+    queue: list[tuple[str, int]] = [(_normalize_url(url), 0) for url in homepage_urls if _normalize_url(url)]
+    seen_pages: set[str] = set()
+    max_probe_pages = max(6, max_extra_pages * 3)
+
+    while queue and len(seen_pages) < max_probe_pages:
+        page_url, depth = queue.pop(0)
+        if not page_url or page_url in seen_pages:
+            continue
+        seen_pages.add(page_url)
         try:
-            raw_html, _ = _fetch_html(homepage_url)
+            raw_html, page_title = _fetch_html(page_url)
         except Exception:
             continue
+        page_text = _build_entry_page_text(raw_html, page_title)
+        page_score = _entry_score("", page_url, page_title=page_title, page_text=page_text)
+        if depth > 0 and not _looks_like_channel_prefix_page_url(page_url) and not _looks_like_fragmentary_page_url(page_url):
+            if page_score > 0:
+                scored[page_url] = max(page_score, scored.get(page_url, 0))
         for item in _extract_links(raw_html):
             href = str(item.get("href") or "").strip()
             if not href:
                 continue
-            absolute_url = _normalize_url(urljoin(homepage_url, href))
-            if not absolute_url or not _is_same_site(homepage_url, absolute_url):
+            absolute_url = _normalize_url(urljoin(page_url, href))
+            if not absolute_url or not _is_same_site(page_url, absolute_url):
                 continue
-            score = _entry_score(str(item.get("text") or ""), absolute_url)
-            if score <= 0:
+            if looks_like_detail_page_url(absolute_url):
                 continue
-            scored[absolute_url] = max(score, scored.get(absolute_url, 0))
+            if _looks_like_channel_prefix_page_url(absolute_url) or _looks_like_fragmentary_page_url(absolute_url):
+                continue
+            link_text = str(item.get("text") or "")
+            score = _entry_score(link_text, absolute_url)
+            should_follow = score > 0
+            if score > 0:
+                scored[absolute_url] = max(score, scored.get(absolute_url, 0))
+            elif page_score > 0 and depth < 2:
+                should_follow = True
+            if not should_follow or depth >= 2:
+                continue
+            if absolute_url in seen_pages or any(queued_url == absolute_url for queued_url, _ in queue):
+                continue
+            queue.append((absolute_url, depth + 1))
 
     return [url for url, _score in sorted(scored.items(), key=lambda item: (-item[1], item[0]))[:max_extra_pages]]
 
