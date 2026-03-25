@@ -173,6 +173,11 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `site_sections` now act as the approved/recommended asset layer:
   - search only treats approved school-level sections (`enabled=1`, no `department_id`) as ready assets for school announcement scope
   - V2 bootstrap creates disabled recommended sections first; they must be reviewed or enabled before they become searchable assets
+- Bootstrap steps now persist real V2 evidence:
+  - `portal_nodes` for homepage / explicit seeds / recommended section candidates
+  - `portal_edges` for `explicit_seed` and `section_candidate` relationships
+  - `raw_artifacts(bootstrap_input)` and `parse_artifacts(section_candidates)` for replay/debugging
+- Scope violations are terminal workflow failures. If a department bootstrap returns school-scoped sections, the worker rolls back partial graph/asset writes and marks the step `failed` instead of retrying.
 - OCR is now an explicit async step. `retry-parse` only reruns file parsing; `retry-ocr` enqueues a V2 `ocr_enqueue` workflow step.
 - API process no longer runs the crawl worker loop. V2 steps are consumed by the standalone worker entrypoint `python -m app.workers.crawler_v2_worker`.
 - Announcement visibility is now persisted in `content_classifications` and reused by search and premium monitoring instead of recomputing separate visibility decisions per surface.

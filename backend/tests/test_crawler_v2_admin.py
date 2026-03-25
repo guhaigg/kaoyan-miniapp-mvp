@@ -1,5 +1,19 @@
 from app.db import SessionLocal
-from app.models import Content, ContentClassification, School, SiteSection, WorkflowRun, WorkflowStep
+from app.models import (
+    Content,
+    ContentClassification,
+    Department,
+    GovernanceAction,
+    ParseArtifact,
+    PortalEdge,
+    PortalHostDecision,
+    PortalNode,
+    RawArtifact,
+    School,
+    SiteSection,
+    WorkflowRun,
+    WorkflowStep,
+)
 from app.services.workflow_v2 import workflow_engine
 
 
@@ -7,14 +21,14 @@ def _admin_headers() -> dict[str, str]:
     return {"X-Admin-Token": "test-admin-token"}
 
 
-def test_admin_bootstrap_school_enqueues_workflow_and_worker_creates_recommended_sections(client, monkeypatch):
+def test_admin_bootstrap_school_enqueues_workflow_and_worker_persists_v2_graph(client, monkeypatch):
     def _fake_bootstrap(db, **kwargs):
         school = db.query(School).filter(School.name == kwargs["school_name"]).one()
         section = SiteSection(
             school_id=school.id,
-            name="通知公告",
+            name="Admissions Notices",
             section_type="notice",
-            section_url="https://seed.example.edu.cn/tzgg/",
+            section_url="https://seed.example.edu.cn/notices/",
             discovery_category="announcement",
             enabled=0,
             list_selector_config={},
@@ -25,7 +39,7 @@ def test_admin_bootstrap_school_enqueues_workflow_and_worker_creates_recommended
         return {
             "school": school,
             "homepage_url": kwargs["homepage_url"],
-            "seed_urls": [kwargs["homepage_url"]],
+            "seed_urls": list(kwargs["seed_urls"]),
             "candidate_count": 1,
             "candidate_urls": [section.section_url],
             "created_sections": 1,
@@ -39,9 +53,9 @@ def test_admin_bootstrap_school_enqueues_workflow_and_worker_creates_recommended
     response = client.post(
         "/api/v1/admin/bootstrap/schools",
         json={
-            "school_name": "工作流大学",
+            "school_name": "Workflow University",
             "homepage_url": "https://seed.example.edu.cn/",
-            "seed_urls": [],
+            "seed_urls": ["https://seed.example.edu.cn/admissions/"],
             "max_sections": 8,
         },
         headers=_admin_headers(),
@@ -56,10 +70,94 @@ def test_admin_bootstrap_school_enqueues_workflow_and_worker_creates_recommended
     with SessionLocal() as db:
         run = db.query(WorkflowRun).filter(WorkflowRun.id == payload["workflow_run_id"]).one()
         step = db.query(WorkflowStep).filter(WorkflowStep.id == payload["step_id"]).one()
-        section = db.query(SiteSection).filter(SiteSection.school.has(name="工作流大学")).one()
+        section = db.query(SiteSection).filter(SiteSection.school.has(name="Workflow University")).one()
+        nodes = db.query(PortalNode).filter(PortalNode.scope_key == run.scope_key).all()
+        edges = db.query(PortalEdge).all()
+        host_decision = db.query(PortalHostDecision).filter(PortalHostDecision.scope_key == run.scope_key).one()
+        governance = db.query(GovernanceAction).filter(GovernanceAction.entity_id == run.id).one()
+        raw_artifact = db.query(RawArtifact).filter(RawArtifact.workflow_step_id == step.id).one()
+        parse_artifact = db.query(ParseArtifact).filter(ParseArtifact.workflow_step_id == step.id).one()
+
         assert run.status == "done"
         assert step.status == "done"
         assert section.enabled == 0
+        assert sorted(node.node_type for node in nodes) == ["homepage", "section_candidate", "seed"]
+        assert sorted(edge.relation_type for edge in edges) == ["explicit_seed", "section_candidate"]
+        assert host_decision.selected_host == "seed.example.edu.cn"
+        assert host_decision.candidate_hosts == ["seed.example.edu.cn"]
+        assert governance.action_type == "bootstrap.completed"
+        assert raw_artifact.artifact_type == "bootstrap_input"
+        assert parse_artifact.artifact_type == "section_candidates"
+        assert parse_artifact.payload["candidate_urls"] == ["https://seed.example.edu.cn/notices/"]
+
+
+def test_department_bootstrap_rejects_school_scoped_sections_and_rolls_back_partial_writes(client, monkeypatch):
+    def _fake_bootstrap(db, **kwargs):
+        school = db.query(School).filter(School.name == kwargs["school_name"]).one()
+        section = SiteSection(
+            school_id=school.id,
+            department_id=None,
+            name="Wrong Scope Notices",
+            section_type="notice",
+            section_url="https://dept.example.edu.cn/notices/",
+            discovery_category="announcement",
+            enabled=0,
+            list_selector_config={},
+            detail_selector_config={},
+        )
+        db.add(section)
+        db.flush()
+        return {
+            "school": school,
+            "homepage_url": kwargs["homepage_url"],
+            "seed_urls": list(kwargs["seed_urls"]),
+            "candidate_count": 1,
+            "candidate_urls": [section.section_url],
+            "created_sections": 1,
+            "existing_sections": 0,
+            "job_ids": [],
+            "items": [section],
+        }
+
+    monkeypatch.setattr("app.services.workflow_v2.bootstrap_site_sections", _fake_bootstrap)
+
+    response = client.post(
+        "/api/v1/admin/bootstrap/departments",
+        json={
+            "school_name": "Scope University",
+            "department_name": "Computer Science",
+            "homepage_url": "https://dept.example.edu.cn/",
+            "seed_urls": ["https://dept.example.edu.cn/admissions/"],
+            "max_sections": 8,
+        },
+        headers=_admin_headers(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    processed = workflow_engine.process_step_batch(batch_size=5, worker_name="test-worker")
+    assert processed == 1
+
+    with SessionLocal() as db:
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == payload["workflow_run_id"]).one()
+        step = db.query(WorkflowStep).filter(WorkflowStep.id == payload["step_id"]).one()
+        department = (
+            db.query(Department)
+            .join(School, Department.school_id == School.id)
+            .filter(School.name == "Scope University", Department.name == "Computer Science")
+            .one()
+        )
+
+        assert run.status == "failed"
+        assert step.status == "failed"
+        assert "out-of-scope" in (run.error_message or "")
+        assert db.query(SiteSection).filter(SiteSection.department_id == department.id).count() == 0
+        assert db.query(PortalNode).filter(PortalNode.scope_key == run.scope_key).count() == 0
+        assert db.query(PortalHostDecision).filter(PortalHostDecision.scope_key == run.scope_key).count() == 0
+        assert db.query(PortalEdge).count() == 0
+        assert db.query(RawArtifact).filter(RawArtifact.workflow_step_id == step.id).count() == 0
+        assert db.query(ParseArtifact).filter(ParseArtifact.workflow_step_id == step.id).count() == 0
+        assert db.query(GovernanceAction).filter(GovernanceAction.entity_id == run.id).count() == 0
 
 
 def test_admin_content_explain_returns_persisted_classification(client):
@@ -67,16 +165,16 @@ def test_admin_content_explain_returns_persisted_classification(client):
         "/api/v1/content",
         json={
             "category": "announcement",
-            "title": "说明大学2026年硕士研究生复试通知",
-            "body": "请考生按时参加复试。",
-            "school_name": "说明大学",
+            "title": "Explain University 2026 interview notice",
+            "body": "Candidates should attend the interview on time.",
+            "school_name": "Explain University",
             "source_type": "crawler",
             "source_url": "https://explain.example.edu.cn/notice/1.htm",
             "extra": {
                 "portal_scope": "graduate_admissions",
-                "channel_label": "通知公告",
+                "channel_label": "Admissions Notice",
                 "channel_tier": "core",
-                "system_tags": ["通知公告"],
+                "system_tags": ["notice"],
             },
         },
         headers=_admin_headers(),
@@ -94,23 +192,23 @@ def test_admin_content_explain_returns_persisted_classification(client):
 
 def test_admin_content_reclassify_queues_workflow_step(client):
     with SessionLocal() as db:
-        school = School(name="重分类大学", aliases=[])
+        school = School(name="Reclassify University", aliases=[])
         db.add(school)
         db.flush()
         content = Content(
             school_id=school.id,
             category="announcement",
-            title="重分类大学2026年调剂公告",
-            body="欢迎报考重分类大学。",
-            summary="欢迎报考重分类大学。",
+            title="Reclassify University adjustment notice",
+            body="Welcome to apply for adjustment at Reclassify University.",
+            summary="Welcome to apply for adjustment at Reclassify University.",
             source_type="crawler",
             source_url="https://reclassify.example.edu.cn/notice/2.htm",
             extra={
-                "school_name": "重分类大学",
+                "school_name": "Reclassify University",
                 "portal_scope": "graduate_admissions",
-                "channel_label": "调剂公告",
+                "channel_label": "Adjustment Notice",
                 "channel_tier": "core",
-                "system_tags": ["调剂公告"],
+                "system_tags": ["adjustment"],
             },
         )
         db.add(content)

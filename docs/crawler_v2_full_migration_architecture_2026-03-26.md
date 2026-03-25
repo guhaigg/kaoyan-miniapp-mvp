@@ -364,6 +364,8 @@ V2 需要新增或强烈建议新增：
 - 已落地独立 V2 worker 入口 `python -m app.workers.crawler_v2_worker`
 - 已新增 `workflow_runs / workflow_steps / raw_artifacts / parse_artifacts / content_classifications / governance_actions`
 - 已新增学校/院系 bootstrap、scope rebuild、OCR retry、content reclassify 的 V2 workflow 主路径
+- bootstrap 已开始真实写入 `portal_nodes / portal_edges / portal_host_decisions`，而不是只建空表
+- school / department scope 错误会在 workflow 层直接失败并回滚，不再作为可重试任务继续漂移
 - 搜索已改为只读，不再在线触发冷启动或 family discovery
 - `content_classifications` 已被搜索与高级监控复用，但通知与其余兼容路径仍未完全切干净
 

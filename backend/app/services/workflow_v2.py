@@ -13,10 +13,14 @@ from ..models import (
     ContentFile,
     Department,
     GovernanceAction,
+    ParseArtifact,
+    PortalEdge,
     PortalHostDecision,
     PortalNode,
     PortalUser,
+    RawArtifact,
     School,
+    SiteSection,
     WorkflowRun,
     WorkflowStep,
     utcnow,
@@ -138,6 +142,77 @@ def _upsert_host_decision(
     return row
 
 
+def _ensure_portal_edge(
+    db: Session,
+    *,
+    from_node_id: str,
+    to_node_id: str,
+    relation_type: str,
+    evidence: dict[str, Any],
+) -> PortalEdge:
+    row = (
+        db.query(PortalEdge)
+        .filter(
+            PortalEdge.from_node_id == from_node_id,
+            PortalEdge.to_node_id == to_node_id,
+            PortalEdge.relation_type == relation_type,
+        )
+        .one_or_none()
+    )
+    if row is None:
+        row = PortalEdge(
+            from_node_id=from_node_id,
+            to_node_id=to_node_id,
+            relation_type=relation_type,
+            evidence=evidence,
+        )
+        db.add(row)
+    else:
+        row.evidence = evidence
+    db.flush()
+    return row
+
+
+def _record_raw_artifact(
+    db: Session,
+    *,
+    workflow_step_id: str,
+    artifact_type: str,
+    source_url: str | None,
+    payload: dict[str, Any],
+    headers: dict[str, Any] | None = None,
+) -> RawArtifact:
+    row = RawArtifact(
+        workflow_step_id=workflow_step_id,
+        artifact_type=artifact_type,
+        source_url=source_url,
+        payload=payload,
+        headers=headers or {},
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _record_parse_artifact(
+    db: Session,
+    *,
+    workflow_step_id: str,
+    artifact_type: str,
+    source_url: str | None,
+    payload: dict[str, Any],
+) -> ParseArtifact:
+    row = ParseArtifact(
+        workflow_step_id=workflow_step_id,
+        artifact_type=artifact_type,
+        source_url=source_url,
+        payload=payload,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
 def _record_governance_action(
     db: Session,
     *,
@@ -161,6 +236,23 @@ def _record_governance_action(
     db.add(row)
     db.flush()
     return row
+
+
+def _validate_bootstrap_sections(
+    *,
+    sections: list[SiteSection],
+    school: School,
+    department: Department | None,
+    department_mode: bool,
+) -> None:
+    for section in sections:
+        if section.school_id != school.id:
+            raise ValueError("bootstrap returned cross-school section")
+        if department_mode:
+            if department is None or section.department_id != department.id:
+                raise ValueError("department bootstrap returned out-of-scope section")
+        elif section.department_id is not None:
+            raise ValueError("school bootstrap returned department-scoped section")
 
 
 def _create_run_with_step(
@@ -339,7 +431,7 @@ def queue_ocr_retry(db: Session, *, file_record: ContentFile, actor_username: st
         workflow_type=STEP_TYPE_OCR_ENQUEUE,
         step_type=STEP_TYPE_OCR_ENQUEUE,
         scope_type=scope_type,
-        scope_key=_scope_key(school_name, department_name) or content.id,
+        scope_key=_scope_key(school_name, department_name) or file_record.id,
         scope_label="/".join(part for part in [school_name, department_name or ""] if part),
         actor_username=actor_username,
         input_payload=payload,
@@ -365,7 +457,7 @@ def queue_content_reclassify(db: Session, *, content: Content, actor_username: s
         workflow_type=STEP_TYPE_CONTENT_RECLASSIFY,
         step_type=STEP_TYPE_CONTENT_RECLASSIFY,
         scope_type=scope_type,
-        scope_key=_scope_key(school_name, department_name),
+        scope_key=_scope_key(school_name, department_name) or content.id,
         scope_label="/".join(part for part in [school_name, department_name or ""] if part),
         actor_username=actor_username,
         input_payload=payload,
@@ -442,7 +534,8 @@ def _mark_step_done(db: Session, step: WorkflowStep, result_payload: dict[str, A
 def _mark_step_failed(db: Session, step: WorkflowStep, exc: Exception) -> None:
     step.error_type = type(exc).__name__
     step.error_message = str(exc)
-    if step.attempt_count < max(1, int(step.max_attempts or 1)):
+    retryable = not isinstance(exc, ValueError)
+    if retryable and step.attempt_count < max(1, int(step.max_attempts or 1)):
         step.status = "pending"
         step.available_at = utcnow() + timedelta(seconds=10)
     else:
@@ -485,37 +578,159 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
             .filter(Department.school_id == school.id, Department.name == department_name)
             .one_or_none()
         )
+    sections = list(result["items"])
+    _validate_bootstrap_sections(
+        sections=sections,
+        school=school,
+        department=department,
+        department_mode=department_mode,
+    )
     scope_type = "department" if department_mode else "school"
     scope_key = _scope_key(school_name, department_name if department_mode else None) or school.id
-    _ensure_portal_node(
+    actor_account_id = (
+        db.query(WorkflowRun.requested_by_account_id)
+        .filter(WorkflowRun.id == step.run_id)
+        .limit(1)
+        .scalar()
+    )
+    raw_artifact = _record_raw_artifact(
+        db,
+        workflow_step_id=step.id,
+        artifact_type="bootstrap_input",
+        source_url=homepage_url,
+        payload={
+            "scope_type": scope_type,
+            "scope_key": scope_key,
+            "school_name": school_name,
+            "department_name": department_name,
+            "homepage_url": homepage_url,
+            "seed_urls": seed_urls,
+        },
+    )
+    homepage_node = _ensure_portal_node(
         db,
         school_id=school.id,
         department_id=department.id if department else None,
         scope_type=scope_type,
         scope_key=scope_key,
-        node_type="seed",
+        node_type="homepage",
         url=homepage_url,
         title=school_name if not department_mode else f"{school_name}/{department_name}",
         status="approved",
-        evidence={"source": "explicit_seed", "seed_urls": seed_urls},
+        evidence={"source": "explicit_homepage", "raw_artifact_id": raw_artifact.id},
     )
+    seed_nodes: list[PortalNode] = []
+    for seed_url in seed_urls:
+        seed_node = _ensure_portal_node(
+            db,
+            school_id=school.id,
+            department_id=department.id if department else None,
+            scope_type=scope_type,
+            scope_key=scope_key,
+            node_type="seed",
+            url=seed_url,
+            title=f"{scope_key} seed",
+            status="approved",
+            evidence={"source": "explicit_seed", "raw_artifact_id": raw_artifact.id},
+        )
+        seed_nodes.append(seed_node)
+        if seed_node.id != homepage_node.id:
+            _ensure_portal_edge(
+                db,
+                from_node_id=homepage_node.id,
+                to_node_id=seed_node.id,
+                relation_type="explicit_seed",
+                evidence={"workflow_step_id": step.id},
+            )
+    parse_artifact = _record_parse_artifact(
+        db,
+        workflow_step_id=step.id,
+        artifact_type="section_candidates",
+        source_url=homepage_url,
+        payload={
+            "scope_type": scope_type,
+            "scope_key": scope_key,
+            "candidate_count": result["candidate_count"],
+            "candidate_urls": list(result.get("candidate_urls") or []),
+            "sections": [
+                {
+                    "id": section.id,
+                    "name": section.name,
+                    "section_type": section.section_type,
+                    "section_url": section.section_url,
+                    "school_id": section.school_id,
+                    "department_id": section.department_id,
+                    "enabled": section.enabled,
+                }
+                for section in sections
+            ],
+        },
+    )
+    section_node_ids: list[str] = []
+    for section in sections:
+        section_node = _ensure_portal_node(
+            db,
+            school_id=school.id,
+            department_id=department.id if department else None,
+            scope_type=scope_type,
+            scope_key=scope_key,
+            node_type="section_candidate",
+            url=section.section_url,
+            title=section.name,
+            status="approved" if int(section.enabled or 0) == 1 else "recommended",
+            evidence={
+                "site_section_id": section.id,
+                "section_type": section.section_type,
+                "discovery_category": section.discovery_category,
+                "parse_artifact_id": parse_artifact.id,
+            },
+        )
+        section_node_ids.append(section_node.id)
+        parent_node = next(
+            (
+                node
+                for node in seed_nodes
+                if _host_from_url(node.url) and _host_from_url(node.url) == _host_from_url(section.section_url)
+            ),
+            homepage_node,
+        )
+        if parent_node.id != section_node.id:
+            _ensure_portal_edge(
+                db,
+                from_node_id=parent_node.id,
+                to_node_id=section_node.id,
+                relation_type="section_candidate",
+                evidence={"site_section_id": section.id, "workflow_step_id": step.id},
+            )
     candidate_hosts = list(
         dict.fromkeys(
             host
-            for host in [_host_from_url(homepage_url), *[_host_from_url(url) for url in seed_urls]]
+            for host in [
+                _host_from_url(homepage_url),
+                *[_host_from_url(url) for url in seed_urls],
+                *[_host_from_url(section.section_url) for section in sections],
+            ]
             if host
         )
     )
-    _upsert_host_decision(
+    host_decision = _upsert_host_decision(
         db,
         school_id=school.id,
         department_id=department.id if department else None,
         scope_type=scope_type,
         scope_key=scope_key,
         family="announcement",
-        selected_host=candidate_hosts[0] if candidate_hosts else None,
+        selected_host=next(
+            (host for host in [_host_from_url(section.section_url) for section in sections] if host),
+            candidate_hosts[0] if candidate_hosts else None,
+        ),
         candidate_hosts=candidate_hosts,
-        evidence={"homepage_url": homepage_url, "seed_urls": seed_urls},
+        evidence={
+            "homepage_url": homepage_url,
+            "seed_urls": seed_urls,
+            "recommended_section_ids": [section.id for section in sections],
+            "parse_artifact_id": parse_artifact.id,
+        },
     )
     _record_governance_action(
         db,
@@ -524,18 +739,27 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
         scope_type=scope_type,
         scope_key=scope_key,
         action_type="bootstrap.completed",
-        actor_account_id=None,
+        actor_account_id=actor_account_id,
         payload={
-            "recommended_section_ids": [section.id for section in result["items"]],
+            "recommended_section_ids": [section.id for section in sections],
             "homepage_url": homepage_url,
             "seed_urls": seed_urls,
+            "homepage_node_id": homepage_node.id,
+            "section_node_ids": section_node_ids,
+            "host_decision_id": host_decision.id,
+            "raw_artifact_id": raw_artifact.id,
+            "parse_artifact_id": parse_artifact.id,
         },
     )
     return {
         "school_name": school_name,
         "department_name": department_name,
-        "recommended_section_ids": [section.id for section in result["items"]],
+        "recommended_section_ids": [section.id for section in sections],
         "total_candidate_sections": result["candidate_count"],
+        "section_node_ids": section_node_ids,
+        "host_decision_id": host_decision.id,
+        "raw_artifact_id": raw_artifact.id,
+        "parse_artifact_id": parse_artifact.id,
     }
 
 
@@ -598,6 +822,11 @@ class WorkflowEngine:
                     _mark_step_done(db, step, result)
                     processed += 1
                 except Exception as exc:
+                    db.rollback()
+                    step = db.query(WorkflowStep).filter(WorkflowStep.id == step_id).one_or_none()
+                    if step is None:
+                        processed += 1
+                        continue
                     _mark_step_failed(db, step, exc)
                     processed += 1
         return processed

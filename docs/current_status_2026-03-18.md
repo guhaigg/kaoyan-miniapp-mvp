@@ -401,6 +401,8 @@
 - API 进程内 crawl worker 已移除，V2 步骤由独立 worker `python -m app.workers.crawler_v2_worker` 消费
 - 公告可见性已开始持久化到 `content_classifications`，搜索和高级监控都优先复用这份判定结果
 - 学校级与院系级 bootstrap 已按 `scope_type + scope_key` 分轨，新的 workflow 路径不再把 `announcement_portal_caches.candidate_urls`、旧详情页 URL 或历史 `content.source_url` 当 discovery seed
+- school / department bootstrap 已开始真实写入 `portal_nodes / portal_edges / portal_host_decisions / raw_artifacts / parse_artifacts`
+- department bootstrap 若产出 school-scoped section，会直接终态失败并回滚本次部分写入，不再把 scope 错误当成可重试故障
 
 当前边界：
 
