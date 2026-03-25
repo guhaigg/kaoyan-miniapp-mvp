@@ -187,6 +187,129 @@ def _seed_polluted_school_host_mismatch() -> dict[str, str]:
         }
 
 
+def _seed_same_school_sibling_host_pollution() -> dict[str, str]:
+    with SessionLocal() as db:
+        school = School(name="湖北大学", aliases=[])
+        db.add(school)
+        db.flush()
+
+        source = Source(
+            school_id=school.id,
+            name="湖北大学研究生招生网",
+            source_type="official",
+            base_url="https://yz.hubu.edu.cn/",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+
+        correct_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="硕士招生",
+            section_type="admissions",
+            section_url="https://yz.hubu.edu.cn/zsjz.htm",
+            discovery_category="announcement",
+            list_selector_config={"portal_entry_url": "https://yz.hubu.edu.cn/", "probe_heading": "招生简章"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        polluted_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="培养学籍学历",
+            section_type="admissions",
+            section_url="http://gs.hubu.edu.cn/",
+            discovery_category="announcement",
+            list_selector_config={"portal_entry_url": "https://yz.hubu.edu.cn/", "probe_heading": "查看更多>>"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        db.add_all([correct_section, polluted_section])
+        db.flush()
+
+        db.add_all(
+            [
+                SiteSectionLink(
+                    site_section_id=correct_section.id,
+                    link_url="http://yz.hubu.edu.cn/info/1025/3050.htm",
+                    link_url_hash="hubu-correct-link",
+                    title="湖北大学2025年硕士研究生招生考试自命题科目考试大纲",
+                    link_type="html",
+                    status="discovered",
+                ),
+                SiteSectionLink(
+                    site_section_id=polluted_section.id,
+                    link_url="http://gs.hubu.edu.cn/info/1019/11366.htm",
+                    link_url_hash="hubu-polluted-link",
+                    title="副校长曾祥勇调研指导研究生院工作",
+                    link_type="html",
+                    status="discovered",
+                ),
+            ]
+        )
+
+        polluted_content = Content(
+            school_id=school.id,
+            source_id=source.id,
+            category="announcement",
+            title="副校长曾祥勇调研指导研究生院工作",
+            body="错误进入学校级研招公告的研究生院动态。",
+            summary="污染数据",
+            source_type="crawler",
+            source_url="http://gs.hubu.edu.cn/info/1019/11366.htm",
+            extra={
+                "site_section_id": polluted_section.id,
+                "school_name": school.name,
+                "portal_scope": "graduate_admissions",
+                "channel_tier": "core",
+                "channel_label": "硕士招生",
+                "system_tags": ["硕士招生", "招生信息"],
+            },
+        )
+        correct_content = Content(
+            school_id=school.id,
+            source_id=source.id,
+            category="announcement",
+            title="湖北大学2025年硕士研究生招生考试自命题科目考试大纲",
+            body="正确的招生信息网公告。",
+            summary="正确数据",
+            source_type="crawler",
+            source_url="http://yz.hubu.edu.cn/info/1025/3050.htm",
+            extra={
+                "site_section_id": correct_section.id,
+                "school_name": school.name,
+                "portal_scope": "graduate_admissions",
+                "channel_tier": "core",
+                "channel_label": "硕士招生",
+                "system_tags": ["硕士招生", "招生简章", "专业目录", "招生信息"],
+            },
+        )
+        db.add_all([polluted_content, correct_content])
+        db.flush()
+
+        db.add(ContentSnapshot(content_id=polluted_content.id, raw_html="<html>polluted</html>", raw_text="polluted", snapshot_meta={}))
+        db.add(
+            CrawlJob(
+                category="announcement",
+                status="done",
+                message="polluted detail fetch",
+                query={
+                    "job_kind": "detail_fetch",
+                    "school_name": school.name,
+                    "source_url": "http://gs.hubu.edu.cn/info/1019/11366.htm",
+                },
+            )
+        )
+        db.commit()
+        return {
+            "polluted_section_id": polluted_section.id,
+            "polluted_content_id": polluted_content.id,
+            "correct_content_id": correct_content.id,
+        }
+
+
 def test_cleanup_polluted_announcement_data_dry_run_keeps_rows():
     ids = _seed_polluted_school_host_mismatch()
 
@@ -217,6 +340,23 @@ def test_cleanup_polluted_announcement_data_deletes_only_mismatched_host_rows():
     assert stats["deleted"]["monitor_hits"] == 1
     assert stats["deleted"]["notification_outbox"] == 1
     assert stats["deleted"]["notification_deliveries"] == 1
+    assert stats["deleted"]["crawl_jobs"] == 1
+
+    with SessionLocal() as db:
+        assert db.query(SiteSection).filter(SiteSection.id == ids["polluted_section_id"]).one_or_none() is None
+        assert db.query(Content).filter(Content.id == ids["polluted_content_id"]).one_or_none() is None
+        assert db.query(Content).filter(Content.id == ids["correct_content_id"]).one_or_none() is not None
+
+
+def test_cleanup_polluted_announcement_data_deletes_same_school_sibling_host_rows():
+    ids = _seed_same_school_sibling_host_pollution()
+
+    with SessionLocal() as db:
+        stats = cleanup_polluted_announcement_data(db, school_name="湖北大学")
+
+    assert stats["deleted"]["sections"] == 1
+    assert stats["deleted"]["contents"] == 1
+    assert stats["deleted"]["snapshots"] == 1
     assert stats["deleted"]["crawl_jobs"] == 1
 
     with SessionLocal() as db:

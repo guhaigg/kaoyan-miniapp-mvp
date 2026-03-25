@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from ..models import (
+    AnnouncementPortalCache,
     Content,
     ContentFile,
     ContentSnapshot,
@@ -159,6 +160,28 @@ def _owner_candidates_from_seed_data() -> dict[str, Counter[str]]:
     return owner_candidates
 
 
+def _collect_school_preferred_host_map(db: Session) -> dict[str, set[str]]:
+    preferred_hosts: dict[str, set[str]] = defaultdict(set)
+    for school_name, payload in _ANNOUNCEMENT_CANONICAL_SEEDS.items():
+        for url in [str(payload.get("homepage_url") or "").strip(), *[str(item or "").strip() for item in payload.get("seed_urls") or []]]:
+            host = _normalize_host(url)
+            if host:
+                preferred_hosts[school_name].add(host)
+
+    for row in db.query(AnnouncementPortalCache).all():
+        school_name = str(row.school_name or "").strip()
+        if not school_name:
+            continue
+        hosts = {
+            _normalize_host(host)
+            for host in (row.preferred_hosts or [])
+            if _normalize_host(host)
+        }
+        if hosts:
+            preferred_hosts[school_name].update(hosts)
+    return preferred_hosts
+
+
 def _collect_host_owner_map(db: Session) -> dict[str, str]:
     schools = db.query(School).all()
     school_terms = _school_name_terms(schools)
@@ -234,6 +257,7 @@ def cleanup_polluted_announcement_data(
         }
     )
     owner_map = _collect_host_owner_map(db)
+    preferred_host_map = _collect_school_preferred_host_map(db)
     school_rows = db.query(School).all()
     school_name_by_id = {row.id: row.name for row in school_rows}
 
@@ -257,10 +281,19 @@ def cleanup_polluted_announcement_data(
             continue
         host_key = _host_owner_key(section.section_url)
         owner_school_name = owner_map.get(host_key, "")
-        if not host_key or not owner_school_name or owner_school_name == bound_school_name or not _suffix_allowed(host_key):
+        polluted = False
+        if host_key and owner_school_name and owner_school_name != bound_school_name and _suffix_allowed(host_key):
+            polluted = True
+        section_host = _normalize_host(section.section_url)
+        preferred_hosts = preferred_host_map.get(bound_school_name, set())
+        if not polluted and preferred_hosts and section_host and section_host not in preferred_hosts and not str(section.department_id or "").strip():
+            polluted = True
+            owner_school_name = bound_school_name
+            host_key = section_host
+        if not polluted:
             continue
         polluted_section_ids.add(section.id)
-        polluted_pairs[(bound_school_name, owner_school_name, host_key)]["sections"] += 1
+        polluted_pairs[(bound_school_name, owner_school_name or bound_school_name, host_key or section_host)]["sections"] += 1
 
     for content in db.query(Content).filter(Content.category == "announcement").all():
         bound_school_name = _resolved_content_school_name(content, school_name_by_id)
@@ -270,16 +303,29 @@ def cleanup_polluted_announcement_data(
             continue
         extra = dict(content.extra or {})
         section_id = str(extra.get("site_section_id") or "").strip()
+        source_host = _normalize_host(content.source_url)
         host_key = _host_owner_key(content.source_url)
         owner_school_name = owner_map.get(host_key, "")
         polluted = section_id in polluted_section_ids
         if not polluted and host_key and owner_school_name and owner_school_name != bound_school_name and _suffix_allowed(host_key):
             polluted = True
+        preferred_hosts = preferred_host_map.get(bound_school_name, set())
+        if (
+            not polluted
+            and preferred_hosts
+            and source_host
+            and source_host not in preferred_hosts
+            and not str(extra.get("department_id") or "").strip()
+            and not str(extra.get("department_name") or "").strip()
+        ):
+            polluted = True
+            owner_school_name = bound_school_name
+            host_key = source_host
         if not polluted:
             continue
         polluted_content_ids.add(content.id)
-        if host_key and owner_school_name:
-            polluted_pairs[(bound_school_name, owner_school_name, host_key)]["contents"] += 1
+        if host_key:
+            polluted_pairs[(bound_school_name, owner_school_name or bound_school_name, host_key)]["contents"] += 1
 
     for job in db.query(CrawlJob).filter(CrawlJob.category == "announcement").all():
         payload = dict(job.query or {})
@@ -289,15 +335,21 @@ def cleanup_polluted_announcement_data(
         if requested_school_name and bound_school_name != requested_school_name:
             continue
         matched = False
+        preferred_hosts = preferred_host_map.get(bound_school_name, set())
         for url in _payload_urls(payload):
+            source_host = _normalize_host(url)
             host_key = _host_owner_key(url)
             owner_school_name = owner_map.get(host_key, "")
-            if not host_key or not owner_school_name or owner_school_name == bound_school_name or not _suffix_allowed(host_key):
-                continue
-            polluted_job_ids.add(job.id)
-            polluted_pairs[(bound_school_name, owner_school_name, host_key)]["jobs"] += 1
-            matched = True
-            break
+            if host_key and owner_school_name and owner_school_name != bound_school_name and _suffix_allowed(host_key):
+                polluted_job_ids.add(job.id)
+                polluted_pairs[(bound_school_name, owner_school_name, host_key)]["jobs"] += 1
+                matched = True
+                break
+            if preferred_hosts and source_host and source_host not in preferred_hosts:
+                polluted_job_ids.add(job.id)
+                polluted_pairs[(bound_school_name, bound_school_name, source_host)]["jobs"] += 1
+                matched = True
+                break
         if matched:
             continue
 
@@ -312,12 +364,18 @@ def cleanup_polluted_announcement_data(
             continue
         if requested_school_name and bound_school_name != requested_school_name:
             continue
-        host_key = _host_owner_key(error.source_url or query_payload.get("source_url"))
+        error_url = error.source_url or query_payload.get("source_url")
+        source_host = _normalize_host(error_url)
+        host_key = _host_owner_key(error_url)
         owner_school_name = owner_map.get(host_key, "")
-        if not host_key or not owner_school_name or owner_school_name == bound_school_name or not _suffix_allowed(host_key):
+        preferred_hosts = preferred_host_map.get(bound_school_name, set())
+        if host_key and owner_school_name and owner_school_name != bound_school_name and _suffix_allowed(host_key):
+            polluted_error_ids.add(error.id)
+            polluted_pairs[(bound_school_name, owner_school_name, host_key)]["errors"] += 1
             continue
-        polluted_error_ids.add(error.id)
-        polluted_pairs[(bound_school_name, owner_school_name, host_key)]["errors"] += 1
+        if preferred_hosts and source_host and source_host not in preferred_hosts:
+            polluted_error_ids.add(error.id)
+            polluted_pairs[(bound_school_name, bound_school_name, source_host)]["errors"] += 1
 
     polluted_link_ids = {
         row.id
