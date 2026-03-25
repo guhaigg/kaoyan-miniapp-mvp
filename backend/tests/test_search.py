@@ -318,6 +318,102 @@ def test_search_announcements_school_scope_keeps_school_level_rows_when_keywords
     }
 
 
+def test_search_announcements_school_scope_excludes_school_prefixed_college_assets(client):
+    with SessionLocal() as db:
+        school = School(name="东北大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="东北大学研究生招生网",
+            source_type="official",
+            base_url="https://yz.neu.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        school_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="通知公告",
+            section_type="notice",
+            section_url="https://yz.neu.edu.cn/tzgg/",
+            discovery_category="announcement",
+            list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        db.add(school_section)
+        db.flush()
+        db.add_all(
+            [
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="东北大学2026年硕士研究生复试录取办法",
+                    body="这是东北大学学校级公告。",
+                    summary="学校级公告",
+                    source_type="crawler",
+                    source_url="https://yz.neu.edu.cn/tzgg/1001.htm",
+                    extra={
+                        "school_name": "东北大学",
+                        "site_section_id": school_section.id,
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "通知公告",
+                        "channel_tier": "core",
+                        "system_tags": ["通知公告", "招生信息"],
+                    },
+                ),
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="东北大学艺术学院2026年硕士研究生复试录取办法",
+                    body="这是误绑到学校级搜索的学院公告。",
+                    summary="学院级公告",
+                    source_type="crawler",
+                    source_url="https://yz.neu.edu.cn/ysxy/2001.htm",
+                    extra={
+                        "school_name": "东北大学艺术学院",
+                        "site_section_id": school_section.id,
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "通知公告",
+                        "channel_tier": "core",
+                        "system_tags": ["通知公告", "招生信息"],
+                    },
+                ),
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="2026年硕士研究生复试实施细则",
+                    body="东北大学艺术学院发布了复试实施细则。",
+                    summary="正文显式提及学院实体",
+                    source_type="crawler",
+                    source_url="https://yz.neu.edu.cn/ysxy/2002.htm",
+                    extra={
+                        "school_name": "东北大学",
+                        "site_section_id": school_section.id,
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "通知公告",
+                        "channel_tier": "core",
+                        "system_tags": ["通知公告", "招生信息"],
+                    },
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.post("/api/v1/search/announcements", json={"school_name": "东北大学"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [item["title"] for item in payload["items"]] == ["东北大学2026年硕士研究生复试录取办法"]
+
+
 def test_announcement_search_full_school_name_does_not_match_other_schools_with_same_city_prefix(client, monkeypatch):
     with SessionLocal() as db:
         school = School(name="上海应用技术大学", aliases=[])
@@ -437,6 +533,96 @@ def test_adjustment_search_exposes_structured_adjustment_meta(client):
     assert item["adjustment_major_codes"] == ["085400"]
     assert item["adjustment_study_modes"] == ["parttime"]
     assert item["adjustment_has_vacancy"] is True
+
+
+def test_search_adjustments_school_scope_keeps_college_assets_but_excludes_branch_school_assets(client):
+    token = _register_and_login(client, "adjustment_school_scope_user")
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Content(
+                    category="adjustment",
+                    title="东北大学艺术学院2026年调剂公告",
+                    body="东北大学艺术学院发布调剂信息。",
+                    summary="学院级调剂公告",
+                    school_id=None,
+                    source_type="crawler",
+                    source_url="https://art.neu.edu.cn/tiaoji/1001.htm",
+                    extra={"school_name": "东北大学艺术学院"},
+                ),
+                Content(
+                    category="adjustment",
+                    title="东北大学秦皇岛分校2026年调剂公告",
+                    body="东北大学秦皇岛分校发布调剂信息。",
+                    summary="分校调剂公告",
+                    school_id=None,
+                    source_type="crawler",
+                    source_url="https://qhd.neu.edu.cn/tiaoji/1002.htm",
+                    extra={"school_name": "东北大学秦皇岛分校"},
+                ),
+                Content(
+                    category="adjustment",
+                    title="东北大学2026年调剂公告",
+                    body="东北大学发布调剂信息。",
+                    summary="学校级调剂公告",
+                    school_id=None,
+                    source_type="crawler",
+                    source_url="https://yz.neu.edu.cn/tiaoji/1003.htm",
+                    extra={"school_name": "东北大学"},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="neu-art-adjustment",
+                    source_dataset_key="test-dataset",
+                    source_type="manual",
+                    year=2026,
+                    school_name="东北大学艺术学院",
+                    school_name_normalized="东北大学艺术学院",
+                    department_name="艺术学院",
+                    department_name_normalized="艺术学院",
+                    major_name="设计学",
+                    major_name_normalized="设计学",
+                    title="东北大学艺术学院2026年设计学调剂信息",
+                    summary="学院级历史调剂样本",
+                    source_url="https://art.neu.edu.cn/tiaoji/opportunity-1",
+                    published_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
+                    meta_json={},
+                ),
+                AdjustmentOpportunity(
+                    opportunity_key="neu-qhd-adjustment",
+                    source_dataset_key="test-dataset",
+                    source_type="manual",
+                    year=2026,
+                    school_name="东北大学秦皇岛分校",
+                    school_name_normalized="东北大学秦皇岛分校",
+                    department_name="计算机与通信工程学院",
+                    department_name_normalized="计算机与通信工程学院",
+                    major_name="计算机技术",
+                    major_name_normalized="计算机技术",
+                    title="东北大学秦皇岛分校2026年计算机技术调剂信息",
+                    summary="分校历史调剂样本",
+                    source_url="https://qhd.neu.edu.cn/tiaoji/opportunity-2",
+                    published_at=datetime(2026, 3, 18, tzinfo=timezone.utc),
+                    meta_json={},
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/v1/search/adjustments",
+        json={"school_name": "东北大学", "page_size": 20},
+        headers={"X-User-Token": token},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    titles = {item["title"] for item in payload["items"]}
+    assert "东北大学艺术学院2026年调剂公告" in titles
+    assert "东北大学艺术学院 设计学 调剂信息" in titles
+    assert "东北大学2026年调剂公告" in titles
+    assert "东北大学秦皇岛分校2026年调剂公告" not in titles
+    assert "东北大学秦皇岛分校 计算机技术 调剂信息" not in titles
 
 
 def test_adjustment_search_keyword_matches_major_field_fuzzily(client):

@@ -65,6 +65,8 @@ DEPARTMENT_HINT_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(
 DEPARTMENT_SCOPE_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|学部|系|研究院|研究所|中心))")
 SCHOOL_LEVEL_SCOPE_HINTS = ("研究生院", "研工部", "研究生招生", "研招", "招生工作", "硕士研究生", "博士研究生")
 DEPARTMENT_SCOPE_EXCLUDE_HINTS = ("研究生院", "研工部")
+SCHOOL_PREFIX_CONFLICT_SUFFIXES = ("独立学院", "学院", "学部", "研究院", "研究所", "中心", "分校", "校区", "系")
+ADJUSTMENT_ALLOWED_SCHOOL_EXTENSION_SUFFIXES = ("学院", "学部", "系")
 SCHOOL_TIER_FILTER_MAP = {
     "普本": ["普本", "普通本科", "普通本科院校", "双非"],
     "普通本科": ["普本", "普通本科", "普通本科院校", "双非"],
@@ -368,22 +370,128 @@ def _extract_explicit_school_mentions(*texts: str | None) -> list[str]:
     return _dedupe_terms(values)
 
 
+def _compact_school_text(value: str | None) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip())
+
+
+def _extract_requested_school_prefixed_mentions(
+    requested_school_name: str,
+    *texts: str | None,
+) -> list[str]:
+    requested = _compact_school_text(requested_school_name)
+    if not requested:
+        return []
+    suffix_pattern = "|".join(re.escape(suffix) for suffix in SCHOOL_PREFIX_CONFLICT_SUFFIXES)
+    pattern = re.compile(
+        re.escape(requested) + rf"[\u4e00-\u9fa5A-Za-z0-9（）()·、-]{{1,24}}?(?:{suffix_pattern})"
+    )
+    values: list[str] = []
+    for text in texts:
+        compact = _compact_school_text(text)
+        if not compact:
+            continue
+        values.extend(match.group(0) for match in pattern.finditer(compact))
+    return _dedupe_terms(values)
+
+
+def _school_prefixed_extension_conflicts(
+    requested_school_name: str,
+    candidate_school_name: str,
+    *,
+    allowed_extension_suffixes: tuple[str, ...] = (),
+) -> bool:
+    requested = _compact_school_text(requested_school_name)
+    candidate = _compact_school_text(candidate_school_name)
+    if not requested or not candidate or candidate == requested:
+        return False
+    if not candidate.startswith(requested):
+        return False
+    remainder = candidate[len(requested) :]
+    if not remainder:
+        return False
+    if any(remainder.endswith(suffix) and len(remainder) >= len(suffix) for suffix in allowed_extension_suffixes):
+        return False
+    return any(remainder.endswith(suffix) and len(remainder) >= len(suffix) for suffix in SCHOOL_PREFIX_CONFLICT_SUFFIXES)
+
+
+def _school_name_signal_conflicts(
+    requested_school_name: str,
+    candidate_school_name: str,
+    *,
+    known_school_names: set[str],
+    allowed_extension_suffixes: tuple[str, ...] = (),
+) -> bool:
+    candidate = str(candidate_school_name or "").strip()
+    if not candidate:
+        return False
+    normalized_candidate = normalize_school_name(candidate)
+    suffix_matches = [name for name in known_school_names if normalized_candidate and normalized_candidate.endswith(name)]
+    if len(suffix_matches) == 1:
+        candidate = suffix_matches[0]
+    requested = normalize_school_name(requested_school_name)
+    normalized = normalize_school_name(candidate)
+    if normalized and normalized != requested:
+        if normalized in known_school_names or candidate.endswith(("大学", "研究院", "研究所")):
+            return True
+    return _school_prefixed_extension_conflicts(
+        requested_school_name,
+        candidate,
+        allowed_extension_suffixes=allowed_extension_suffixes,
+    )
+
+
 def _row_conflicts_with_requested_school(
     row: Content,
     requested_school_name: str,
     known_school_names: set[str],
+    *,
+    allowed_extension_suffixes: tuple[str, ...] = (),
 ) -> bool:
     requested = normalize_school_name(requested_school_name)
     if not requested:
         return False
-    mentions = _extract_explicit_school_mentions(row.title, row.summary, row.body)
+    extra = dict(row.extra or {})
+    bound_school_name = row.school.name if row.school is not None else None
+    mentions = _dedupe_terms(
+        [
+            str(bound_school_name or "").strip(),
+            str(extra.get("school_name") or "").strip(),
+            *_extract_explicit_school_mentions(row.title, row.summary, row.body),
+            *_extract_requested_school_prefixed_mentions(requested_school_name, row.title, row.summary, row.body),
+        ]
+    )
     if not mentions:
         return False
     for mention in mentions:
-        normalized = normalize_school_name(mention)
-        if not normalized or normalized == requested:
-            continue
-        if normalized in known_school_names or mention.endswith(("大学", "研究院", "研究所")):
+        if _school_name_signal_conflicts(
+            requested_school_name,
+            mention,
+            known_school_names=known_school_names,
+            allowed_extension_suffixes=allowed_extension_suffixes,
+        ):
+            return True
+    return False
+
+
+def _adjustment_opportunity_conflicts_with_requested_school(
+    row: AdjustmentOpportunity,
+    requested_school_name: str,
+    known_school_names: set[str],
+) -> bool:
+    mentions = _dedupe_terms(
+        [
+            str(row.school_name or "").strip(),
+            *_extract_explicit_school_mentions(row.title, row.summary),
+            *_extract_requested_school_prefixed_mentions(requested_school_name, row.school_name, row.title, row.summary),
+        ]
+    )
+    for mention in mentions:
+        if _school_name_signal_conflicts(
+            requested_school_name,
+            mention,
+            known_school_names=known_school_names,
+            allowed_extension_suffixes=ADJUSTMENT_ALLOWED_SCHOOL_EXTENSION_SUFFIXES,
+        ):
             return True
     return False
 
@@ -2122,6 +2230,17 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     refresh_job_id = None
     if payload.refresh:
         refresh_job_id = _create_refresh_job(db, "adjustment", payload.model_dump(mode="json"), user.id if user else None)
+    requested_school_name = str(payload.school_name or "").strip()
+    enforce_exact_school_scope = _should_use_exact_school_filter(requested_school_name)
+    known_school_names = (
+        {
+            normalize_school_name(name)
+            for (name,) in db.query(School.name).all()
+            if normalize_school_name(name)
+        }
+        if enforce_exact_school_scope
+        else set()
+    )
     requires_full_scan = _should_full_scan_adjustment_query(payload)
     broad_query_mode = _is_broad_adjustment_query(payload)
     page_window = payload.page * payload.page_size
@@ -2140,8 +2259,22 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
             content_rows = content_ordered_query.all()
         else:
             content_rows = content_ordered_query.limit(page_window).all()
-        content_stats_rows = content_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
-        content_source_breakdown = {k: int(v) for k, v in content_stats_rows}
+        if enforce_exact_school_scope:
+            content_rows = [
+                row
+                for row in content_rows
+                if not _row_conflicts_with_requested_school(
+                    row,
+                    requested_school_name,
+                    known_school_names,
+                    allowed_extension_suffixes=ADJUSTMENT_ALLOWED_SCHOOL_EXTENSION_SUFFIXES,
+                )
+            ]
+            content_total = len(content_rows)
+            content_source_breakdown = _build_source_breakdown_from_rows(content_rows)
+        else:
+            content_stats_rows = content_query.with_entities(Content.source_type, func.count(Content.id)).group_by(Content.source_type).all()
+            content_source_breakdown = {k: int(v) for k, v in content_stats_rows}
         content_response = _to_response(
             db,
             payload,
@@ -2167,8 +2300,6 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
     )
     if broad_query_mode:
         opportunity_rows = opportunity_ordered_query.limit(scan_window).all()
-        opportunity_total = len(opportunity_rows)
-        opportunity_source_breakdown = _build_source_breakdown_from_rows(opportunity_rows, prefix="historical_")
     else:
         opportunity_total = opportunity_query.count()
         if requires_full_scan:
@@ -2181,6 +2312,21 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
             .all()
         )
         opportunity_source_breakdown = {f"historical_{k}": int(v) for k, v in opportunity_stats_rows}
+    if enforce_exact_school_scope:
+        opportunity_rows = [
+            row
+            for row in opportunity_rows
+            if not _adjustment_opportunity_conflicts_with_requested_school(
+                row,
+                requested_school_name,
+                known_school_names,
+            )
+        ]
+        opportunity_total = len(opportunity_rows)
+        opportunity_source_breakdown = _build_source_breakdown_from_rows(opportunity_rows, prefix="historical_")
+    elif broad_query_mode:
+        opportunity_total = len(opportunity_rows)
+        opportunity_source_breakdown = _build_source_breakdown_from_rows(opportunity_rows, prefix="historical_")
     opportunity_response = _to_adjustment_opportunity_response(
         db,
         payload,

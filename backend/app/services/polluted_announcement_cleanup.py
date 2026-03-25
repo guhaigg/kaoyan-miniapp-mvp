@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,8 @@ from ..models import (
 from .school_cold_start import _ANNOUNCEMENT_CANONICAL_SEEDS, _load_school_seed_map
 from .search_cache import search_response_cache
 
+_SCHOOL_PREFIX_CONFLICT_SUFFIXES = ("独立学院", "学院", "学部", "研究院", "研究所", "中心", "分校", "校区", "系")
+
 
 def _chunked_ids(values: set[str], *, chunk_size: int = 200) -> list[list[str]]:
     ordered = sorted(str(value).strip() for value in values if str(value).strip())
@@ -50,6 +53,44 @@ def _normalize_host(value: str | None) -> str:
     if not host:
         return ""
     return host.split(":", 1)[0]
+
+
+def _normalize_url(value: str | None) -> str:
+    return str(value or "").strip().split("#", 1)[0]
+
+
+def _compact_text(value: str | None) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip())
+
+
+def _school_prefix_conflict_signal(bound_school_name: str, candidate_text: str | None) -> bool:
+    school_name = _compact_text(bound_school_name)
+    candidate = _compact_text(candidate_text)
+    if not school_name or not candidate or candidate == school_name:
+        return False
+    if not candidate.startswith(school_name):
+        return False
+    remainder = candidate[len(school_name) :]
+    if not remainder:
+        return False
+    return any(remainder.endswith(suffix) and len(remainder) >= len(suffix) for suffix in _SCHOOL_PREFIX_CONFLICT_SUFFIXES)
+
+
+def _texts_show_school_prefix_conflict(bound_school_name: str, *texts: str | None) -> bool:
+    school_name = _compact_text(bound_school_name)
+    if not school_name:
+        return False
+    suffix_pattern = "|".join(re.escape(suffix) for suffix in _SCHOOL_PREFIX_CONFLICT_SUFFIXES)
+    pattern = re.compile(
+        re.escape(school_name) + rf"[\u4e00-\u9fa5A-Za-z0-9（）()·、-]{{1,24}}?(?:{suffix_pattern})"
+    )
+    for text in texts:
+        if _school_prefix_conflict_signal(bound_school_name, text):
+            return True
+        compact = _compact_text(text)
+        if compact and pattern.search(compact):
+            return True
+    return False
 
 
 def _host_owner_key(value: str | None) -> str:
@@ -290,6 +331,19 @@ def cleanup_polluted_announcement_data(
             polluted = True
             owner_school_name = bound_school_name
             host_key = section_host
+        if not polluted and not str(section.department_id or "").strip():
+            config = dict(section.list_selector_config or {})
+            probe_evidence = dict(config.get("probe_evidence") or {})
+            if _texts_show_school_prefix_conflict(
+                bound_school_name,
+                section.name,
+                section.section_url,
+                str(config.get("probe_heading") or ""),
+                str(probe_evidence.get("stable_text") or ""),
+            ):
+                polluted = True
+                owner_school_name = bound_school_name
+                host_key = section_host or host_key
         if not polluted:
             continue
         polluted_section_ids.add(section.id)
@@ -321,11 +375,32 @@ def cleanup_polluted_announcement_data(
             polluted = True
             owner_school_name = bound_school_name
             host_key = source_host
+        if (
+            not polluted
+            and not str(extra.get("department_id") or "").strip()
+            and not str(extra.get("department_name") or "").strip()
+            and _texts_show_school_prefix_conflict(
+                bound_school_name,
+                str(extra.get("school_name") or ""),
+                content.title,
+                content.summary,
+                content.body,
+            )
+        ):
+            polluted = True
+            owner_school_name = bound_school_name
+            host_key = source_host or host_key
         if not polluted:
             continue
         polluted_content_ids.add(content.id)
         if host_key:
             polluted_pairs[(bound_school_name, owner_school_name or bound_school_name, host_key)]["contents"] += 1
+
+    polluted_content_urls = {
+        _normalize_url(content.source_url)
+        for content in db.query(Content).filter(Content.id.in_(sorted(polluted_content_ids))).all()
+        if _normalize_url(content.source_url)
+    } if polluted_content_ids else set()
 
     for job in db.query(CrawlJob).filter(CrawlJob.category == "announcement").all():
         payload = dict(job.query or {})
@@ -336,7 +411,13 @@ def cleanup_polluted_announcement_data(
             continue
         matched = False
         preferred_hosts = preferred_host_map.get(bound_school_name, set())
-        for url in _payload_urls(payload):
+        payload_urls = _payload_urls(payload)
+        if polluted_content_urls and any(_normalize_url(url) in polluted_content_urls for url in payload_urls):
+            polluted_job_ids.add(job.id)
+            matched = True
+        if matched:
+            continue
+        for url in payload_urls:
             source_host = _normalize_host(url)
             host_key = _host_owner_key(url)
             owner_school_name = owner_map.get(host_key, "")

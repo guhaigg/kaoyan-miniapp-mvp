@@ -310,6 +310,129 @@ def _seed_same_school_sibling_host_pollution() -> dict[str, str]:
         }
 
 
+def _seed_school_prefix_conflict_pollution() -> dict[str, str]:
+    with SessionLocal() as db:
+        school = School(name="东北大学", aliases=[])
+        db.add(school)
+        db.flush()
+
+        source = Source(
+            school_id=school.id,
+            name="东北大学研究生招生网",
+            source_type="official",
+            base_url="https://yz.neu.edu.cn/",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+
+        correct_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="通知公告",
+            section_type="notice",
+            section_url="https://yz.neu.edu.cn/tzgg/",
+            discovery_category="announcement",
+            list_selector_config={"probe_heading": "东北大学研究生招生网通知公告"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        polluted_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="艺术学院通知公告",
+            section_type="notice",
+            section_url="https://yz.neu.edu.cn/ysxy/tzgg/",
+            discovery_category="announcement",
+            list_selector_config={"probe_heading": "东北大学艺术学院通知公告"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        db.add_all([correct_section, polluted_section])
+        db.flush()
+
+        db.add_all(
+            [
+                SiteSectionLink(
+                    site_section_id=correct_section.id,
+                    link_url="https://yz.neu.edu.cn/tzgg/1001.htm",
+                    link_url_hash="neu-correct-link",
+                    title="东北大学2026年硕士研究生复试录取办法",
+                    link_type="html",
+                    status="discovered",
+                ),
+                SiteSectionLink(
+                    site_section_id=polluted_section.id,
+                    link_url="https://yz.neu.edu.cn/ysxy/2001.htm",
+                    link_url_hash="neu-polluted-link",
+                    title="东北大学艺术学院2026年硕士研究生复试录取办法",
+                    link_type="html",
+                    status="discovered",
+                ),
+            ]
+        )
+
+        polluted_content = Content(
+            school_id=school.id,
+            source_id=source.id,
+            category="announcement",
+            title="东北大学艺术学院2026年硕士研究生复试录取办法",
+            body="东北大学艺术学院发布学院级复试录取办法。",
+            summary="学院级污染数据",
+            source_type="crawler",
+            source_url="https://yz.neu.edu.cn/ysxy/2001.htm",
+            extra={
+                "site_section_id": polluted_section.id,
+                "school_name": school.name,
+                "portal_scope": "graduate_admissions",
+                "channel_tier": "core",
+                "channel_label": "通知公告",
+                "system_tags": ["招生信息"],
+            },
+        )
+        correct_content = Content(
+            school_id=school.id,
+            source_id=source.id,
+            category="announcement",
+            title="东北大学2026年硕士研究生复试录取办法",
+            body="东北大学发布学校级复试录取办法。",
+            summary="学校级正确数据",
+            source_type="crawler",
+            source_url="https://yz.neu.edu.cn/tzgg/1001.htm",
+            extra={
+                "site_section_id": correct_section.id,
+                "school_name": school.name,
+                "portal_scope": "graduate_admissions",
+                "channel_tier": "core",
+                "channel_label": "通知公告",
+                "system_tags": ["招生信息"],
+            },
+        )
+        db.add_all([polluted_content, correct_content])
+        db.flush()
+
+        db.add(ContentSnapshot(content_id=polluted_content.id, raw_html="<html>polluted</html>", raw_text="polluted", snapshot_meta={}))
+        db.add(
+            CrawlJob(
+                category="announcement",
+                status="done",
+                message="polluted detail fetch",
+                query={
+                    "job_kind": "detail_fetch",
+                    "school_name": school.name,
+                    "source_url": "https://yz.neu.edu.cn/ysxy/2001.htm",
+                },
+            )
+        )
+        db.commit()
+        return {
+            "polluted_section_id": polluted_section.id,
+            "polluted_content_id": polluted_content.id,
+            "correct_content_id": correct_content.id,
+        }
+
+
 def test_cleanup_polluted_announcement_data_dry_run_keeps_rows():
     ids = _seed_polluted_school_host_mismatch()
 
@@ -353,6 +476,39 @@ def test_cleanup_polluted_announcement_data_deletes_same_school_sibling_host_row
 
     with SessionLocal() as db:
         stats = cleanup_polluted_announcement_data(db, school_name="湖北大学")
+
+    assert stats["deleted"]["sections"] == 1
+    assert stats["deleted"]["contents"] == 1
+    assert stats["deleted"]["snapshots"] == 1
+    assert stats["deleted"]["crawl_jobs"] == 1
+
+    with SessionLocal() as db:
+        assert db.query(SiteSection).filter(SiteSection.id == ids["polluted_section_id"]).one_or_none() is None
+        assert db.query(Content).filter(Content.id == ids["polluted_content_id"]).one_or_none() is None
+        assert db.query(Content).filter(Content.id == ids["correct_content_id"]).one_or_none() is not None
+
+
+def test_cleanup_polluted_announcement_data_dry_run_detects_school_prefix_conflict_rows():
+    ids = _seed_school_prefix_conflict_pollution()
+
+    with SessionLocal() as db:
+        stats = cleanup_polluted_announcement_data(db, school_name="东北大学", dry_run=True)
+
+    assert stats["identified"]["sections"] == 1
+    assert stats["identified"]["contents"] == 1
+    assert stats["identified"]["snapshots"] == 1
+    assert stats["identified"]["crawl_jobs"] == 1
+
+    with SessionLocal() as db:
+        assert db.query(SiteSection).filter(SiteSection.id == ids["polluted_section_id"]).one_or_none() is not None
+        assert db.query(Content).filter(Content.id == ids["polluted_content_id"]).one_or_none() is not None
+
+
+def test_cleanup_polluted_announcement_data_deletes_school_prefix_conflict_rows():
+    ids = _seed_school_prefix_conflict_pollution()
+
+    with SessionLocal() as db:
+        stats = cleanup_polluted_announcement_data(db, school_name="东北大学")
 
     assert stats["deleted"]["sections"] == 1
     assert stats["deleted"]["contents"] == 1
