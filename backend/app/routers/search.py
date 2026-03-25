@@ -37,7 +37,11 @@ from ..services.historical_intelligence import (
 )
 from ..services.content_repair import infer_non_detail_announcement_reason, resolve_content_display_fields
 from ..services.announcement_portal import announcement_extra_is_visible, normalize_portal_tags
-from ..services.school_cold_start import ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap
+from ..services.school_cold_start import (
+    announcement_search_requires_asset_upgrade,
+    ensure_adjustment_search_bootstrap,
+    ensure_announcement_search_bootstrap,
+)
 from ..services.search_cache import search_response_cache
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -1924,8 +1928,16 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
     enforce_rate_limit(request, f"search_announcement:{identity}")
 
     request_id = str(uuid4())
+    requested_school_name = str(effective_payload.school_name or "").strip()
+    needs_upgrade_bootstrap = (
+        effective_payload.page == 1
+        and bool(requested_school_name)
+        and announcement_search_requires_asset_upgrade(db, requested_school_name)
+    )
     cached = search_response_cache.get("announcement", effective_payload, request_id=request_id)
     if cached is not None and cached.total == 0 and str(effective_payload.school_name or "").strip() and effective_payload.page == 1:
+        cached = None
+    if cached is not None and needs_upgrade_bootstrap:
         cached = None
     if cached is not None:
         _audit_search_event(
@@ -2011,8 +2023,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         source_breakdown = dict(source_breakdown_counts)
     available_system_tags = _available_announcement_system_tags(filtered_rows)
     cold_start = None
-    if total == 0 and effective_payload.page == 1 and str(effective_payload.school_name or "").strip():
-        requested_school_name = str(effective_payload.school_name or "").strip()
+    if effective_payload.page == 1 and requested_school_name and (total == 0 or needs_upgrade_bootstrap):
         try:
             cold_start = ensure_announcement_search_bootstrap(db, requested_school_name)
         except Exception:

@@ -80,6 +80,17 @@ _ANNOUNCEMENT_NAV_TEXT_HINTS = (
     "硕士研究生招生信息",
     "博士研究生招生信息",
 )
+_HOMEPAGE_LIKE_SECTION_PATHS = {
+    "",
+    "/",
+    "/index.htm",
+    "/index.html",
+    "/main.htm",
+    "/main.html",
+    "/default.htm",
+    "/default.html",
+    "/default.aspx",
+}
 _FAMILY_DISCOVERY_COOLDOWN = timedelta(minutes=10)
 _ANNOUNCEMENT_PORTAL_CACHE_TTL = timedelta(days=30)
 _ANNOUNCEMENT_CANONICAL_SEEDS: dict[str, dict[str, Any]] = {
@@ -929,6 +940,143 @@ def _section_is_compatible_for_families(section: SiteSection, families: set[str]
     return True
 
 
+def _section_has_announcement_channel_metadata(section: SiteSection) -> bool:
+    config = dict(section.list_selector_config or {})
+    return any(
+        str(config.get(key) or "").strip()
+        for key in ("portal_scope", "portal_entry_url", "channel_label", "channel_tier")
+    )
+
+
+def _section_path_looks_homepage_like(section: SiteSection) -> bool:
+    path = (urlparse(str(section.section_url or "")).path or "").strip().lower()
+    return path in _HOMEPAGE_LIKE_SECTION_PATHS
+
+
+def _section_is_structured_school_announcement_section(section: SiteSection) -> bool:
+    if _section_has_announcement_channel_metadata(section):
+        return True
+    if _section_path_looks_homepage_like(section):
+        return False
+    url = str(section.section_url or "").strip()
+    if not url:
+        return False
+    if _looks_like_detail_section_url(url):
+        return False
+    if _looks_like_channel_prefix_page(url):
+        return False
+    if _looks_like_fragmentary_seed_url(url):
+        return False
+    return True
+
+
+def _select_reusable_sections_for_families(
+    sections: list[SiteSection],
+    *,
+    families: set[str],
+) -> list[SiteSection]:
+    if families != {"notice", "admissions"}:
+        return sections
+    structured = [section for section in sections if _section_is_structured_school_announcement_section(section)]
+    return structured
+
+
+def _resolve_announcement_preferred_hosts(
+    db: Session,
+    *,
+    school_name: str,
+    families: set[str],
+    deny_prefixes: list[str],
+    announcement_override: dict[str, Any] | None,
+    existing_sections: list[SiteSection],
+) -> tuple[set[str], list[str], bool]:
+    cached_candidate_urls: list[str] = []
+    cached_preferred_hosts: set[str] = set()
+    cache_hit = False
+    if families == {"notice", "admissions"} and announcement_override is None:
+        cached_candidate_urls, cached_preferred_hosts, cache_hit = _load_announcement_portal_cache(
+            db,
+            school_name=school_name,
+            families=families,
+            deny_prefixes=deny_prefixes,
+        )
+    if cache_hit:
+        return cached_preferred_hosts, cached_candidate_urls, True
+    announcement_candidate_urls = (
+        _build_announcement_candidate_pool(
+            school_name,
+            announcement_override=announcement_override,
+            deny_prefixes=deny_prefixes,
+            allow_search=not (
+                announcement_override is None
+                and existing_sections
+                and len(
+                    {
+                        portal_candidate_host(section.section_url)
+                        for section in existing_sections
+                        if portal_candidate_host(section.section_url)
+                    }
+                )
+                <= 1
+            ),
+        )
+        if families == {"notice", "admissions"}
+        else []
+    )
+    preferred_hosts = (
+        _resolve_preferred_announcement_hosts(
+            announcement_candidate_urls,
+            announcement_override=announcement_override,
+        )
+        if families == {"notice", "admissions"}
+        else set()
+    )
+    return preferred_hosts, announcement_candidate_urls, False
+
+
+def announcement_search_requires_asset_upgrade(db: Session, school_name: str) -> bool:
+    normalized_school_name = str(school_name or "").strip()
+    if not normalized_school_name:
+        return False
+    families = {"notice", "admissions"}
+    announcement_override = _resolve_announcement_seed_override(normalized_school_name)
+    deny_prefixes = [
+        str(prefix or "").strip()
+        for prefix in (announcement_override or {}).get("deny_prefixes") or []
+        if str(prefix or "").strip()
+    ]
+    _school, existing_sections = _load_existing_school_sections(
+        db,
+        school_name=normalized_school_name,
+        deny_prefixes=deny_prefixes,
+    )
+    raw_reusable_sections = _collect_reusable_sections(
+        db,
+        existing_sections=existing_sections,
+        families=families,
+    )
+    if not raw_reusable_sections:
+        return False
+    preferred_hosts, _candidate_urls, _cache_hit = _resolve_announcement_preferred_hosts(
+        db,
+        school_name=normalized_school_name,
+        families=families,
+        deny_prefixes=deny_prefixes,
+        announcement_override=announcement_override,
+        existing_sections=raw_reusable_sections,
+    )
+    preferred_sections = _filter_existing_sections_for_preferred_hosts(
+        raw_reusable_sections,
+        families=families,
+        preferred_hosts=preferred_hosts,
+    )
+    if preferred_hosts and not preferred_sections:
+        return True
+    target_sections = preferred_sections or raw_reusable_sections
+    structured_sections = _select_reusable_sections_for_families(target_sections, families=families)
+    return not structured_sections
+
+
 def _discover_department_seed_urls(seed_urls: list[str], *, max_seed_pages: int = 8, max_results: int = 16) -> list[str]:
     results: list[str] = []
     seen_urls: set[str] = set()
@@ -1212,9 +1360,12 @@ def _bootstrap_family_sections(
         school_name=school_name,
         deny_prefixes=deny_prefixes,
     )
-    preliminary_reusable_sections = _collect_reusable_sections(
-        db,
-        existing_sections=existing_sections,
+    preliminary_reusable_sections = _select_reusable_sections_for_families(
+        _collect_reusable_sections(
+            db,
+            existing_sections=existing_sections,
+            families=families,
+        ),
         families=families,
     )
     cached_candidate_urls: list[str] = []
@@ -1278,9 +1429,12 @@ def _bootstrap_family_sections(
         families=families,
         preferred_hosts=preferred_hosts,
     )
-    reusable_sections = _collect_reusable_sections(
-        db,
-        existing_sections=existing_sections,
+    reusable_sections = _select_reusable_sections_for_families(
+        _collect_reusable_sections(
+            db,
+            existing_sections=existing_sections,
+            families=families,
+        ),
         families=families,
     )
 
@@ -1430,57 +1584,21 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         school_name=normalized_school_name,
         deny_prefixes=deny_prefixes,
     )
-    preliminary_reusable_sections = _collect_reusable_sections(
-        db,
-        existing_sections=existing_sections,
+    preliminary_reusable_sections = _select_reusable_sections_for_families(
+        _collect_reusable_sections(
+            db,
+            existing_sections=existing_sections,
+            families=normalized_families,
+        ),
         families=normalized_families,
     )
-    cached_candidate_urls: list[str] = []
-    cached_preferred_hosts: set[str] = set()
-    cache_hit = False
-    if normalized_families == {"notice", "admissions"} and announcement_override is None:
-        cached_candidate_urls, cached_preferred_hosts, cache_hit = _load_announcement_portal_cache(
-            db,
-            school_name=normalized_school_name,
-            families=normalized_families,
-            deny_prefixes=deny_prefixes,
-        )
-    announcement_candidate_urls = (
-        cached_candidate_urls
-        if cache_hit
-        else (
-            _build_announcement_candidate_pool(
-                normalized_school_name,
-                announcement_override=announcement_override,
-                deny_prefixes=deny_prefixes,
-                allow_search=not (
-                    announcement_override is None
-                    and preliminary_reusable_sections
-                    and len(
-                        {
-                            portal_candidate_host(section.section_url)
-                            for section in preliminary_reusable_sections
-                            if portal_candidate_host(section.section_url)
-                        }
-                    )
-                    <= 1
-                ),
-            )
-            if normalized_families == {"notice", "admissions"}
-            else []
-        )
-    )
-    preferred_hosts = (
-        cached_preferred_hosts
-        if cache_hit
-        else (
-            _resolve_preferred_announcement_hosts(
-                announcement_candidate_urls,
-                announcement_override=announcement_override,
-            )
-            if normalized_families == {"notice", "admissions"}
-            else set()
-        )
+    preferred_hosts, announcement_candidate_urls, cache_hit = _resolve_announcement_preferred_hosts(
+        db,
+        school_name=normalized_school_name,
+        families=normalized_families,
+        deny_prefixes=deny_prefixes,
+        announcement_override=announcement_override,
+        existing_sections=preliminary_reusable_sections,
     )
     recovery_seed_urls = _collect_recovery_seed_urls(existing_sections)
     existing_sections = _filter_existing_sections_for_preferred_hosts(
@@ -1488,9 +1606,12 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         families=normalized_families,
         preferred_hosts=preferred_hosts,
     )
-    reusable_sections = _collect_reusable_sections(
-        db,
-        existing_sections=existing_sections,
+    reusable_sections = _select_reusable_sections_for_families(
+        _collect_reusable_sections(
+            db,
+            existing_sections=existing_sections,
+            families=normalized_families,
+        ),
         families=normalized_families,
     )
     local_candidate_hints = _build_local_candidate_hints(

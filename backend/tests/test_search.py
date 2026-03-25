@@ -2728,6 +2728,83 @@ def test_search_announcements_skips_zero_result_cache_when_cold_start_is_needed(
     assert calls == ["陌生大学", "陌生大学"]
 
 
+def test_search_announcements_skips_nonzero_cache_when_legacy_school_assets_need_upgrade(client, monkeypatch):
+    search_response_cache.clear()
+    calls: list[str] = []
+
+    with SessionLocal() as db:
+        school = School(name="湖北大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="湖北大学研究生招生信息网",
+            source_type="official",
+            base_url="https://yz.hubu.edu.cn/",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="湖北大学研究生招生信息网",
+            section_type="notice",
+            section_url="https://yz.hubu.edu.cn/",
+            discovery_category="announcement",
+            list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        db.add(section)
+        db.flush()
+        db.add(
+            Content(
+                school_id=school.id,
+                source_id=source.id,
+                category="announcement",
+                title="湖北大学2025年硕士研究生招生考试自命题科目考试大纲",
+                body="旧的学校级公告资产。",
+                summary="旧的学校级公告资产。",
+                source_type="crawler",
+                source_url="https://yz.hubu.edu.cn/info/1025/2830.htm",
+                published_at=datetime(2025, 9, 29, tzinfo=timezone.utc),
+                extra={
+                    "school_name": school.name,
+                    "site_section_id": section.id,
+                    "portal_scope": "graduate_admissions",
+                    "channel_label": "硕士招生",
+                    "channel_tier": "core",
+                    "system_tags": ["硕士招生", "招生信息"],
+                },
+            )
+        )
+        db.commit()
+
+    def _fake_bootstrap(db, school_name: str):
+        calls.append(school_name)
+        return {
+            "state": "queued",
+            "school_name": school_name,
+            "message": f"已自动启动 {school_name} 的公告补抓。",
+            "candidate_urls": ["https://yz.hubu.edu.cn/"],
+            "job_ids": ["job-legacy-upgrade"],
+        }
+
+    monkeypatch.setattr("app.routers.search.ensure_announcement_search_bootstrap", _fake_bootstrap)
+
+    first = client.post("/api/v1/search/announcements", json={"school_name": "湖北大学"})
+    second = client.post("/api/v1/search/announcements", json={"school_name": "湖北大学"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["total"] == 1
+    assert first.json()["cold_start"]["state"] == "queued"
+    assert second.json()["cold_start"]["state"] == "queued"
+    assert calls == ["湖北大学", "湖北大学"]
+
+
 def test_ensure_announcement_search_bootstrap_queues_existing_site_sections():
     with SessionLocal() as db:
         school = School(name="已建资产大学", aliases=[])
@@ -3017,6 +3094,50 @@ def test_ensure_announcement_search_bootstrap_prefers_canonical_site_over_existi
         assert job.query["job_kind"] == "family_discovery"
         assert job.query["school_name"] == "湖北大学"
         assert job.query["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+
+
+def test_ensure_announcement_search_bootstrap_does_not_reuse_legacy_unstructured_sections_on_canonical_host():
+    with SessionLocal() as db:
+        school = School(name="湖北大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="湖北大学研究生招生信息网",
+            source_type="official",
+            base_url="https://yz.hubu.edu.cn/",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            SiteSection(
+                school_id=school.id,
+                source_id=source.id,
+                name="湖北大学研究生招生信息网",
+                section_type="notice",
+                section_url="https://yz.hubu.edu.cn/",
+                discovery_category="announcement",
+                list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                detail_selector_config={},
+                enabled=1,
+            )
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "湖北大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert "https://yz.hubu.edu.cn/" in result["candidate_urls"]
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
+        assert job.query["job_kind"] == "family_discovery"
+        assert job.query["school_name"] == "湖北大学"
+        assert "https://yz.hubu.edu.cn/" in job.query["candidate_urls"]
 
 
 def test_ensure_announcement_search_bootstrap_prefers_discovered_two_hop_portal_host_before_reusing_existing_sections(monkeypatch):
