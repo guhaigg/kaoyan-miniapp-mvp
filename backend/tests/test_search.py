@@ -414,6 +414,95 @@ def test_search_announcements_school_scope_excludes_school_prefixed_college_asse
     assert [item["title"] for item in payload["items"]] == ["东北大学2026年硕士研究生复试录取办法"]
 
 
+def test_announcement_search_school_scope_excludes_rows_when_section_evidence_identifies_college(client):
+    with SessionLocal() as db:
+        school = School(name="东北大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="东北大学研究生招生网",
+            source_type="official",
+            base_url="https://yz.neu.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        school_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="通知公告",
+            section_type="notice",
+            section_url="https://yz.neu.edu.cn/tzgg/",
+            discovery_category="announcement",
+            list_selector_config={"probe_heading": "东北大学研究生招生网通知公告"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        polluted_section = SiteSection(
+            school_id=school.id,
+            source_id=source.id,
+            name="通知公告",
+            section_type="notice",
+            section_url="https://www.arts.neu.edu.cn/notice/",
+            discovery_category="announcement",
+            list_selector_config={"probe_heading": "东北大学艺术学院通知公告"},
+            detail_selector_config={},
+            enabled=1,
+        )
+        db.add_all([school_section, polluted_section])
+        db.flush()
+        db.add_all(
+            [
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="东北大学2026年硕士研究生招生考试初试成绩查询公告",
+                    body="这是东北大学学校级公告。",
+                    summary="学校级公告",
+                    source_type="crawler",
+                    source_url="https://yz.neu.edu.cn/tzgg/1001.htm",
+                    extra={
+                        "school_name": "东北大学",
+                        "site_section_id": school_section.id,
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "通知公告",
+                        "channel_tier": "core",
+                        "system_tags": ["通知公告", "招生信息"],
+                    },
+                ),
+                Content(
+                    school_id=school.id,
+                    source_id=source.id,
+                    category="announcement",
+                    title="我院1篇硕士学位论文获评2024年度辽宁省优秀硕士学位论文",
+                    body="近日，我院1篇硕士学位论文获评辽宁省优秀硕士学位论文。",
+                    summary="学院站学校前缀证据只存在于栏目探针里。",
+                    source_type="crawler",
+                    source_url="http://www.arts.neu.edu.cn/2025/0715/c9341a289415/page.htm",
+                    extra={
+                        "school_name": "东北大学",
+                        "site_section_id": polluted_section.id,
+                        "portal_scope": "graduate_admissions",
+                        "channel_label": "硕士招生",
+                        "channel_tier": "core",
+                        "system_tags": ["硕士招生", "招生信息"],
+                    },
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.post("/api/v1/search/announcements", json={"school_name": "东北大学"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [item["title"] for item in payload["items"]] == ["东北大学2026年硕士研究生招生考试初试成绩查询公告"]
+
+
 def test_announcement_search_full_school_name_does_not_match_other_schools_with_same_city_prefix(client, monkeypatch):
     with SessionLocal() as db:
         school = School(name="上海应用技术大学", aliases=[])

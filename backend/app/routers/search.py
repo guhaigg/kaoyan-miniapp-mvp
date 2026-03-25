@@ -445,6 +445,7 @@ def _row_conflicts_with_requested_school(
     requested_school_name: str,
     known_school_names: set[str],
     *,
+    section_lookup: dict[str, SiteSection] | None = None,
     allowed_extension_suffixes: tuple[str, ...] = (),
 ) -> bool:
     requested = normalize_school_name(requested_school_name)
@@ -452,12 +453,37 @@ def _row_conflicts_with_requested_school(
         return False
     extra = dict(row.extra or {})
     bound_school_name = row.school.name if row.school is not None else None
+    section_mentions: list[str] = []
+    site_section_id = str(extra.get("site_section_id") or "").strip()
+    if site_section_id and section_lookup is not None:
+        section = section_lookup.get(site_section_id)
+        if section is not None:
+            config = dict(section.list_selector_config or {})
+            probe_evidence = dict(config.get("probe_evidence") or {})
+            section_mentions = _dedupe_terms(
+                [
+                    *_extract_explicit_school_mentions(
+                        section.name,
+                        section.section_url,
+                        str(config.get("probe_heading") or ""),
+                        str(probe_evidence.get("stable_text") or ""),
+                    ),
+                    *_extract_requested_school_prefixed_mentions(
+                        requested_school_name,
+                        section.name,
+                        section.section_url,
+                        str(config.get("probe_heading") or ""),
+                        str(probe_evidence.get("stable_text") or ""),
+                    ),
+                ]
+            )
     mentions = _dedupe_terms(
         [
             str(bound_school_name or "").strip(),
             str(extra.get("school_name") or "").strip(),
             *_extract_explicit_school_mentions(row.title, row.summary, row.body),
             *_extract_requested_school_prefixed_mentions(requested_school_name, row.title, row.summary, row.body),
+            *section_mentions,
         ]
     )
     if not mentions:
@@ -2105,6 +2131,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
                 row,
                 str(effective_payload.school_name or "").strip(),
                 known_school_names,
+                section_lookup=section_lookup,
             )
         ]
         total = len(filtered_rows)
