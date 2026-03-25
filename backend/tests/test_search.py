@@ -521,16 +521,6 @@ def test_announcement_search_full_school_name_does_not_match_other_schools_with_
         )
         db.commit()
 
-    monkeypatch.setattr(
-        "app.routers.search.ensure_announcement_search_bootstrap",
-        lambda db, school_name: {
-            "school_name": school_name,
-            "state": "queued",
-            "message": f"已自动启动 {school_name} 的公告补抓。",
-            "job_ids": ["job-1"],
-        },
-    )
-
     response = client.post(
         "/api/v1/search/announcements",
         json={"school_name": "上海师范大学"},
@@ -540,16 +530,13 @@ def test_announcement_search_full_school_name_does_not_match_other_schools_with_
     payload = response.json()
     assert payload["total"] == 0
     assert payload["items"] == []
-    assert payload["cold_start"]["state"] == "queued"
-    assert payload["cold_start"]["school_name"] == "上海师范大学"
+    assert payload["asset_state"] == "not_ready"
+    assert payload["scope_type"] == "school"
+    assert payload["required_action"] == "admin.bootstrap.school"
+    assert payload["cold_start"] is None
 
 
-def test_announcement_search_returns_graceful_cold_start_message_when_bootstrap_raises(client, monkeypatch):
-    monkeypatch.setattr(
-        "app.routers.search.ensure_announcement_search_bootstrap",
-        lambda db, school_name: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-
+def test_announcement_search_returns_not_ready_state_without_online_bootstrap(client):
     response = client.post(
         "/api/v1/search/announcements",
         json={"school_name": "上海师范大学"},
@@ -558,9 +545,10 @@ def test_announcement_search_returns_graceful_cold_start_message_when_bootstrap_
     assert response.status_code == 200
     payload = response.json()
     assert payload["total"] == 0
-    assert payload["cold_start"]["state"] == "no_candidate"
-    assert "补抓暂时失败" in payload["cold_start"]["message"]
-    assert payload["cold_start"]["school_name"] == "上海师范大学"
+    assert payload["asset_state"] == "not_ready"
+    assert payload["scope_type"] == "school"
+    assert payload["required_action"] == "admin.bootstrap.school"
+    assert payload["cold_start"] is None
 
 
 def test_adjustment_search_can_find_content_promoted_by_classifier(client):
@@ -2929,29 +2917,18 @@ def test_search_announcements_recovers_stale_content_fields_from_body(client):
     assert item["published_at"].startswith("2024-08-30")
 
 
-def test_search_announcements_returns_cold_start_metadata_for_unknown_school(client, monkeypatch):
-    monkeypatch.setattr(
-        "app.routers.search.ensure_announcement_search_bootstrap",
-        lambda db, school_name: {
-            "state": "queued",
-            "school_name": school_name,
-            "message": f"已自动启动 {school_name} 的公告补抓。",
-            "candidate_urls": ["https://unknown.edu.cn/yjs/"],
-            "job_ids": ["job-1"],
-        },
-    )
-
+def test_search_announcements_returns_not_ready_metadata_for_unknown_school(client):
     response = client.post("/api/v1/search/announcements", json={"school_name": "陌生大学"})
     assert response.status_code == 200
     payload = response.json()
     assert payload["total"] == 0
-    assert payload["cold_start"]["state"] == "queued"
-    assert payload["cold_start"]["school_name"] == "陌生大学"
-    assert payload["cold_start"]["candidate_urls"] == ["https://unknown.edu.cn/yjs/"]
-    assert payload["cold_start"]["job_ids"] == ["job-1"]
+    assert payload["asset_state"] == "not_ready"
+    assert payload["scope_type"] == "school"
+    assert payload["required_action"] == "admin.bootstrap.school"
+    assert payload["cold_start"] is None
 
 
-def test_search_announcements_excludes_school_bound_rows_when_body_does_not_match_school_name(client, monkeypatch):
+def test_search_announcements_excludes_school_bound_rows_when_body_does_not_match_school_name(client):
     with SessionLocal() as db:
         school = School(name="辽宁师范大学", aliases=[])
         db.add(school)
@@ -2970,50 +2947,29 @@ def test_search_announcements_excludes_school_bound_rows_when_body_does_not_matc
         )
         db.commit()
 
-    monkeypatch.setattr(
-        "app.routers.search.ensure_announcement_search_bootstrap",
-        lambda db, school_name: {
-            "state": "queued",
-            "school_name": school_name,
-            "message": f"已自动启动 {school_name} 的公告补抓。",
-            "candidate_urls": [],
-            "job_ids": ["job-1"],
-        },
-    )
-
     response = client.post("/api/v1/search/announcements", json={"school_name": "辽宁师范大学"})
     assert response.status_code == 200
     payload = response.json()
     assert payload["total"] == 0
-    assert payload["cold_start"]["state"] == "queued"
+    assert payload["asset_state"] == "not_ready"
+    assert payload["cold_start"] is None
 
 
-def test_search_announcements_skips_zero_result_cache_when_cold_start_is_needed(client, monkeypatch):
+def test_search_announcements_repeated_zero_result_requests_stay_read_only(client):
     search_response_cache.clear()
-    calls: list[str] = []
-
-    def _fake_bootstrap(db, school_name: str):
-        calls.append(school_name)
-        return {
-            "state": "queued",
-            "school_name": school_name,
-            "message": f"已自动启动 {school_name} 的公告补抓。",
-            "candidate_urls": [],
-            "job_ids": [],
-        }
-
-    monkeypatch.setattr("app.routers.search.ensure_announcement_search_bootstrap", _fake_bootstrap)
 
     first = client.post("/api/v1/search/announcements", json={"school_name": "陌生大学"})
     second = client.post("/api/v1/search/announcements", json={"school_name": "陌生大学"})
     assert first.status_code == 200
     assert second.status_code == 200
-    assert calls == ["陌生大学", "陌生大学"]
+    assert first.json()["asset_state"] == "not_ready"
+    assert second.json()["asset_state"] == "not_ready"
+    with SessionLocal() as db:
+        assert db.query(CrawlJob).count() == 0
 
 
-def test_search_announcements_skips_nonzero_cache_when_legacy_school_assets_need_upgrade(client, monkeypatch):
+def test_search_announcements_with_existing_school_assets_stays_ready_without_online_upgrade(client):
     search_response_cache.clear()
-    calls: list[str] = []
 
     with SessionLocal() as db:
         school = School(name="湖北大学", aliases=[])
@@ -3065,27 +3021,16 @@ def test_search_announcements_skips_nonzero_cache_when_legacy_school_assets_need
         )
         db.commit()
 
-    def _fake_bootstrap(db, school_name: str):
-        calls.append(school_name)
-        return {
-            "state": "queued",
-            "school_name": school_name,
-            "message": f"已自动启动 {school_name} 的公告补抓。",
-            "candidate_urls": ["https://yz.hubu.edu.cn/"],
-            "job_ids": ["job-legacy-upgrade"],
-        }
-
-    monkeypatch.setattr("app.routers.search.ensure_announcement_search_bootstrap", _fake_bootstrap)
-
     first = client.post("/api/v1/search/announcements", json={"school_name": "湖北大学"})
     second = client.post("/api/v1/search/announcements", json={"school_name": "湖北大学"})
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json()["total"] == 1
-    assert first.json()["cold_start"]["state"] == "queued"
-    assert second.json()["cold_start"]["state"] == "queued"
-    assert calls == ["湖北大学", "湖北大学"]
+    assert first.json()["asset_state"] == "ready"
+    assert second.json()["asset_state"] == "ready"
+    assert first.json()["cold_start"] is None
+    assert second.json()["cold_start"] is None
 
 
 def test_ensure_announcement_search_bootstrap_queues_existing_site_sections():
@@ -4414,18 +4359,8 @@ def test_run_family_discovery_job_follows_two_hop_announcement_navigation_to_sib
         assert job.query["result_candidate_urls"] == ["https://yz.chain.edu.cn/sszs/"]
 
 
-def test_search_adjustments_returns_cold_start_metadata_for_unknown_school(client, monkeypatch):
+def test_search_adjustments_returns_not_ready_metadata_for_unknown_school(client):
     token = _register_and_login(client, "adjustment_cold_start_user")
-    monkeypatch.setattr(
-        "app.routers.search.ensure_adjustment_search_bootstrap",
-        lambda db, school_name: {
-            "school_name": school_name,
-            "state": "queued",
-            "message": f"已自动启动 {school_name} 的调剂补抓。",
-            "candidate_urls": ["https://unknown.edu.cn/cs/tiaoji/"],
-            "job_ids": ["job-adjust-1"],
-        },
-    )
 
     response = client.post(
         "/api/v1/search/adjustments",
@@ -4436,8 +4371,10 @@ def test_search_adjustments_returns_cold_start_metadata_for_unknown_school(clien
     assert response.status_code == 200
     payload = response.json()
     assert payload["total"] == 0
-    assert payload["cold_start"]["state"] == "queued"
-    assert payload["cold_start"]["candidate_urls"] == ["https://unknown.edu.cn/cs/tiaoji/"]
+    assert payload["asset_state"] == "not_ready"
+    assert payload["scope_type"] == "school"
+    assert payload["required_action"] == "admin.bootstrap.adjustment_scope"
+    assert payload["cold_start"] is None
 
 
 def test_search_announcements_excludes_non_detail_and_test_rows(client):

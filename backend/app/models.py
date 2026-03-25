@@ -199,6 +199,214 @@ class ContentSnapshot(Base):
     content: Mapped["Content"] = relationship(back_populates="snapshots")
 
 
+class PortalNode(Base):
+    __tablename__ = "portal_nodes"
+    __table_args__ = (
+        UniqueConstraint("scope_type", "scope_key", "node_type", "url", name="uq_portal_nodes_scope_type_url"),
+        Index("ix_portal_nodes_scope_status", "scope_type", "scope_key", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    department_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), nullable=True, index=True)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    node_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    host: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="candidate", nullable=False, index=True)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    school: Mapped["School | None"] = relationship()
+    department: Mapped["Department | None"] = relationship()
+
+
+class PortalEdge(Base):
+    __tablename__ = "portal_edges"
+    __table_args__ = (
+        UniqueConstraint("from_node_id", "to_node_id", "relation_type", name="uq_portal_edges_from_to_relation"),
+        Index("ix_portal_edges_relation", "relation_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    from_node_id: Mapped[str] = mapped_column(ForeignKey("portal_nodes.id"), nullable=False, index=True)
+    to_node_id: Mapped[str] = mapped_column(ForeignKey("portal_nodes.id"), nullable=False, index=True)
+    relation_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    from_node: Mapped["PortalNode"] = relationship(foreign_keys=[from_node_id])
+    to_node: Mapped["PortalNode"] = relationship(foreign_keys=[to_node_id])
+
+
+class PortalHostDecision(Base):
+    __tablename__ = "portal_host_decisions"
+    __table_args__ = (
+        UniqueConstraint("scope_type", "scope_key", "family", name="uq_portal_host_decisions_scope_family"),
+        Index("ix_portal_host_decisions_scope_key_status", "scope_type", "scope_key", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    department_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), nullable=True, index=True)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    family: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    selected_host: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    candidate_hosts: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(64), default="v2", nullable=False)
+    decision_source: Mapped[str] = mapped_column(String(32), default="workflow", nullable=False)
+    manual_override: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    school: Mapped["School | None"] = relationship()
+    department: Mapped["Department | None"] = relationship()
+
+
+class WorkflowRun(Base):
+    __tablename__ = "workflow_runs"
+    __table_args__ = (
+        Index("ix_workflow_runs_scope_status", "scope_type", "scope_key", "status"),
+        Index("ix_workflow_runs_type_created", "workflow_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    scope_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    requested_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("portal_users.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    request_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    result_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    requested_by_account: Mapped["PortalUser | None"] = relationship(foreign_keys=[requested_by_account_id])
+
+
+class WorkflowStep(Base):
+    __tablename__ = "workflow_steps"
+    __table_args__ = (
+        Index("ix_workflow_steps_scope_status", "scope_type", "scope_key", "status"),
+        Index("ix_workflow_steps_type_available", "step_type", "available_at"),
+        Index("ix_workflow_steps_host_status", "host_key", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("workflow_runs.id"), nullable=False, index=True)
+    parent_step_id: Mapped[str | None] = mapped_column(ForeignKey("workflow_steps.id"), nullable=True, index=True)
+    step_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    host_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    leased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    input_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    result_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    run: Mapped["WorkflowRun"] = relationship()
+    parent_step: Mapped["WorkflowStep | None"] = relationship(remote_side=[id], foreign_keys=[parent_step_id])
+
+
+class RawArtifact(Base):
+    __tablename__ = "raw_artifacts"
+    __table_args__ = (
+        Index("ix_raw_artifacts_step_type", "workflow_step_id", "artifact_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_step_id: Mapped[str] = mapped_column(ForeignKey("workflow_steps.id"), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    headers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    workflow_step: Mapped["WorkflowStep"] = relationship()
+
+
+class ParseArtifact(Base):
+    __tablename__ = "parse_artifacts"
+    __table_args__ = (
+        Index("ix_parse_artifacts_step_type", "workflow_step_id", "artifact_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_step_id: Mapped[str] = mapped_column(ForeignKey("workflow_steps.id"), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    workflow_step: Mapped["WorkflowStep"] = relationship()
+
+
+class ContentClassification(Base):
+    __tablename__ = "content_classifications"
+    __table_args__ = (
+        UniqueConstraint("content_id", name="uq_content_classifications_content_id"),
+        Index("ix_content_classifications_scope_visibility", "scope_type", "scope_key", "is_visible"),
+        Index("ix_content_classifications_state", "classification_state", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    content_id: Mapped[str] = mapped_column(ForeignKey("contents.id"), nullable=False, index=True)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    visibility: Mapped[str] = mapped_column(String(32), default="hidden", nullable=False, index=True)
+    classification_state: Mapped[str] = mapped_column(String(64), default="hidden_non_admissions", nullable=False, index=True)
+    is_visible: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    rule_version: Mapped[str] = mapped_column(String(64), default="v2", nullable=False)
+    explain_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    content: Mapped["Content"] = relationship()
+
+
+class GovernanceAction(Base):
+    __tablename__ = "governance_actions"
+    __table_args__ = (
+        Index("ix_governance_actions_scope_key_created", "scope_type", "scope_key", "created_at"),
+        Index("ix_governance_actions_entity", "entity_type", "entity_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    actor_account_id: Mapped[str | None] = mapped_column(ForeignKey("portal_users.id"), nullable=True, index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    actor_account: Mapped["PortalUser | None"] = relationship(foreign_keys=[actor_account_id])
+
+
 class RawDatasetArchive(Base):
     __tablename__ = "raw_dataset_archives"
     __table_args__ = (

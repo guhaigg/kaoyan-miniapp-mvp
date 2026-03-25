@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 from ..models import Content, ContentSnapshot, Department, NotificationOutbox, School, SiteSection, utcnow
 from ..schemas import ContentIn
 from .announcement_portal import (
-    announcement_extra_is_visible,
     clear_announcement_portal_metadata,
     derive_announcement_system_tags,
     merge_announcement_tags,
     normalize_portal_tags,
     resolve_announcement_portal_metadata,
 )
+from .classification import sync_content_classification
 from .content_repair import infer_non_detail_announcement_reason
 from .content_summary import normalize_text_whitespace, summarize_text
 from .nlp import extract_adjustment_meta, extract_domain_tags, infer_content_category
@@ -450,6 +450,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
         )
         db.add(snapshot)
 
+    classification = sync_content_classification(db, content)
     evaluate_content_for_premium_monitoring(db, content, trigger_status=status)
 
     content_extra = dict(content.extra or {})
@@ -457,7 +458,7 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
     major_code = next((str(code).strip() for code in (adjustment_meta.get("major_codes") or []) if str(code or "").strip()), None)
     department_name = str(content_extra.get("department_name") or "").strip() or None
 
-    if content.category != "announcement" or announcement_extra_is_visible(content_extra):
+    if content.category != "announcement" or bool(getattr(classification, "is_visible", 0)):
         outbox = NotificationOutbox(
             content_id=content.id,
             event_type="content.upsert",

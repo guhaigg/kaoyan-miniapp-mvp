@@ -2,8 +2,9 @@ from datetime import datetime, timezone
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Content, ContentFile, CrawlError, CrawlJob, School, SiteSection, SiteSectionLink, Source
+from app.models import Content, ContentFile, CrawlError, CrawlJob, School, SiteSection, SiteSectionLink, Source, WorkflowRun, WorkflowStep
 from app.services.crawler import crawl_engine
+from app.services.workflow_v2 import workflow_engine
 from app.services.site_section_bootstrap import _discover_entry_pages, bootstrap_site_sections
 from app.services.site_section_probe import probe_section_page
 
@@ -2193,6 +2194,71 @@ def test_content_file_retry_creates_new_job_after_needs_ocr(client, monkeypatch)
         queued_job = db.query(CrawlJob).filter(CrawlJob.id == retry_payload["job_id"]).one()
         assert queued_job.status == "pending"
         assert queued_job.query["job_kind"] == "file_parse"
+
+
+def test_content_file_retry_ocr_queues_workflow_step_after_needs_ocr(client, monkeypatch):
+    create_resp = client.post(
+        "/api/v1/site-sections",
+        json={
+            "name": "OCR 工作流栏目",
+            "section_type": "notice",
+            "section_url": "https://example.com/pdf-ocr/",
+            "school_name": "OCR工作流大学",
+        },
+        headers=_admin_headers(),
+    )
+    assert create_resp.status_code == 200
+
+    monkeypatch.setattr(
+        "app.services.crawler.httpx.get",
+        lambda *args, **kwargs: _DummyResponse(
+            """
+            <html><body>
+              <a href="/pdf-ocr/notice-3.pdf">扫描版名单 PDF</a>
+            </body></html>
+            """
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.crawler._download_binary_with_retry",
+        lambda _url: (b"%PDF-1.4 fake scan", "application/pdf"),
+    )
+    monkeypatch.setattr(
+        "app.services.crawler._extract_pdf_text_from_bytes",
+        lambda _bytes: "名单",
+    )
+
+    discover_resp = client.post(
+        "/api/v1/site-sections/discover",
+        json={"school_name": "OCR工作流大学"},
+        headers=_admin_headers(),
+    )
+    assert discover_resp.status_code == 200
+    assert crawl_engine.process_job_batch() == 1
+    assert crawl_engine.process_job_batch() == 1
+
+    list_resp = client.get(
+        "/api/v1/site-sections/content-files",
+        headers=_admin_headers(),
+        params={"parse_status": "needs_ocr"},
+    )
+    assert list_resp.status_code == 200
+    item = list_resp.json()["items"][0]
+
+    retry_resp = client.post(f"/api/v1/site-sections/content-files/{item['id']}/retry-ocr", headers=_admin_headers())
+    assert retry_resp.status_code == 200
+    retry_payload = retry_resp.json()
+    assert retry_payload["status"] == "queued"
+
+    with SessionLocal() as db:
+        file_record = db.query(ContentFile).filter(ContentFile.id == item["id"]).one()
+        step = db.query(WorkflowStep).filter(WorkflowStep.id == retry_payload["step_id"]).one()
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == retry_payload["workflow_run_id"]).one()
+        assert file_record.ocr_status == "queued"
+        assert step.step_type == "ocr_enqueue"
+        assert run.workflow_type == "ocr_enqueue"
+
+    assert workflow_engine.process_step_batch(batch_size=5, worker_name="test-worker") == 1
 
 
 def test_site_section_discovery_retries_temporary_fetch_failure(client, monkeypatch):

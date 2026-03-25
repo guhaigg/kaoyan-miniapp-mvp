@@ -9,8 +9,9 @@
   "scripts": {
     "prepare": "husky",
     "lint:commit": "commitlint --from=HEAD~1 --to=HEAD --verbose",
-    "test:backend": "PYTHONPATH=backend ./.venv/bin/python -m pytest -q backend/tests",
-    "dev:backend": "./.venv/bin/python -m uvicorn --app-dir backend app.main:app --reload --host 0.0.0.0 --port 8000"
+    "test:backend": "python -m pytest -q backend/tests",
+    "dev:backend": "./.venv/bin/python -m uvicorn --app-dir backend app.main:app --reload --host 0.0.0.0 --port 8000",
+    "worker:crawler-v2": "PYTHONPATH=backend ./.venv/bin/python -m app.workers.crawler_v2_worker"
   },
   "keywords": [],
   "author": "",

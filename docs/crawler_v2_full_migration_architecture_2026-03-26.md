@@ -277,7 +277,7 @@ V2 需要新增或强烈建议新增：
 | `crawler.py` | job dispatch、抓取、解析、入库 | `workflow engine + fetch runtime + parse runtime` |
 | `content.py` | upsert、extra normalize、monitor hit 触发 | `canonicalization pipeline` |
 | `announcement_portal.py` | 可见性与标签启发式 | `classification engine` |
-| `search.py` | 查询 + 冷启动触发 | `serving layer + limited repair trigger` |
+| `search.py` | 查询返回与资产状态表达 | `serving layer (read-only on discovery)` |
 
 ## 8. 完全迁移改造清单
 
@@ -285,7 +285,7 @@ V2 需要新增或强烈建议新增：
 
 ### 8.1 执行内核改造
 
-- [ ] 将 API 进程内 crawl worker 从 `backend/app/main.py` 拆出为独立 worker 进程
+- [x] 将 API 进程内 crawl worker 从 `backend/app/main.py` 拆出为独立 worker 进程
 - [ ] 将 `crawl_jobs` 的泛型 `query` 模式改造成强类型 workflow 任务模型
 - [ ] 为不同任务类型定义独立 lease、retry、timeout、idempotency key
 - [ ] 加入 host 级限流、school 级优先级和并发隔离
@@ -326,9 +326,9 @@ V2 需要新增或强烈建议新增：
 ### 8.6 分类与可见性改造
 
 - [ ] 将学校级 / 院系级 / 分校级冲突规则收敛到统一 classification engine
-- [ ] 为可见性判定输出 explain payload
+- [x] 为可见性判定输出 explain payload
 - [ ] 为污染清理输出 dry-run、evidence、impact stats
-- [ ] 支持 classification rules 版本化与批量重跑
+- [x] 支持 classification rules 版本化与批量重跑
 - [ ] 让搜索、监控、通知只消费 classification 结果，不再各自解释
 
 ### 8.7 后台治理改造
@@ -358,6 +358,14 @@ V2 需要新增或强烈建议新增：
 - 独立 worker
 - 强类型任务
 - 运行时可观测性
+
+当前进度（2026-03-26）：
+
+- 已落地独立 V2 worker 入口 `python -m app.workers.crawler_v2_worker`
+- 已新增 `workflow_runs / workflow_steps / raw_artifacts / parse_artifacts / content_classifications / governance_actions`
+- 已新增学校/院系 bootstrap、scope rebuild、OCR retry、content reclassify 的 V2 workflow 主路径
+- 搜索已改为只读，不再在线触发冷启动或 family discovery
+- `content_classifications` 已被搜索与高级监控复用，但通知与其余兼容路径仍未完全切干净
 
 完成标志：
 
@@ -421,7 +429,7 @@ V2 需要新增或强烈建议新增：
 
 当下面条件同时满足时，才算完成 V2 完全迁移：
 
-- 新学校冷启动命中正确学校级门户的成功率显著稳定
+- 新学校 bootstrap 命中正确学校级门户的成功率显著稳定
 - 学校级 / 院系级污染数据可通过统一引擎解释和清理
 - 单 school rebuild 不需要手工串接多个脚本
 - worker 可以独立扩缩容，且不依赖 API 进程

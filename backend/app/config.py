@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     enable_crawl_worker: bool = True
     crawl_batch_size: int = 20
     crawl_poll_interval_seconds: float = 1.0
+    workflow_batch_size: int = 10
+    workflow_poll_interval_seconds: float = 1.0
     crawl_fetch_timeout_seconds: float = 10.0
     crawl_retry_attempts: int = 3
     crawl_retry_backoff_seconds: float = 0.1

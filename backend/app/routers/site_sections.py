@@ -5,11 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..dependencies import audit_event, require_admin_request
-from ..models import ContentFile, CrawlJob, Department, School, SiteSection, SiteSectionLink, utcnow
+from ..dependencies import audit_event, get_admin_identity, require_admin_request
+from ..models import ContentFile, CrawlJob, Department, School, SiteSection, SiteSectionLink, WorkflowStep, utcnow
 from ..schemas import (
     ContentFileItem,
     ContentFileListResponse,
+    ContentFileRetryOcrResponse,
     ContentFileRetryParseResponse,
     SiteSectionBootstrapRequest,
     SiteSectionBootstrapResponse,
@@ -35,6 +36,7 @@ from ..services import crawler as crawler_service
 from ..services.crawler import build_site_section_detail_selector_config, build_site_section_list_selector_config
 from ..services.site_section_bootstrap import bootstrap_site_sections as bootstrap_site_sections_service
 from ..services.site_section_probe import ContainerCandidate, build_list_selector_overrides, probe_section_page, resolve_candidate_links_for_section
+from ..services.workflow_v2 import queue_ocr_retry
 
 router = APIRouter(prefix="/site-sections", tags=["site-sections"])
 
@@ -245,6 +247,23 @@ def _find_existing_file_parse_job(db: Session, *, content_file_id: str) -> Crawl
         if query_payload.get("job_kind") != "file_parse":
             continue
         if str(query_payload.get("content_file_id") or "").strip() == content_file_id:
+            return row
+    return None
+
+
+def _find_existing_ocr_step(db: Session, *, content_file_id: str) -> WorkflowStep | None:
+    rows = (
+        db.query(WorkflowStep)
+        .filter(
+            WorkflowStep.step_type == "ocr_enqueue",
+            WorkflowStep.status.in_(["pending", "running"]),
+        )
+        .order_by(WorkflowStep.created_at.desc())
+        .all()
+    )
+    for row in rows:
+        payload = dict(row.input_payload or {})
+        if str(payload.get("content_file_id") or "").strip() == content_file_id:
             return row
     return None
 
@@ -960,4 +979,44 @@ def retry_content_file_parse(
         job_id=job.id,
         status="queued",
         parse_status=file_record.parse_status,
+    )
+
+
+@router.post("/content-files/{content_file_id}/retry-ocr", response_model=ContentFileRetryOcrResponse)
+def retry_content_file_ocr(
+    content_file_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> ContentFileRetryOcrResponse:
+    require_admin_request(request)
+    file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one_or_none()
+    if file_record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="content file not found")
+
+    existing_step = _find_existing_ocr_step(db, content_file_id=content_file_id)
+    if existing_step is not None:
+        return ContentFileRetryOcrResponse(
+            content_file_id=file_record.id,
+            workflow_run_id=existing_step.run_id,
+            step_id=existing_step.id,
+            status="existing",
+            ocr_status=file_record.ocr_status,
+        )
+
+    actor_username = get_admin_identity(request)
+    run, step = queue_ocr_retry(db, file_record=file_record, actor_username=actor_username)
+    db.commit()
+    audit_event(
+        db,
+        request,
+        "site_section.content_file.retry_ocr",
+        None,
+        {"content_file_id": file_record.id, "workflow_run_id": run.id, "step_id": step.id},
+    )
+    return ContentFileRetryOcrResponse(
+        content_file_id=file_record.id,
+        workflow_run_id=run.id,
+        step_id=step.id,
+        status="queued",
+        ocr_status=file_record.ocr_status,
     )

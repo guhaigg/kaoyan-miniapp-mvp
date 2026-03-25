@@ -36,13 +36,10 @@ from ..services.historical_intelligence import (
     normalize_school_name,
 )
 from ..services.content_repair import infer_non_detail_announcement_reason, resolve_content_display_fields
-from ..services.announcement_portal import announcement_extra_is_visible, normalize_portal_tags
-from ..services.school_cold_start import (
-    announcement_search_requires_asset_upgrade,
-    ensure_adjustment_search_bootstrap,
-    ensure_announcement_search_bootstrap,
-)
+from ..services.announcement_portal import normalize_portal_tags
+from ..services.classification import get_effective_content_classification
 from ..services.search_cache import search_response_cache
+from ..services.workflow_v2 import latest_scope_run
 
 router = APIRouter(prefix="/search", tags=["search"])
 ANONYMOUS_PREVIEW_LIMIT = 2
@@ -104,8 +101,9 @@ def _row_matches_announcement_system_tags(row: Content, requested_tags: list[str
     return all(tag in row_tags for tag in normalized_requested)
 
 
-def _row_is_visible_announcement(row: Content) -> bool:
-    return announcement_extra_is_visible(dict(row.extra or {}))
+def _row_is_visible_announcement(db: Session, row: Content) -> bool:
+    classification = get_effective_content_classification(db, row)
+    return bool(getattr(classification, "is_visible", 0))
 
 
 def _available_announcement_system_tags(rows: list[Content]) -> list[str]:
@@ -113,6 +111,42 @@ def _available_announcement_system_tags(rows: list[Content]) -> list[str]:
     for row in rows:
         tags.extend(_announcement_system_tags_from_extra(dict(row.extra or {})))
     return normalize_portal_tags(tags)
+
+
+def _resolve_search_asset_state(
+    db: Session,
+    *,
+    category: str,
+    school_name: str | None,
+) -> tuple[str, str | None, str | None, str | None]:
+    requested_school_name = str(school_name or "").strip()
+    if not requested_school_name:
+        return "ready", None, None, None
+
+    latest_run = latest_scope_run(
+        db,
+        scope_type="school",
+        school_name=requested_school_name,
+    )
+    if latest_run is not None and str(latest_run.status or "").strip() in {"pending", "running"}:
+        return "rebuilding", "school", None, latest_run.id
+
+    query = (
+        db.query(SiteSection.id)
+        .join(School, SiteSection.school_id == School.id)
+        .filter(
+            SiteSection.enabled == 1,
+            SiteSection.discovery_category == category,
+            SiteSection.department_id.is_(None),
+            School.name == requested_school_name,
+        )
+        .limit(1)
+    )
+    if query.first() is not None:
+        return "ready", "school", None, None
+
+    required_action = "admin.bootstrap.school" if category == "announcement" else "admin.bootstrap.adjustment_scope"
+    return "not_ready", "school", required_action, None
 
 
 def _parse_optional_int(value) -> int | None:
@@ -1135,6 +1169,10 @@ def _to_response(
     authenticated: bool,
     access_limited: bool = False,
     preview_limit: int | None = None,
+    asset_state: str = "ready",
+    scope_type: str | None = None,
+    required_action: str | None = None,
+    workflow_run_id: str | None = None,
     available_system_tags: list[str] | None = None,
     cold_start: dict | SearchColdStartMeta | None = None,
 ) -> SearchResponse:
@@ -1152,6 +1190,7 @@ def _to_response(
     for row in items:
         extra = dict(row.extra or {})
         school_name = row.school.name if row.school else (str(extra.get("school_name") or "").strip() or None)
+        classification = get_effective_content_classification(db, row)
         display_title, display_summary, display_published_at = resolve_content_display_fields(
             title=row.title,
             summary=row.summary,
@@ -1231,6 +1270,9 @@ def _to_response(
                 mentor_school_radar=mentor_school_signal.__dict__ if mentor_school_signal is not None else None,
                 release_timing=release_timing_signal.__dict__ if release_timing_signal is not None else None,
                 school_intelligence=school_signal.__dict__ if school_signal is not None else None,
+                scope_type=str(getattr(classification, "scope_type", "")) or ("department" if department_name else "school"),
+                classification_state=str(getattr(classification, "classification_state", "")) or None,
+                explain_available=bool(row.category == "announcement"),
                 long_track=(school_signal.confidence_label == "连续活跃") if school_signal is not None else None,
                 reference_link_count=len(school_signal.reference_urls) if school_signal is not None else None,
                 merged_count=1,
@@ -1246,6 +1288,10 @@ def _to_response(
         authenticated=authenticated,
         access_limited=access_limited,
         preview_limit=preview_limit,
+        asset_state=asset_state,  # type: ignore[arg-type]
+        scope_type=scope_type,  # type: ignore[arg-type]
+        required_action=required_action,
+        workflow_run_id=workflow_run_id,
         items=serialized,
         total=total,
         page=payload.page,
@@ -2063,16 +2109,12 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
 
     request_id = str(uuid4())
     requested_school_name = str(effective_payload.school_name or "").strip()
-    needs_upgrade_bootstrap = (
-        effective_payload.page == 1
-        and bool(requested_school_name)
-        and announcement_search_requires_asset_upgrade(db, requested_school_name)
+    asset_state, response_scope_type, required_action, workflow_run_id = _resolve_search_asset_state(
+        db,
+        category="announcement",
+        school_name=requested_school_name,
     )
     cached = search_response_cache.get("announcement", effective_payload, request_id=request_id)
-    if cached is not None and cached.total == 0 and str(effective_payload.school_name or "").strip() and effective_payload.page == 1:
-        cached = None
-    if cached is not None and needs_upgrade_bootstrap:
-        cached = None
     if cached is not None:
         _audit_search_event(
             db,
@@ -2119,7 +2161,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         filtered_rows = [
             row
             for row in candidate_rows
-            if _row_is_visible_announcement(row)
+            if _row_is_visible_announcement(db, row)
             if _row_matches_announcement_system_tags(row, effective_payload.system_tags)
             if _row_matches_requested_announcement_scope(
                 row,
@@ -2146,7 +2188,7 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         filtered_rows = [
             row
             for row in candidate_rows
-            if _row_is_visible_announcement(row)
+            if _row_is_visible_announcement(db, row)
             if _row_matches_announcement_system_tags(row, effective_payload.system_tags)
         ]
         total = len(filtered_rows)
@@ -2157,19 +2199,6 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
             source_breakdown_counts[row.source_type] += 1
         source_breakdown = dict(source_breakdown_counts)
     available_system_tags = _available_announcement_system_tags(filtered_rows)
-    cold_start = None
-    if effective_payload.page == 1 and requested_school_name and (total == 0 or needs_upgrade_bootstrap):
-        try:
-            cold_start = ensure_announcement_search_bootstrap(db, requested_school_name)
-        except Exception:
-            cold_start = {
-                "state": "no_candidate",
-                "school_name": requested_school_name,
-                "message": f"{requested_school_name} 的陌生院校补抓暂时失败，请稍后重试。",
-                "candidate_urls": [],
-                "job_ids": [],
-            }
-
     refresh_job_id = None
     if effective_payload.refresh:
         refresh_job_id = _create_refresh_job(db, "announcement", payload.model_dump(mode="json"), user.id if user else None)
@@ -2184,11 +2213,13 @@ def search_announcements(payload: AnnouncementSearchRequest, request: Request, d
         authenticated=bool(user),
         access_limited=not bool(user),
         preview_limit=ANONYMOUS_PREVIEW_LIMIT if not user else None,
+        asset_state=asset_state,
+        scope_type=response_scope_type,
+        required_action=required_action,
+        workflow_run_id=workflow_run_id,
         available_system_tags=available_system_tags,
-        cold_start=cold_start,
     )
-    if cold_start is None:
-        search_response_cache.set("announcement", effective_payload, response)
+    search_response_cache.set("announcement", effective_payload, response)
     _audit_search_event(
         db,
         request,
@@ -2365,30 +2396,27 @@ def search_adjustments(payload: AdjustmentSearchRequest, request: Request, db: S
         authenticated=True,
         lightweight=broad_query_mode,
     )
-    cold_start = None
+    asset_state, response_scope_type, required_action, workflow_run_id = _resolve_search_asset_state(
+        db,
+        category="adjustment",
+        school_name=requested_school_name,
+    )
     response = _merge_adjustment_search_responses(
         request_id,
         payload,
         refresh_job_id,
         [content_response, opportunity_response],
     )
-    if response.total == 0 and payload.page == 1 and str(payload.school_name or "").strip():
-        requested_school_name = str(payload.school_name or "").strip()
-        try:
-            cold_start = ensure_adjustment_search_bootstrap(db, requested_school_name)
-        except Exception:
-            cold_start = {
-                "state": "no_candidate",
-                "school_name": requested_school_name,
-                "message": f"{requested_school_name} 的调剂冷启动暂时失败，请稍后重试。",
-                "candidate_urls": [],
-                "job_ids": [],
-            }
-        response = response.model_copy(
-            update={"cold_start": SearchColdStartMeta.model_validate(cold_start) if cold_start is not None else None}
-        )
-    if cold_start is None:
-        search_response_cache.set("adjustment", payload, response)
+    response = response.model_copy(
+        update={
+            "asset_state": asset_state,
+            "scope_type": response_scope_type,
+            "required_action": required_action,
+            "workflow_run_id": workflow_run_id,
+            "cold_start": None,
+        }
+    )
+    search_response_cache.set("adjustment", payload, response)
     _audit_search_event(
         db,
         request,

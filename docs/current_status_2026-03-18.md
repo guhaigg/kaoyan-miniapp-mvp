@@ -18,7 +18,7 @@
 - `实时通知底座已接通`
 - `香港服务器线上可运行`
 - `网站侧用户中心与管理后台框架已成型`
-- `公告门户可见性与学校级冷启动规则已收紧一轮`
+- `Crawler V2 Phase 1 已开始落地（搜索只读 + 显式 bootstrap + 独立 worker）`
 
 但还没有到“可稳定运营的完整产品”阶段。当前最大未完成项不在视觉层，而在：
 
@@ -41,6 +41,7 @@
 - 学校级公告冷启动已补 preferred host 约束与同校前缀冲突拦截，`学校名 + 学院/分校/校区` 这类 sibling host 或 branch host 更难再次污染学校级公告候选。
 - `content_snapshots.raw_html` 已补安全字节截断，超长详情页不会再因为原始 HTML 过大直接打失败抓取任务。
 - 已新增 `docs/crawler_v2_full_migration_architecture_2026-03-26.md`，明确后续爬虫体系不再继续把规则无限堆进单一 worker 文件。
+- 本地分支已落一版 `Crawler V2 Phase 1`：搜索请求不再触发在线冷启动，V2 workflow 表与分类表已入模型，学校/院系 bootstrap 改成显式管理入口，API 进程内 crawl worker 已拆出。
 
 ## 2. 当前已完成
 
@@ -384,6 +385,28 @@
 - 抓取链路对“超长详情页”这一类工程性故障更稳
 - 但它仍然是“把现有启发式系统收紧一轮”，还不是 V2 那种强类型 workflow + portal graph + explainable classification 架构
 
+### 2.13 Crawler V2 Phase 1 落地状态（2026-03-26）
+
+这一轮开始把“继续修冷启动”切到“重建执行主路径”，当前已经落下来的部分是：
+
+- 搜索主路径改成只读：学校限定搜索只消费已批准 section 和 `content_classifications`，不会再因为用户请求在线触发 bootstrap、family discovery 或 repair job
+- 新增 V2 表：`portal_nodes`、`portal_edges`、`portal_host_decisions`、`workflow_runs`、`workflow_steps`、`raw_artifacts`、`parse_artifacts`、`content_classifications`、`governance_actions`
+- 新增管理入口：
+  - `POST /api/v1/admin/bootstrap/schools`
+  - `POST /api/v1/admin/bootstrap/departments`
+  - `POST /api/v1/admin/rebuilds`
+  - `POST /api/v1/admin/contents/{id}/reclassify`
+  - `GET /api/v1/admin/contents/{id}/explain`
+  - `POST /api/v1/site-sections/content-files/{id}/retry-ocr`
+- API 进程内 crawl worker 已移除，V2 步骤由独立 worker `python -m app.workers.crawler_v2_worker` 消费
+- 公告可见性已开始持久化到 `content_classifications`，搜索和高级监控都优先复用这份判定结果
+- 学校级与院系级 bootstrap 已按 `scope_type + scope_key` 分轨，新的 workflow 路径不再把 `announcement_portal_caches.candidate_urls`、旧详情页 URL 或历史 `content.source_url` 当 discovery seed
+
+当前边界：
+
+- 这还不是“V2 完全迁移完成”，因为老的 `crawl_jobs`、`school_cold_start.py`、`site_section_bootstrap.py` 兼容路径仍在仓库里
+- 但搜索不再承担冷启动职责，后续重构可以围绕离线 workflow、审核资产、统一分类引擎继续推进
+
 ## 3. 当前未完成 / 未收尾
 
 ### 3.1 微信小程序主流程尚未完成正式验收
@@ -423,7 +446,7 @@
 补充判断（2026-03-26）：
 
 - 公告门户可见性、历史脏数据过滤、学校级冷启动 preferred host 约束已经比 3 月中旬明显更稳
-- 但核心问题仍然没变：当前抓取体系更像“可运营的启发式系统”，还不是“强类型任务 + 证据图谱 + 统一分类引擎”的内容生产平台
+- 新落地的 V2 Phase 1 已经把搜索从冷启动主路径上摘下来，但核心问题仍没完全解决：当前抓取体系仍处于“V1/V2 并行过渡态”，还不是“强类型任务 + 证据图谱 + 统一分类引擎”的唯一内容生产平台
 - 所以后续主线不应再只是补一批 if/else，而应逐步朝 `Crawler V2` 文档定义的执行内核和治理架构迁移
 
 ### 3.3 通知系统只完成站内通道

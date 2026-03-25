@@ -774,6 +774,57 @@ class ContentFileRetryParseResponse(BaseModel):
     parse_status: str
 
 
+class ContentFileRetryOcrResponse(BaseModel):
+    content_file_id: str
+    workflow_run_id: str
+    step_id: str
+    status: Literal["queued", "existing"]
+    ocr_status: str
+
+
+class AdminWorkflowTriggerResponse(BaseModel):
+    workflow_run_id: str
+    step_id: str
+    workflow_type: str
+    scope_type: Literal["school", "department"]
+    scope_key: str
+    status: str
+
+
+class AdminBootstrapSchoolRequest(BaseModel):
+    school_name: str = Field(min_length=1, max_length=255)
+    homepage_url: str = Field(min_length=1, max_length=2048)
+    seed_urls: list[str] = Field(default_factory=list)
+    max_sections: int = Field(default=12, ge=1, le=30)
+
+
+class AdminBootstrapDepartmentRequest(BaseModel):
+    school_name: str = Field(min_length=1, max_length=255)
+    department_name: str = Field(min_length=1, max_length=255)
+    department_type: str = Field(default="college", min_length=1, max_length=64)
+    homepage_url: str = Field(min_length=1, max_length=2048)
+    seed_urls: list[str] = Field(default_factory=list)
+    max_sections: int = Field(default=12, ge=1, le=30)
+
+
+class AdminScopeRebuildRequest(BaseModel):
+    scope_type: Literal["school", "department"]
+    school_name: str = Field(min_length=1, max_length=255)
+    department_name: str | None = Field(default=None, max_length=255)
+    homepage_url: str | None = Field(default=None, max_length=2048)
+    seed_urls: list[str] = Field(default_factory=list)
+    max_sections: int = Field(default=12, ge=1, le=30)
+
+
+class AdminContentExplainResponse(BaseModel):
+    content_id: str
+    scope_type: Literal["school", "department"]
+    scope_key: str
+    classification_state: str
+    visibility: str
+    explain_payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class MonitorTargetCreateRequest(BaseModel):
     scope_type: Literal["school", "department", "section"]
     school_id: str | None = None
@@ -1097,6 +1148,9 @@ class SearchItem(BaseModel):
     mentor_school_radar: MentorRadarInsight | None = None
     release_timing: ReleaseTimingInsight | None = None
     school_intelligence: SchoolIntelligenceInsight | None = None
+    scope_type: Literal["school", "department"] | None = None
+    classification_state: str | None = None
+    explain_available: bool = False
     merged_count: int = 1
     updated_at: datetime
 
@@ -1115,6 +1169,10 @@ class SearchResponse(BaseModel):
     authenticated: bool = False
     access_limited: bool = False
     preview_limit: int | None = None
+    asset_state: Literal["ready", "not_ready", "rebuilding"] = "ready"
+    scope_type: Literal["school", "department"] | None = None
+    required_action: str | None = None
+    workflow_run_id: str | None = None
     items: list[SearchItem]
     total: int
     page: int

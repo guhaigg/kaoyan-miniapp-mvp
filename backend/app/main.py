@@ -10,7 +10,6 @@ from .config import get_settings
 from .db import init_db
 from .routers import admin, auth, content, crawl, health, monitoring, notifications, radar, schools, search, site_sections, subscriptions
 from .routers import console
-from .services.crawler import crawl_engine
 from .services.notifications import notification_engine
 
 
@@ -24,33 +23,6 @@ async def _notification_worker_loop():
             return
         try:
             processed = await asyncio.to_thread(notification_engine.process_batch)
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            processed = 0
-
-        if processed <= 0:
-            try:
-                await asyncio.sleep(sleep_seconds)
-            except asyncio.CancelledError:
-                return
-        else:
-            try:
-                await asyncio.sleep(0.05)
-            except asyncio.CancelledError:
-                return
-
-
-async def _crawl_worker_loop():
-    settings = get_settings()
-    sleep_seconds = max(0.2, float(settings.crawl_poll_interval_seconds))
-    task = asyncio.current_task()
-    shutdown_event = getattr(task, "_gewu_shutdown_event", None) if task is not None else None
-    while True:
-        if shutdown_event is not None and shutdown_event.is_set():
-            return
-        try:
-            processed = await asyncio.to_thread(crawl_engine.process_job_batch)
         except asyncio.CancelledError:
             return
         except Exception:
@@ -84,21 +56,13 @@ async def lifespan(app: FastAPI):
     shutdown_event = asyncio.Event()
     app.state.shutdown_event = shutdown_event
     notification_task = None
-    crawl_task = None
     if settings.enable_notification_worker:
         notification_task = asyncio.create_task(_notification_worker_loop())
         setattr(notification_task, "_gewu_shutdown_event", shutdown_event)
-    if settings.enable_crawl_worker:
-        crawl_task = asyncio.create_task(_crawl_worker_loop())
-        setattr(crawl_task, "_gewu_shutdown_event", shutdown_event)
     app.state.notification_task = notification_task
-    app.state.crawl_task = crawl_task
+    app.state.crawl_task = None
     yield
     shutdown_event.set()
-    if crawl_task is not None:
-        crawl_task.cancel()
-        with suppress(asyncio.CancelledError, asyncio.TimeoutError):
-            await asyncio.wait_for(crawl_task, timeout=2.0)
     if notification_task is not None:
         notification_task.cancel()
         with suppress(asyncio.CancelledError, asyncio.TimeoutError):

@@ -39,6 +39,12 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `POST /api/v1/site-sections/{id}/preview-selectors` (requires portal admin token)
 - `GET /api/v1/site-sections/content-files` (requires portal admin token)
 - `POST /api/v1/site-sections/content-files/{content_file_id}/retry-parse` (requires portal admin token)
+- `POST /api/v1/site-sections/content-files/{content_file_id}/retry-ocr` (requires portal admin token)
+- `POST /api/v1/admin/bootstrap/schools` (requires portal admin login)
+- `POST /api/v1/admin/bootstrap/departments` (requires portal admin login)
+- `POST /api/v1/admin/rebuilds` (requires portal admin login)
+- `POST /api/v1/admin/contents/{content_id}/reclassify` (requires portal admin login)
+- `GET /api/v1/admin/contents/{content_id}/explain` (requires portal admin login)
 - `POST /api/v1/monitoring/targets` (Phase 1 contract: premium user/admin)
 - `GET /api/v1/monitoring/targets` (Phase 1 contract: premium user/admin, scoped to current user unless admin)
 - `PATCH /api/v1/monitoring/targets/{target_id}` (Phase 1 contract: premium user/admin)
@@ -68,6 +74,15 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `site_sections`: maintained section/list-page assets.
 - `site_section_links`: discovered detail/pdf links from section pages.
 - `content_files`: file records for PDF/attachments, including text extraction status and OCR handoff status.
+- `portal_nodes`: scoped portal graph nodes built from explicit school/department seeds.
+- `portal_edges`: portal graph relationships and navigation evidence.
+- `portal_host_decisions`: scoped host decisions with evidence and manual override state.
+- `workflow_runs`: typed V2 workflow instances for bootstrap/rebuild/classify operations.
+- `workflow_steps`: leased workflow steps consumed by standalone crawler workers.
+- `raw_artifacts`: raw fetch artifacts stored per workflow step.
+- `parse_artifacts`: parse outputs and warnings stored per workflow step.
+- `content_classifications`: persisted scope/visibility/classification verdicts for announcements.
+- `governance_actions`: audited admin actions for bootstrap/rebuild/reclassify flows.
 - `portal_user_monitor_targets`: user-owned monitoring scopes (school/department/section), interval and status.
 - `portal_user_monitor_keywords`: per-target custom keywords.
 - `portal_user_monitor_hits`: user-target-content match records used by in-app/Bark delivery.
@@ -146,6 +161,22 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - No OCR yet; scanned/image PDF is marked `needs_ocr` and exposed through original file link placeholder content.
   - Cross-section dedup (same URL across different sections) is not yet globally merged.
 
+## 8.1) Crawler V2 Phase 1 Runtime (2026-03-26)
+
+- Search is now read-only for asset discovery. `POST /api/v1/search/announcements` and `POST /api/v1/search/adjustments` no longer trigger runtime bootstrap, family discovery, or repair jobs.
+- School/department asset construction now starts from explicit admin workflows:
+  - `POST /api/v1/admin/bootstrap/schools`
+  - `POST /api/v1/admin/bootstrap/departments`
+  - `POST /api/v1/admin/rebuilds`
+- V2 bootstrap only accepts explicit seeds (`homepage_url` plus optional `seed_urls`). Legacy discovery inputs such as `announcement_portal_caches.candidate_urls`, stale detail URLs, historical `content.source_url`, and old `site_section_links` are not used as runtime seeds by the new workflow path.
+- School scope and department scope are split at the workflow layer. Each `workflow_run`, `workflow_step`, `portal_node`, `portal_host_decision`, and `content_classification` carries `scope_type + scope_key`.
+- `site_sections` now act as the approved/recommended asset layer:
+  - search only treats approved school-level sections (`enabled=1`, no `department_id`) as ready assets for school announcement scope
+  - V2 bootstrap creates disabled recommended sections first; they must be reviewed or enabled before they become searchable assets
+- OCR is now an explicit async step. `retry-parse` only reruns file parsing; `retry-ocr` enqueues a V2 `ocr_enqueue` workflow step.
+- API process no longer runs the crawl worker loop. V2 steps are consumed by the standalone worker entrypoint `python -m app.workers.crawler_v2_worker`.
+- Announcement visibility is now persisted in `content_classifications` and reused by search and premium monitoring instead of recomputing separate visibility decisions per surface.
+
 ## 9) Premium Monitoring Phase 1 Baseline (Implemented + Known Gaps)
 
 - Matching principle:
@@ -173,17 +204,17 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 
 ## 9.1) Announcement Portal Visibility Rules
 
+- As of `2026-03-26`, school-limited announcement search no longer performs online cold start or self-repair. If no approved school asset exists, the response returns `asset_state=not_ready` or `asset_state=rebuilding` and points operators to the admin bootstrap/rebuild flow.
+- `announcement_portal_caches` remain historical audit data, but the V2 runtime path does not use cached candidate URLs as discovery seeds.
+- Search and monitoring consume `content_classifications` as the canonical announcement verdict. `classification_state` currently includes `school_visible`, `department_visible`, `hidden_scope_conflict`, `hidden_non_admissions`, and `non_announcement`.
 - Search and premium monitoring only expose announcement rows that are considered visible in the graduate-admissions portal scope, unless the row is explicitly department-scoped.
 - `site_section_id / site_section_name` are treated as scope-matching metadata and must be preserved during content upsert/backfill even when portal classification is recomputed.
 - Explicitly provided `system_tags` are authoritative and should not be broadened again during upsert.
 - Automatically inferred `channel_label` may enrich tags, but should not override the original tag ordering unless the label came from an explicit payload or a maintained `site_section`.
 - Negative phrasing such as `不属于研招` / `与研究生招生无关` must not auto-promote ordinary history/news rows into visible graduate-admissions announcements.
-- School-level announcement cold start must prefer the maintained canonical admissions portal host when one is configured. Existing school-level sections on sibling hosts or legacy graduate-school entry sites must not be reused ahead of that canonical portal, otherwise announcement crawling will attach to the wrong school-level source.
-- When no canonical override exists, school-level announcement cold start may follow bounded same-school portal navigation across sibling subdomains such as `学校首页 -> 研究生院 -> 招生信息网`, but it must keep that discovery bounded and only use it to choose the preferred host. Concrete list-page seeds should still win over inferred host roots when they are the strongest candidate on that host.
-- Once a non-empty preferred announcement host set has been resolved for a school-level cold start, cached `candidate_urls` and bootstrap-emitted school-level sections must stay on those preferred hosts. Recovery seed URLs derived from stale detail-page assets may still be carried as fallback inputs, but they must not reintroduce non-preferred hosts into the persisted portal candidate set or the final school-level section output.
-- School-level section bootstrap must also follow bounded same-site admissions gateways such as `网站首页 -> 招生学院 -> 硕士招生/通知公告`. If a target page is only identifiable through breadcrumb or current-position text like `当前位置: 网站首页 >> 招生学院 >> 硕士招生`, entry discovery must treat that breadcrumb evidence as a valid channel signal instead of requiring the homepage anchor text itself to already contain `硕士招生` or `通知公告`.
-- When a non-override school-level announcement cold start successfully resolves candidate portal URLs, the system should persist that verified candidate set for reuse by later cold starts. The reuse order is `canonical override > fresh verified portal cache > existing site sections > live docs/search/navigation discovery`, and cached portal candidates currently expire after 30 days so stale school-level entry points still fall back to live rediscovery.
-- School-level announcement search must not assume `total > 0` means the school assets are healthy. If a school-limited query still relies on legacy announcement sections, the API should bypass cached search responses and re-trigger announcement bootstrap even when old rows already exist, so the search path can self-upgrade instead of serving stale results forever.
+- V2 school bootstrap must prefer the explicit school seed set provided by admins and keep discovery bounded to that scope. The workflow should not infer fresh school seeds from legacy detail pages or stale cache candidates.
+- Department bootstrap is independent from school bootstrap. Department hosts, sections, and content verdicts must not be promoted into school-level assets unless an operator explicitly approves a scope change.
+- School-level section planning may still follow bounded same-site admissions gateways such as `网站首页 -> 招生学院 -> 硕士招生/通知公告`, but that navigation is evaluated inside the bootstrap workflow and stored as scoped evidence instead of being triggered from a search request.
 - For school-level announcement reuse, homepage-like same-host sections such as bare portal roots (`/`, `main.htm`, `index.htm`) count as legacy placeholders unless they already carry structured channel metadata (`portal_entry_url`, `portal_scope`, `channel_label`, `channel_tier`). These placeholder sections must not be reused ahead of family discovery, otherwise canonical portals like `yz.hubu.edu.cn` never advance from the root page to concrete channels such as `zsxy/sszs.htm` and `zsxy/tzgg.htm`.
 - School-limited announcement search and school-limited adjustment search intentionally use different school-name semantics. Announcement search is strict: rows that look like `学校名 + 学院/学部/系/研究院/研究所/中心/分校/校区` are treated as conflicting school identities and must not leak into school-level announcement results unless the user explicitly narrows to that department scope. This school-identity check must use both content signals and bound section evidence (`site_section.name`, `section_url`, `probe_heading`, `probe_evidence.stable_text`) so school-level search can still reject polluted学院栏目内容 even when the title/body only says `我院`. Adjustment search is looser: `学校名 + 学院/学部/系` remains part of the parent-school search, but `分校/校区/独立学院` style branch identities must still stay out.
 - Polluted announcement cleanup must also detect same-school-prefix collisions, not just wrong hosts. If an announcement is bound to school A but the section evidence, `extra.school_name`, or content text consistently identifies it as `学校A + 学院/学部/...`, the row is treated as polluted school-level announcement data and can be dry-run reviewed, deleted, and then rebuilt through the existing announcement asset rebuild flow. When polluted rows are found for a school, its `announcement_portal_caches` entry must be cleared in the same cleanup so stale sibling-host candidates do not reseed the next cold start.

@@ -30,7 +30,10 @@ from ..schemas import (
     AdminAuditListResponse,
     AdminChangePasswordRequest,
     AdminChangePasswordResponse,
+    AdminBootstrapDepartmentRequest,
+    AdminBootstrapSchoolRequest,
     AdminContentFingerprintStatsResponse,
+    AdminContentExplainResponse,
     AdjustmentIntelligenceBreakdownItem,
     AdjustmentMentorRadarSchoolItem,
     AdjustmentIntelligenceResponse,
@@ -51,6 +54,8 @@ from ..schemas import (
     AdminRoleAssignmentItem,
     AdminUserItem,
     AdminUserListResponse,
+    AdminWorkflowTriggerResponse,
+    AdminScopeRebuildRequest,
     RawDatasetArchiveItem,
     RawDatasetArchiveListResponse,
     AdminUserPromoteRequest,
@@ -60,6 +65,7 @@ from ..schemas import (
     ManualEntryRequest,
 )
 from ..security import hash_password, verify_password
+from ..services.classification import get_content_classification, sync_content_classification
 from ..services.account_access import (
     ENTITLEMENT_PREMIUM_MONITORING,
     ENTITLEMENT_SOURCE_ADMIN_GRANT,
@@ -76,6 +82,12 @@ from ..services.account_access import (
     upsert_premium_entitlement,
 )
 from ..services.content import _build_content_fingerprint, upsert_content
+from ..services.workflow_v2 import (
+    create_department_bootstrap_run,
+    create_school_bootstrap_run,
+    create_scope_rebuild_run,
+    queue_content_reclassify,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -968,6 +980,179 @@ def list_admin_audits(
             )
             for x in rows
         ],
+    )
+
+
+@router.post("/bootstrap/schools", response_model=AdminWorkflowTriggerResponse)
+def bootstrap_school_scope(
+    payload: AdminBootstrapSchoolRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminWorkflowTriggerResponse:
+    require_admin_request(request)
+    actor = get_admin_identity(request)
+    run, step = create_school_bootstrap_run(
+        db,
+        school_name=payload.school_name,
+        homepage_url=payload.homepage_url,
+        seed_urls=payload.seed_urls,
+        actor_username=actor,
+        max_sections=payload.max_sections,
+    )
+    db.commit()
+    audit_event(
+        db,
+        request,
+        "admin.bootstrap.school",
+        None,
+        {"workflow_run_id": run.id, "step_id": step.id, "school_name": payload.school_name},
+    )
+    return AdminWorkflowTriggerResponse(
+        workflow_run_id=run.id,
+        step_id=step.id,
+        workflow_type=run.workflow_type,
+        scope_type="school",
+        scope_key=run.scope_key,
+        status=run.status,
+    )
+
+
+@router.post("/bootstrap/departments", response_model=AdminWorkflowTriggerResponse)
+def bootstrap_department_scope(
+    payload: AdminBootstrapDepartmentRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminWorkflowTriggerResponse:
+    require_admin_request(request)
+    actor = get_admin_identity(request)
+    run, step = create_department_bootstrap_run(
+        db,
+        school_name=payload.school_name,
+        department_name=payload.department_name,
+        department_type=payload.department_type,
+        homepage_url=payload.homepage_url,
+        seed_urls=payload.seed_urls,
+        actor_username=actor,
+        max_sections=payload.max_sections,
+    )
+    db.commit()
+    audit_event(
+        db,
+        request,
+        "admin.bootstrap.department",
+        None,
+        {
+            "workflow_run_id": run.id,
+            "step_id": step.id,
+            "school_name": payload.school_name,
+            "department_name": payload.department_name,
+        },
+    )
+    return AdminWorkflowTriggerResponse(
+        workflow_run_id=run.id,
+        step_id=step.id,
+        workflow_type=run.workflow_type,
+        scope_type="department",
+        scope_key=run.scope_key,
+        status=run.status,
+    )
+
+
+@router.post("/rebuilds", response_model=AdminWorkflowTriggerResponse)
+def create_scope_rebuild(
+    payload: AdminScopeRebuildRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminWorkflowTriggerResponse:
+    require_admin_request(request)
+    actor = get_admin_identity(request)
+    run, step = create_scope_rebuild_run(
+        db,
+        scope_type=payload.scope_type,
+        school_name=payload.school_name,
+        department_name=payload.department_name,
+        homepage_url=payload.homepage_url,
+        seed_urls=payload.seed_urls,
+        actor_username=actor,
+        max_sections=payload.max_sections,
+    )
+    db.commit()
+    audit_event(
+        db,
+        request,
+        "admin.scope_rebuild",
+        None,
+        {
+            "workflow_run_id": run.id,
+            "step_id": step.id,
+            "scope_type": payload.scope_type,
+            "school_name": payload.school_name,
+            "department_name": payload.department_name,
+        },
+    )
+    return AdminWorkflowTriggerResponse(
+        workflow_run_id=run.id,
+        step_id=step.id,
+        workflow_type=run.workflow_type,
+        scope_type=payload.scope_type,
+        scope_key=run.scope_key,
+        status=run.status,
+    )
+
+
+@router.post("/contents/{content_id}/reclassify", response_model=AdminWorkflowTriggerResponse)
+def queue_content_reclassify_endpoint(
+    content_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminWorkflowTriggerResponse:
+    require_admin_request(request)
+    content = db.query(Content).filter(Content.id == content_id).one_or_none()
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="content not found")
+    actor = get_admin_identity(request)
+    run, step = queue_content_reclassify(db, content=content, actor_username=actor)
+    db.commit()
+    scope_type = str(step.scope_type or "school") == "department" and "department" or "school"
+    audit_event(
+        db,
+        request,
+        "admin.content_reclassify",
+        None,
+        {"content_id": content.id, "workflow_run_id": run.id, "step_id": step.id},
+    )
+    return AdminWorkflowTriggerResponse(
+        workflow_run_id=run.id,
+        step_id=step.id,
+        workflow_type=run.workflow_type,
+        scope_type=scope_type,  # type: ignore[arg-type]
+        scope_key=run.scope_key,
+        status=run.status,
+    )
+
+
+@router.get("/contents/{content_id}/explain", response_model=AdminContentExplainResponse)
+def get_content_explain(
+    content_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminContentExplainResponse:
+    require_admin_request(request)
+    content = db.query(Content).filter(Content.id == content_id).one_or_none()
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="content not found")
+    classification = get_content_classification(db, content.id)
+    if classification is None:
+        classification = sync_content_classification(db, content)
+        db.commit()
+    audit_event(db, request, "admin.content_explain", None, {"content_id": content.id})
+    return AdminContentExplainResponse(
+        content_id=content.id,
+        scope_type=classification.scope_type,  # type: ignore[arg-type]
+        scope_key=classification.scope_key,
+        classification_state=classification.classification_state,
+        visibility=classification.visibility,
+        explain_payload=classification.explain_payload or {},
     )
 
 
