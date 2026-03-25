@@ -177,3 +177,4 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Explicitly provided `system_tags` are authoritative and should not be broadened again during upsert.
 - Automatically inferred `channel_label` may enrich tags, but should not override the original tag ordering unless the label came from an explicit payload or a maintained `site_section`.
 - Negative phrasing such as `不属于研招` / `与研究生招生无关` must not auto-promote ordinary history/news rows into visible graduate-admissions announcements.
+- School-level announcement cold start must prefer the maintained canonical admissions portal host when one is configured. Existing school-level sections on sibling hosts or legacy graduate-school entry sites must not be reused ahead of that canonical portal, otherwise announcement crawling will attach to the wrong school-level source.

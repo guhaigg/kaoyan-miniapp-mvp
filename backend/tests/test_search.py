@@ -2975,6 +2975,50 @@ def test_ensure_announcement_search_bootstrap_uses_hubu_canonical_candidates():
         assert job.query["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
 
 
+def test_ensure_announcement_search_bootstrap_prefers_canonical_site_over_existing_sibling_site_sections():
+    with SessionLocal() as db:
+        school = School(name="湖北大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="湖北大学研究生院",
+            source_type="official",
+            base_url="https://gs.hubu.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            SiteSection(
+                school_id=school.id,
+                source_id=source.id,
+                name="通知公告",
+                section_type="notice",
+                section_url="https://gs.hubu.edu.cn/yjsc/tzgg/",
+                discovery_category="announcement",
+                list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                detail_selector_config={},
+                enabled=1,
+            )
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "湖北大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
+        assert job.query["job_kind"] == "family_discovery"
+        assert job.query["school_name"] == "湖北大学"
+        assert job.query["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+
+
 def test_candidate_page_matches_school_name_rejects_two_char_suffix_collisions(monkeypatch):
     class _DummyResponse:
         def __init__(self, text: str):

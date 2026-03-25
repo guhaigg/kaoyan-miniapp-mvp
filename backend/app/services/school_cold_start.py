@@ -262,6 +262,40 @@ def _resolve_announcement_seed_override(school_name: str) -> dict[str, Any] | No
     return _ANNOUNCEMENT_CANONICAL_SEEDS.get(str(school_name or "").strip())
 
 
+def _announcement_override_hosts(announcement_override: dict[str, Any] | None) -> set[str]:
+    if not announcement_override:
+        return set()
+    hosts: set[str] = set()
+    urls = [
+        announcement_override.get("homepage_url"),
+        *(announcement_override.get("seed_urls") or []),
+    ]
+    for url in urls:
+        normalized = _normalize_url(str(url or ""))
+        host = (urlparse(normalized).netloc or "").lower()
+        if host:
+            hosts.add(host)
+    return hosts
+
+
+def _filter_existing_sections_for_announcement_override(
+    existing_sections: list[SiteSection],
+    *,
+    families: set[str],
+    announcement_override: dict[str, Any] | None,
+) -> list[SiteSection]:
+    if families != {"notice", "admissions"}:
+        return existing_sections
+    preferred_hosts = _announcement_override_hosts(announcement_override)
+    if not preferred_hosts:
+        return existing_sections
+    return [
+        section
+        for section in existing_sections
+        if (urlparse(_normalize_url(str(section.section_url or ""))).netloc or "").lower() in preferred_hosts
+    ]
+
+
 def _families_key(families: set[str]) -> str:
     return ",".join(sorted(family for family in families if family in _KNOWN_FAMILIES))
 
@@ -933,6 +967,11 @@ def _bootstrap_family_sections(
         school_name=school_name,
         deny_prefixes=deny_prefixes,
     )
+    existing_sections = _filter_existing_sections_for_announcement_override(
+        existing_sections,
+        families=families,
+        announcement_override=announcement_override,
+    )
     reusable_sections, recovery_seed_urls = _collect_reusable_sections(
         db,
         existing_sections=existing_sections,
@@ -1078,6 +1117,11 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         db,
         school_name=normalized_school_name,
         deny_prefixes=deny_prefixes,
+    )
+    existing_sections = _filter_existing_sections_for_announcement_override(
+        existing_sections,
+        families=normalized_families,
+        announcement_override=announcement_override,
     )
     reusable_sections, recovery_seed_urls = _collect_reusable_sections(
         db,
