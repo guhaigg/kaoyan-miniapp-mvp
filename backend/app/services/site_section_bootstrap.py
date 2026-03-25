@@ -373,6 +373,13 @@ def _normalize_preferred_hosts(
     return hosts
 
 
+def _filter_urls_for_preferred_hosts(urls: list[str], *, preferred_hosts: set[str]) -> list[str]:
+    if not preferred_hosts:
+        return list(urls)
+    filtered = [url for url in urls if portal_candidate_host(url) in preferred_hosts]
+    return filtered or list(urls)
+
+
 def _candidate_portal_score(candidate: ContainerCandidate, *, preferred_hosts: set[str]) -> int:
     evidence = dict(candidate.evidence or {})
     return score_announcement_portal_candidate(
@@ -498,6 +505,8 @@ def _probe_seed_page(
             continue
         if _looks_like_channel_prefix_page_url(item.page_url) or _looks_like_fragmentary_page_url(item.page_url):
             continue
+        if preferred_hosts and portal_candidate_host(item.page_url) not in preferred_hosts:
+            continue
         candidates.append(_build_candidate_section(item, page_title=page_title, preferred_hosts=preferred_hosts))
 
     frontier_urls: list[str] = []
@@ -507,6 +516,8 @@ def _probe_seed_page(
         if not normalized or normalized in seen_frontier:
             continue
         if not _is_same_site(seed_url, normalized) or looks_like_detail_page_url(normalized):
+            continue
+        if preferred_hosts and portal_candidate_host(normalized) not in preferred_hosts:
             continue
         seen_frontier.add(normalized)
         frontier_urls.append(normalized)
@@ -568,6 +579,7 @@ def bootstrap_site_sections(
         extra_seed_urls=seed_urls + _discover_entry_pages(homepage_urls=homepage_urls, max_extra_pages=6),
         max_seed_pages=max_seed_pages,
     )
+    seed_pool = _filter_urls_for_preferred_hosts(seed_pool, preferred_hosts=resolved_preferred_hosts)
 
     candidate_map: dict[tuple[str, str, str], CandidateSection] = {}
     queue = list(seed_pool)

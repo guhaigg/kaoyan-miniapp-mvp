@@ -2860,13 +2860,21 @@ def test_content_upsert_generates_summary_from_body_when_missing(client):
             "school_name": "河海大学",
             "source_type": "manual",
             "source_url": "https://example.com/manual-summary-fallback",
+            "extra": {
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+            },
         },
         headers={"X-Admin-Token": "test-admin-token"},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "created"
 
-    search = client.post("/api/v1/search/announcements", json={"school_name": "河海大学"})
+    search = client.post(
+        "/api/v1/search/announcements",
+        json={"keywords": "计算机与软件学院"},
+    )
     assert search.status_code == 200
     payload = search.json()
     assert payload["total"] == 1
@@ -3685,6 +3693,28 @@ def test_candidate_page_matches_school_name_rejects_two_char_suffix_collisions(m
     assert _candidate_page_matches_school_name("https://yjs.hbut.edu.cn/", "湖北大学") is False
 
 
+def test_candidate_page_matches_school_name_rejects_school_prefixed_branch_and_college_pages(monkeypatch):
+    class _DummyResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+    pages = {
+        "https://www.arts.neu.edu.cn/": "<html><head><title>东北大学艺术学院研究生招生网</title></head><body>东北大学艺术学院研究生招生信息</body></html>",
+        "https://graduate.neuq.edu.cn/": "<html><head><title>东北大学秦皇岛分校研究生分院</title></head><body>东北大学秦皇岛分校研究生分院招生工作</body></html>",
+    }
+
+    def _fake_fetch(url: str):
+        normalized = f"{url.rstrip('/')}/"
+        if normalized in pages:
+            return _DummyResponse(pages[normalized])
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr("app.services.school_cold_start._fetch_with_retry", _fake_fetch)
+
+    assert _candidate_page_matches_school_name("https://www.arts.neu.edu.cn/", "东北大学") is False
+    assert _candidate_page_matches_school_name("https://graduate.neuq.edu.cn/", "东北大学") is False
+
+
 def test_ensure_adjustment_search_bootstrap_queues_existing_adjustment_sections():
     with SessionLocal() as db:
         school = School(name="调剂大学", aliases=[])
@@ -3851,6 +3881,60 @@ def test_run_family_discovery_job_persists_verified_announcement_portal_cache(mo
         assert job.query["result_state"] == "queued"
         assert "https://yz.persist.edu.cn/" in cache.candidate_urls
         assert cache.last_verified_at is not None
+
+
+def test_run_family_discovery_job_persists_only_preferred_host_candidates_in_portal_cache(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_seed_urls_from_docs",
+        lambda school_name: [
+            "https://yz.clean.edu.cn/",
+            "https://yz.clean.edu.cn/sszs/",
+            "https://www.arts.clean.edu.cn/",
+        ],
+    )
+    monkeypatch.setattr("app.services.school_cold_start._discover_seed_urls_from_search", lambda school_name: [])
+    monkeypatch.setattr("app.services.school_cold_start._candidate_page_matches_school_name", lambda url, school_name: True)
+    monkeypatch.setattr(
+        "app.services.school_cold_start._discover_announcement_navigation_seed_urls",
+        lambda school_name, seed_urls, max_pages=12: list(seed_urls),
+    )
+    monkeypatch.setattr(
+        "app.services.school_cold_start.bootstrap_site_sections",
+        lambda db, **kwargs: {"job_ids": ["job-1"], "candidate_urls": ["https://yz.clean.edu.cn/sszs/"]},
+    )
+
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "净源大学",
+                "families": ["admissions", "notice"],
+                "bootstrap_origin": "announcement_search",
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+        _content_id, _message = run_family_discovery_job(db, job, dict(job.query or {}))
+        db.commit()
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        cache = (
+            db.query(AnnouncementPortalCache)
+            .filter(
+                AnnouncementPortalCache.school_name == "净源大学",
+                AnnouncementPortalCache.families_key == "admissions,notice",
+            )
+            .one()
+        )
+        assert job.query["result_state"] == "queued"
+        assert cache.preferred_hosts == ["yz.clean.edu.cn"]
+        assert all(url.startswith("https://yz.clean.edu.cn/") for url in cache.candidate_urls)
+        assert "https://yz.clean.edu.cn/" in cache.candidate_urls
+        assert "https://yz.clean.edu.cn/sszs/" in cache.candidate_urls
 
 
 def test_run_family_discovery_job_expands_adjustment_department_seed_urls(monkeypatch):
@@ -4406,7 +4490,7 @@ def test_search_announcements_excludes_non_detail_and_test_rows(client):
 
     search = client.post(
         "/api/v1/search/announcements",
-        json={"school_name": "湖北师范大学"},
+        json={"keywords": "资格审查"},
     )
     assert search.status_code == 200
     payload = search.json()

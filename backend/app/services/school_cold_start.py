@@ -66,6 +66,7 @@ _DETAIL_SECTION_URL_PATTERNS = [
     r"/[a-z0-9_-]{0,12}\d{4,}\.htm(?:l)?$",
 ]
 _SCHOOL_LEVEL_SCOPE_HINTS = ("研究生院", "研工部", "研究生招生", "研招", "招生工作", "硕士研究生", "博士研究生")
+_SCHOOL_PREFIX_CONFLICT_SUFFIXES = ("独立学院", "学院", "学部", "研究院", "研究所", "中心", "分校", "校区", "系")
 _DEPARTMENT_SCOPE_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()·、]+?(?:学院|学部|系|研究院|研究所|中心))")
 _CHANNEL_PREFIX_PATH_RE = re.compile(r"/info/\d+/?$", re.IGNORECASE)
 _ANNOUNCEMENT_NAV_TEXT_HINTS = (
@@ -244,9 +245,43 @@ def _build_school_validation_terms(school_name: str) -> list[str]:
     return [term for term in _dedupe_texts(terms) if len(term) >= 2]
 
 
+def _compact_school_text(value: str | None) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip())
+
+
 def _has_school_level_scope_hint(*texts: str | None) -> bool:
     haystack = "".join(str(text or "").strip() for text in texts)
     return any(hint in haystack for hint in _SCHOOL_LEVEL_SCOPE_HINTS)
+
+
+def _school_prefix_conflict_signal(bound_school_name: str, candidate_text: str | None) -> bool:
+    school_name = _compact_school_text(bound_school_name)
+    candidate = _compact_school_text(candidate_text)
+    if not school_name or not candidate or candidate == school_name:
+        return False
+    if not candidate.startswith(school_name):
+        return False
+    remainder = candidate[len(school_name) :]
+    if not remainder:
+        return False
+    return any(remainder.endswith(suffix) and len(remainder) >= len(suffix) for suffix in _SCHOOL_PREFIX_CONFLICT_SUFFIXES)
+
+
+def _texts_show_school_prefix_conflict(bound_school_name: str, *texts: str | None) -> bool:
+    school_name = _compact_school_text(bound_school_name)
+    if not school_name:
+        return False
+    suffix_pattern = "|".join(re.escape(suffix) for suffix in _SCHOOL_PREFIX_CONFLICT_SUFFIXES)
+    pattern = re.compile(
+        re.escape(school_name) + rf"[\u4e00-\u9fa5A-Za-z0-9（）()·、-]{{1,24}}?(?:{suffix_pattern})"
+    )
+    for text in texts:
+        if _school_prefix_conflict_signal(bound_school_name, text):
+            return True
+        compact = _compact_school_text(text)
+        if compact and pattern.search(compact):
+            return True
+    return False
 
 
 def _looks_department_scoped_text(*texts: str | None) -> bool:
@@ -390,24 +425,28 @@ def _filter_candidate_urls_for_families(
     max_items: int = 5,
 ) -> list[str]:
     filtered = []
+    normalized_preferred_hosts = {
+        str(host or "").strip().lower()
+        for host in (preferred_hosts or set())
+        if str(host or "").strip()
+    }
     for url in _dedupe_texts(candidate_urls):
         if deny_prefixes and any(url.startswith(prefix) for prefix in deny_prefixes):
             continue
         if not _is_valid_school_seed_url(url, families=families):
             continue
         filtered.append(url)
-    distinct_hosts = {portal_candidate_host(url) for url in filtered if portal_candidate_host(url)}
-    promote_preferred_homepage = bool(preferred_hosts) and len(distinct_hosts) > 1
-
+    if normalized_preferred_hosts:
+        preferred_only = [url for url in filtered if portal_candidate_host(url) in normalized_preferred_hosts]
+        if preferred_only:
+            filtered = preferred_only
     def _sort_key(item: str) -> tuple[int, int, str]:
         host = portal_candidate_host(item)
         path = (urlparse(item).path or "").strip()
-        preferred_homepage_rank = 0
-        if promote_preferred_homepage and preferred_hosts and host in preferred_hosts:
+        preferred_homepage_rank = 2
+        if normalized_preferred_hosts and host in normalized_preferred_hosts:
             preferred_homepage_rank = 0 if path in {"", "/"} else 1
-        else:
-            preferred_homepage_rank = 2
-        score = score_announcement_portal_candidate(item, preferred_hosts=preferred_hosts or set())
+        score = score_announcement_portal_candidate(item, preferred_hosts=normalized_preferred_hosts)
         if families == {"notice", "admissions"} and _looks_department_scoped_text(item):
             score -= 40
         return (preferred_homepage_rank, -score, item)
@@ -442,6 +481,12 @@ def _job_result_state(job: CrawlJob) -> str:
 def _build_school_level_page_text(raw_html: str, title: str | None) -> str:
     normalized_html = _SPACE_RE.sub(" ", _HTML_TAG_RE.sub(" ", raw_html or " "))
     return " ".join([str(title or "").strip(), normalized_html[:2500]]).strip()
+
+
+def _page_conflicts_with_school_name(raw_html: str, title: str | None, school_name: str) -> bool:
+    normalized_html = _SPACE_RE.sub(" ", _HTML_TAG_RE.sub(" ", raw_html or " "))
+    scope_text = " ".join([str(title or "").strip(), normalized_html[:600]]).strip()
+    return _texts_show_school_prefix_conflict(school_name, scope_text)
 
 
 def _page_mentions_school(raw_html: str, title: str | None, school_name: str) -> bool:
@@ -514,6 +559,8 @@ def _announcement_navigation_candidate_urls(
         title = _extract_title(raw_html) or ""
         page_text = _build_school_level_page_text(raw_html, title)
         if not _page_mentions_school(raw_html, title, school_name):
+            continue
+        if _page_conflicts_with_school_name(raw_html, title, school_name):
             continue
 
         if include_current and _page_looks_school_level(raw_html, title, school_name):
@@ -610,6 +657,8 @@ def _candidate_page_matches_school_name(candidate_url: str, school_name: str) ->
         ]
         if any(term in haystack for term in terms for haystack in haystacks if haystack):
             page_scope_text = " ".join([title, normalized_html[:400]])
+            if _texts_show_school_prefix_conflict(school_name, page_scope_text):
+                continue
             if _looks_department_scoped_text(page_scope_text):
                 continue
             return True
@@ -833,13 +882,20 @@ def _build_announcement_seed_urls(
     deny_prefixes: list[str],
     preferred_hosts: set[str],
 ) -> list[str]:
-    return _filter_candidate_urls_for_families(
-        [*candidate_urls, *recovery_seed_urls],
+    preferred_candidate_urls = _filter_candidate_urls_for_families(
+        list(candidate_urls),
         families={"notice", "admissions"},
         deny_prefixes=deny_prefixes,
         preferred_hosts=preferred_hosts,
         max_items=12,
     )
+    recovery_urls = _filter_candidate_urls_for_families(
+        list(recovery_seed_urls),
+        families={"notice", "admissions"},
+        deny_prefixes=deny_prefixes,
+        max_items=12,
+    )
+    return _dedupe_texts([*preferred_candidate_urls, *recovery_urls])[:12]
 
 
 def _expand_seed_urls(seed_urls: list[str]) -> list[str]:

@@ -70,6 +70,42 @@ def test_crawl_worker_success_writes_content_and_snapshot(client):
         assert content.summary
 
 
+def test_crawl_worker_truncates_oversized_snapshot_html(client):
+    oversized_html = "<html><body>" + ("超长页面" * 12000) + "</body></html>"
+    create_resp = client.post(
+        "/api/v1/crawl-jobs",
+        json={
+            "category": "announcement",
+            "query": {
+                "simulate": True,
+                "title": "超长快照公告",
+                "body": "用于验证超长页面快照不会打失败",
+                "school_name": "电子科技大学",
+                "raw_html": oversized_html,
+            },
+        },
+        headers=_admin_headers(),
+    )
+    assert create_resp.status_code == 200
+    job_id = create_resp.json()["job_id"]
+
+    processed = crawl_engine.process_job_batch()
+    assert processed == 1
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.status == "done"
+
+        content = db.query(Content).filter(Content.source_url == f"crawl-job://{job_id}").one_or_none()
+        assert content is not None
+
+        snapshot = db.query(ContentSnapshot).filter(ContentSnapshot.content_id == content.id).one_or_none()
+        assert snapshot is not None
+        assert len(snapshot.raw_html or "") < len(oversized_html)
+        assert (snapshot.snapshot_meta or {}).get("raw_html_truncated") is True
+        assert (snapshot.snapshot_meta or {}).get("raw_html_original_length") == len(oversized_html)
+
+
 def test_crawl_worker_failure_writes_crawl_error(client):
     create_resp = client.post(
         "/api/v1/crawl-jobs",

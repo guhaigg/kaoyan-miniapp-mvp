@@ -28,6 +28,7 @@ _ANNOUNCEMENT_PORTAL_KEYS = (
     "channel_tier",
     "portal_path_evidence",
 )
+_MAX_SNAPSHOT_RAW_HTML_BYTES = 60_000
 
 
 def _resolve_school(db: Session, school_name: str | None) -> School | None:
@@ -78,6 +79,20 @@ def _resolve_department(
     if len(rows) != 1:
         return None
     return rows[0]
+
+
+def _normalize_snapshot_raw_html(raw_html: str | None) -> tuple[str | None, dict[str, int | bool]]:
+    text = str(raw_html or "")
+    if not text:
+        return None, {}
+    encoded = text.encode("utf-8")
+    meta: dict[str, int | bool] = {"raw_html_original_length": len(text), "raw_html_original_bytes": len(encoded)}
+    if len(encoded) <= _MAX_SNAPSHOT_RAW_HTML_BYTES:
+        return text, meta
+    truncated = encoded[:_MAX_SNAPSHOT_RAW_HTML_BYTES].decode("utf-8", errors="ignore")
+    meta["raw_html_truncated"] = True
+    meta["raw_html_stored_bytes"] = len(truncated.encode("utf-8"))
+    return truncated, meta
 
 
 def _resolve_site_section(
@@ -425,8 +440,14 @@ def upsert_content(db: Session, payload: ContentIn) -> tuple[Content, str]:
         db.add(content)
         db.flush()
 
-    if payload.raw_html:
-        snapshot = ContentSnapshot(content_id=content.id, raw_html=payload.raw_html, raw_text=payload.body, snapshot_meta={})
+    normalized_snapshot_html, snapshot_meta = _normalize_snapshot_raw_html(payload.raw_html)
+    if normalized_snapshot_html:
+        snapshot = ContentSnapshot(
+            content_id=content.id,
+            raw_html=normalized_snapshot_html,
+            raw_text=payload.body,
+            snapshot_meta=snapshot_meta,
+        )
         db.add(snapshot)
 
     evaluate_content_for_premium_monitoring(db, content, trigger_status=status)
