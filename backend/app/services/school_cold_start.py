@@ -461,6 +461,9 @@ def _job_candidate_urls(job: CrawlJob) -> list[str]:
     result_urls = payload.get("result_candidate_urls")
     if isinstance(result_urls, list):
         return _dedupe_texts([str(item or "").strip() for item in result_urls if str(item or "").strip()])
+    seed_urls = payload.get("seed_urls")
+    if isinstance(seed_urls, list):
+        return _dedupe_texts([str(item or "").strip() for item in seed_urls if str(item or "").strip()])
     seed_urls = payload.get("candidate_urls")
     if isinstance(seed_urls, list):
         return _dedupe_texts([str(item or "").strip() for item in seed_urls if str(item or "").strip()])
@@ -1316,7 +1319,11 @@ def _queue_family_discovery_job(
     families: set[str],
     candidate_urls: list[str],
     bootstrap_origin: str,
+    homepage_url: str | None = None,
+    seed_urls: list[str] | None = None,
+    workflow_handoff: str | None = None,
 ) -> CrawlJob:
+    normalized_seed_urls = _dedupe_texts([str(url or "").strip() for url in (seed_urls or []) if str(url or "").strip()])
     job = CrawlJob(
         category=_discovery_category_for_families(families),
         status="pending",
@@ -1328,6 +1335,9 @@ def _queue_family_discovery_job(
             "families": sorted(families),
             "bootstrap_origin": bootstrap_origin,
             "candidate_urls": list(candidate_urls),
+            "homepage_url": str(homepage_url or "").strip() or None,
+            "seed_urls": normalized_seed_urls,
+            "workflow_handoff": str(workflow_handoff or "").strip() or None,
         },
     )
     db.add(job)
@@ -1777,6 +1787,11 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         announcement_candidate_urls=announcement_candidate_urls,
         preferred_hosts=preferred_hosts,
     )
+    v2_homepage_url, v2_seed_urls = _resolve_v2_family_handoff_inputs(
+        normalized_school_name,
+        families=normalized_families,
+        query={},
+    )
     bootstrap_origin = _bootstrap_origin_for_families(normalized_families)
 
     if reusable_sections:
@@ -1844,12 +1859,15 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         families=normalized_families,
         candidate_urls=local_candidate_hints,
         bootstrap_origin=bootstrap_origin,
+        homepage_url=v2_homepage_url,
+        seed_urls=v2_seed_urls,
+        workflow_handoff="v2" if v2_homepage_url else None,
     )
     return {
         "state": "queued",
         "school_name": normalized_school_name,
         "message": f"已自动为 {normalized_school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓内容，请稍后自动刷新。",
-        "candidate_urls": local_candidate_hints,
+        "candidate_urls": local_candidate_hints or v2_seed_urls,
         "job_ids": [queued_job.id],
     }
 

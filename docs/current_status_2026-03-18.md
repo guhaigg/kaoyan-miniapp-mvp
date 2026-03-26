@@ -404,6 +404,7 @@
 - school / department bootstrap 已开始真实写入 `portal_nodes / portal_edges / portal_host_decisions / raw_artifacts / parse_artifacts`
 - department bootstrap 若产出 school-scoped section，会直接终态失败并回滚本次部分写入，不再把 scope 错误当成可重试故障
 - legacy `family_discovery` job 已新增受控 handoff 路径：带 `workflow_handoff=v2` 时，会直接转成 V2 `scope_rebuild` workflow，并优先使用显式 seed 或维护好的 canonical seed
+- legacy `ensure_*_search_bootstrap` 已开始默认排 V2 handoff job；只有缺少显式维护 seed 的学校才继续 fallback 到旧 discovery queue
 
 当前边界：
 

@@ -1,6 +1,6 @@
 from app.db import SessionLocal
 from app.models import CrawlJob, WorkflowRun, WorkflowStep
-from app.services.school_cold_start import run_family_discovery_job
+from app.services.school_cold_start import ensure_announcement_search_bootstrap, run_family_discovery_job
 
 
 def test_family_discovery_job_can_handoff_to_v2_with_explicit_seeds():
@@ -68,3 +68,19 @@ def test_family_discovery_job_v2_handoff_uses_canonical_announcement_seed_overri
         assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
         assert run.request_payload["homepage_url"] == "https://yz.hubu.edu.cn/"
         assert run.request_payload["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+
+
+def test_ensure_announcement_search_bootstrap_defaults_to_v2_handoff_when_canonical_seed_exists():
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "湖北大学")
+
+    assert result is not None
+    assert result["state"] == "queued"
+    assert result["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
+        assert job.query["job_kind"] == "family_discovery"
+        assert job.query["workflow_handoff"] == "v2"
+        assert job.query["homepage_url"] == "https://yz.hubu.edu.cn/"
+        assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
