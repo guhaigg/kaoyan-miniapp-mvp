@@ -1410,21 +1410,6 @@ def _resolve_v2_family_handoff_inputs(
     if not homepage_url and seed_urls:
         homepage_url = seed_urls[0]
 
-    if families == {"notice", "admissions"}:
-        override = _resolve_announcement_seed_override(school_name) or {}
-        override_homepage = _normalize_url(str(override.get("homepage_url") or ""))
-        override_seed_urls = _dedupe_texts(
-            [
-                _normalize_url(str(url or ""))
-                for url in (override.get("seed_urls") or [])
-                if _normalize_url(str(url or ""))
-            ]
-        )
-        if not homepage_url and override_homepage:
-            homepage_url = override_homepage
-        if override_seed_urls:
-            seed_urls = _dedupe_texts([*seed_urls, *override_seed_urls])
-
     doc_seed_urls = _dedupe_texts(get_doc_school_seed_urls(school_name))
     if doc_seed_urls:
         seed_urls = _dedupe_texts([*seed_urls, *doc_seed_urls])
@@ -1810,8 +1795,8 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
     normalized_families = {family for family in families if family in _KNOWN_FAMILIES}
     if not normalized_families:
         return None
-    if _is_announcement_family_set(normalized_families):
-        return _readonly_announcement_bootstrap_status(db, normalized_school_name)
+    if normalized_families != {"adjustment"}:
+        return None
     announcement_override = (
         _resolve_announcement_seed_override(normalized_school_name)
         if normalized_families == {"notice", "admissions"}
@@ -1944,11 +1929,5 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         "candidate_urls": v2_seed_urls if v2_homepage_url else local_candidate_hints,
         "job_ids": [queued_job.id],
     }
-
-
-def ensure_announcement_search_bootstrap(db: Session, school_name: str) -> dict[str, Any] | None:
-    return ensure_family_search_bootstrap(db, school_name, {"notice", "admissions"})
-
-
 def ensure_adjustment_search_bootstrap(db: Session, school_name: str) -> dict[str, Any] | None:
     return ensure_family_search_bootstrap(db, school_name, {"adjustment"})

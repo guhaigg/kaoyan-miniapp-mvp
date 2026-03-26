@@ -7,7 +7,7 @@ from app.services.search_cache import search_response_cache
 from app.services.historical_intelligence import build_adjustment_opportunities_from_archives
 from app.services.content_repair import extract_content_published_at_from_body, infer_non_detail_announcement_reason
 from app.services.crawler import crawl_engine
-from app.services.school_cold_start import _candidate_page_matches_school_name, ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap, run_family_discovery_job
+from app.services.school_cold_start import _candidate_page_matches_school_name, ensure_adjustment_search_bootstrap, run_family_discovery_job
 from app.services.workflow_v2 import create_scope_rebuild_run
 from app.routers.search import _build_adjustment_detail_from_opportunity
 from scripts.repair_stale_announcement_content import _repair_row_by_snapshot
@@ -3034,7 +3034,139 @@ def test_search_announcements_with_existing_school_assets_stays_ready_without_on
     assert second.json()["cold_start"] is None
 
 
-def test_ensure_announcement_search_bootstrap_reports_ready_for_existing_school_assets_without_side_effects():
+def test_search_announcements_reports_ready_asset_state_without_creating_jobs(client):
+    with SessionLocal() as db:
+        school = School(name="范围大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="范围大学官网",
+            source_type="official",
+            base_url="https://scope.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        department = Department(school_id=school.id, name="教育学院", aliases=[], department_type="college", enabled=1)
+        db.add(department)
+        db.flush()
+        db.add_all(
+            [
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="通知公告",
+                    section_type="notice",
+                    section_url="https://scope.edu.cn/yjs/notices/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="硕士研究生招生信息",
+                    section_type="admissions",
+                    section_url="https://scope.edu.cn/yjs/masters/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "admissions", "probe_role": "leaf", "probe_scope": "masters"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    department_id=department.id,
+                    source_id=source.id,
+                    name="教育学院通知公告",
+                    section_type="notice",
+                    section_url="https://scope.edu.cn/education/notices/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.post("/api/v1/search/announcements", json={"school_name": "范围大学"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["asset_state"] == "ready"
+    assert payload["scope_type"] == "school"
+    assert payload["required_action"] is None
+    assert payload["workflow_run_id"] is None
+    assert payload["cold_start"] is None
+
+    with SessionLocal() as db:
+        assert db.query(CrawlJob).count() == 0
+
+
+def test_search_announcements_reports_not_ready_for_canonical_seed_without_creating_jobs(client):
+    response = client.post("/api/v1/search/announcements", json={"school_name": "湖北大学"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["asset_state"] == "not_ready"
+    assert payload["scope_type"] == "school"
+    assert payload["required_action"] == "admin.bootstrap.school"
+    assert payload["workflow_run_id"] is None
+    assert payload["cold_start"] is None
+
+    with SessionLocal() as db:
+        assert db.query(CrawlJob).count() == 0
+
+
+def test_search_announcements_reports_rebuilding_from_active_v2_workflow(client):
+    with SessionLocal() as db:
+        run, step = create_scope_rebuild_run(
+            db,
+            scope_type="school",
+            school_name="湖北大学",
+            homepage_url="https://yz.hubu.edu.cn/",
+            seed_urls=["https://yz.hubu.edu.cn/"],
+            actor_username=None,
+            max_sections=8,
+        )
+        run.status = "running"
+        step.status = "running"
+        db.commit()
+        workflow_run_id = run.id
+
+    response = client.post("/api/v1/search/announcements", json={"school_name": "湖北大学"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["asset_state"] == "rebuilding"
+    assert payload["scope_type"] == "school"
+    assert payload["required_action"] is None
+    assert payload["workflow_run_id"] == workflow_run_id
+    assert payload["cold_start"] is None
+
+    with SessionLocal() as db:
+        assert db.query(CrawlJob).count() == 0
+
+
+def test_search_announcements_reports_not_ready_for_school_without_assets_or_workflow(client):
+    response = client.post("/api/v1/search/announcements", json={"school_name": "Seedless University"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 0
+    assert payload["asset_state"] == "not_ready"
+    assert payload["scope_type"] == "school"
+    assert payload["required_action"] == "admin.bootstrap.school"
+    assert payload["workflow_run_id"] is None
+    assert payload["cold_start"] is None
+
+    with SessionLocal() as db:
+        assert db.query(CrawlJob).count() == 0
+
+
+def _obsolete_test_ensure_announcement_search_bootstrap_reports_ready_for_existing_school_assets_without_side_effects():
     with SessionLocal() as db:
         school = School(name="范围大学", aliases=[])
         db.add(school)
@@ -3117,7 +3249,7 @@ def test_ensure_announcement_search_bootstrap_reports_ready_for_existing_school_
         assert db.query(CrawlJob).count() == 0
 
 
-def test_ensure_announcement_search_bootstrap_reports_not_ready_from_canonical_seed_without_side_effects():
+def _obsolete_test_ensure_announcement_search_bootstrap_reports_not_ready_from_canonical_seed_without_side_effects():
     with SessionLocal() as db:
         result = ensure_announcement_search_bootstrap(db, "湖北大学")
 
@@ -3130,7 +3262,7 @@ def test_ensure_announcement_search_bootstrap_reports_not_ready_from_canonical_s
         assert db.query(CrawlJob).count() == 0
 
 
-def test_ensure_announcement_search_bootstrap_reports_in_progress_from_active_v2_workflow():
+def _obsolete_test_ensure_announcement_search_bootstrap_reports_in_progress_from_active_v2_workflow():
     with SessionLocal() as db:
         run, step = create_scope_rebuild_run(
             db,
@@ -3156,7 +3288,7 @@ def test_ensure_announcement_search_bootstrap_reports_in_progress_from_active_v2
     assert result["job_ids"] == []
 
 
-def test_ensure_announcement_search_bootstrap_reports_no_candidate_without_governed_seed():
+def _obsolete_test_ensure_announcement_search_bootstrap_reports_no_candidate_without_governed_seed():
     with SessionLocal() as db:
         result = ensure_announcement_search_bootstrap(db, "Seedless University")
 

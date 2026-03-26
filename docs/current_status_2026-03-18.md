@@ -404,7 +404,7 @@
 - school / department bootstrap 已开始真实写入 `portal_nodes / portal_edges / portal_host_decisions / raw_artifacts / parse_artifacts`
 - department bootstrap 若产出 school-scoped section，会直接终态失败并回滚本次部分写入，不再把 scope 错误当成可重试故障
 - 公告侧 legacy `family_discovery` 已收口成 handoff-only compatibility shell：有显式 seed 或 canonical seed 时直接转 V2 `scope_rebuild`，没有 governed seed 时终态写成 `no_candidate`
-- legacy `ensure_announcement_search_bootstrap` 已收口成只读 shim：只返回 approved assets / active workflow / canonical seed readiness，不再创建 `crawl_jobs`
+- legacy `ensure_announcement_search_bootstrap` 已删除：公告 readiness 现在只由搜索资产状态解析和 V2 workflow 状态表达，不再保留 announcement 侧兼容 helper
 - 公告侧 handoff 的真实发现输入已经固定为 `homepage_url + seed_urls`；旧 `candidate_urls` 只保留为兼容返回字段，不再驱动 discovery
 - 已新增 `GET /api/v1/admin/workflows/{id}`，可以直接查看某次 bootstrap/rebuild 的 step、portal graph、host decision、artifact 和治理动作；这也是参考 `yanbot` 笔记后优先补的治理能力
 

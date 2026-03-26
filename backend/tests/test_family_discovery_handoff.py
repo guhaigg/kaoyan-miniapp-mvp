@@ -1,6 +1,6 @@
 from app.db import SessionLocal
 from app.models import CrawlJob, WorkflowRun, WorkflowStep
-from app.services.school_cold_start import ensure_announcement_search_bootstrap, run_family_discovery_job
+from app.services.school_cold_start import run_family_discovery_job
 
 
 def test_family_discovery_job_can_handoff_to_v2_with_explicit_seeds():
@@ -96,16 +96,3 @@ def test_family_discovery_job_announcement_without_governed_seed_ends_as_no_cand
         assert job.query["result_candidate_urls"] == []
         assert job.query["result_job_ids"] == []
         assert job.query.get("workflow_run_id") is None
-
-
-def test_ensure_announcement_search_bootstrap_is_read_only_when_canonical_seed_exists():
-    with SessionLocal() as db:
-        result = ensure_announcement_search_bootstrap(db, "湖北大学")
-
-    assert result is not None
-    assert result["state"] == "not_ready"
-    assert result["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
-    assert result["job_ids"] == []
-
-    with SessionLocal() as db:
-        assert db.query(CrawlJob).count() == 0

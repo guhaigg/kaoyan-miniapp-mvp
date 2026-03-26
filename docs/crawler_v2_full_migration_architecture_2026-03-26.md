@@ -367,7 +367,7 @@ V2 需要新增或强烈建议新增：
 - bootstrap 已开始真实写入 `portal_nodes / portal_edges / portal_host_decisions`，而不是只建空表
 - school / department scope 错误会在 workflow 层直接失败并回滚，不再作为可重试任务继续漂移
 - 公告侧 legacy `family_discovery` 已收口成 handoff-only 兼容壳：有显式 seed 或 canonical seed 时转发到 V2 `scope_rebuild`，无 seed 时直接终态结束
-- legacy `ensure_announcement_search_bootstrap` 已改成只读 shim，不再排 job，也不再承担 discovery fallback
+- legacy `ensure_announcement_search_bootstrap` 已删除；公告 readiness 只保留在搜索资产状态解析和 V2 workflow 状态，不再保留 announcement 侧 shim
 - 公告侧 handoff 的 discovery input 已固定为 `homepage_url + seed_urls`；旧 `candidate_urls` 只保留兼容观测语义
 - 已有最小治理读接口 `GET /api/v1/admin/workflows/{id}`，能把 run/step/portal graph/host decision/artifact 串起来看
 - 搜索已改为只读，不再在线触发冷启动或 family discovery
