@@ -16,14 +16,22 @@ from ..dependencies import (
 from ..models import (
     AccountPaymentOrder,
     Content,
+    GovernanceAction,
     HistoricalAdjustmentProfile,
     HistoricalReleaseTimingProfile,
     MentorEvaluation,
+    ParseArtifact,
+    PortalEdge,
+    PortalHostDecision,
+    PortalNode,
     PortalUser,
     PortalUserSubscription,
+    RawArtifact,
     RawDatasetArchive,
     School,
     UserEvent,
+    WorkflowRun,
+    WorkflowStep,
 )
 from ..schemas import (
     AdminAuditItem,
@@ -34,6 +42,13 @@ from ..schemas import (
     AdminBootstrapSchoolRequest,
     AdminContentFingerprintStatsResponse,
     AdminContentExplainResponse,
+    AdminGovernanceActionItem,
+    AdminPortalEdgeItem,
+    AdminPortalHostDecisionItem,
+    AdminPortalNodeItem,
+    AdminWorkflowArtifactItem,
+    AdminWorkflowDetailResponse,
+    AdminWorkflowStepItem,
     AdjustmentIntelligenceBreakdownItem,
     AdjustmentMentorRadarSchoolItem,
     AdjustmentIntelligenceResponse,
@@ -1153,6 +1168,200 @@ def get_content_explain(
         classification_state=classification.classification_state,
         visibility=classification.visibility,
         explain_payload=classification.explain_payload or {},
+    )
+
+
+@router.get("/workflows/{workflow_run_id}", response_model=AdminWorkflowDetailResponse)
+def get_workflow_detail(
+    workflow_run_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminWorkflowDetailResponse:
+    require_admin_request(request)
+    run = db.query(WorkflowRun).filter(WorkflowRun.id == workflow_run_id).one_or_none()
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="workflow run not found")
+
+    steps = (
+        db.query(WorkflowStep)
+        .filter(WorkflowStep.run_id == run.id)
+        .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+        .all()
+    )
+    step_ids = [step.id for step in steps]
+    nodes = (
+        db.query(PortalNode)
+        .filter(PortalNode.scope_type == run.scope_type, PortalNode.scope_key == run.scope_key)
+        .order_by(PortalNode.created_at.asc(), PortalNode.id.asc())
+        .all()
+    )
+    node_ids = [node.id for node in nodes]
+    edges = (
+        db.query(PortalEdge)
+        .filter(
+            PortalEdge.from_node_id.in_(node_ids) if node_ids else False,
+            PortalEdge.to_node_id.in_(node_ids) if node_ids else False,
+        )
+        .order_by(PortalEdge.created_at.asc(), PortalEdge.id.asc())
+        .all()
+        if node_ids
+        else []
+    )
+    host_decisions = (
+        db.query(PortalHostDecision)
+        .filter(
+            PortalHostDecision.scope_type == run.scope_type,
+            PortalHostDecision.scope_key == run.scope_key,
+        )
+        .order_by(PortalHostDecision.created_at.asc(), PortalHostDecision.id.asc())
+        .all()
+    )
+    raw_artifacts = (
+        db.query(RawArtifact)
+        .filter(RawArtifact.workflow_step_id.in_(step_ids))
+        .order_by(RawArtifact.created_at.asc(), RawArtifact.id.asc())
+        .all()
+        if step_ids
+        else []
+    )
+    parse_artifacts = (
+        db.query(ParseArtifact)
+        .filter(ParseArtifact.workflow_step_id.in_(step_ids))
+        .order_by(ParseArtifact.created_at.asc(), ParseArtifact.id.asc())
+        .all()
+        if step_ids
+        else []
+    )
+    governance_actions = (
+        db.query(GovernanceAction)
+        .filter(
+            or_(
+                GovernanceAction.entity_id == run.id,
+                (
+                    (GovernanceAction.scope_type == run.scope_type)
+                    & (GovernanceAction.scope_key == run.scope_key)
+                ),
+            )
+        )
+        .order_by(GovernanceAction.created_at.asc(), GovernanceAction.id.asc())
+        .all()
+    )
+    audit_event(db, request, "admin.workflow_detail", None, {"workflow_run_id": run.id})
+    return AdminWorkflowDetailResponse(
+        workflow_run_id=run.id,
+        workflow_type=run.workflow_type,
+        scope_type=run.scope_type,  # type: ignore[arg-type]
+        scope_key=run.scope_key,
+        scope_label=run.scope_label,
+        status=run.status,
+        request_payload=run.request_payload or {},
+        result_payload=run.result_payload or {},
+        error_message=run.error_message,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        created_at=run.created_at,
+        updated_at=run.updated_at,
+        steps=[
+            AdminWorkflowStepItem(
+                id=step.id,
+                parent_step_id=step.parent_step_id,
+                step_type=step.step_type,
+                scope_type=step.scope_type,  # type: ignore[arg-type]
+                scope_key=step.scope_key,
+                host_key=step.host_key,
+                status=step.status,
+                attempt_count=step.attempt_count,
+                max_attempts=step.max_attempts,
+                timeout_seconds=step.timeout_seconds,
+                idempotency_key=step.idempotency_key,
+                available_at=step.available_at,
+                started_at=step.started_at,
+                finished_at=step.finished_at,
+                error_type=step.error_type,
+                error_message=step.error_message,
+                input_payload=step.input_payload or {},
+                result_payload=step.result_payload or {},
+            )
+            for step in steps
+        ],
+        portal_nodes=[
+            AdminPortalNodeItem(
+                id=node.id,
+                node_type=node.node_type,
+                url=node.url,
+                host=node.host,
+                title=node.title,
+                status=node.status,
+                evidence=node.evidence or {},
+                created_at=node.created_at,
+                updated_at=node.updated_at,
+            )
+            for node in nodes
+        ],
+        portal_edges=[
+            AdminPortalEdgeItem(
+                id=edge.id,
+                from_node_id=edge.from_node_id,
+                to_node_id=edge.to_node_id,
+                relation_type=edge.relation_type,
+                evidence=edge.evidence or {},
+                created_at=edge.created_at,
+            )
+            for edge in edges
+        ],
+        host_decisions=[
+            AdminPortalHostDecisionItem(
+                id=decision.id,
+                family=decision.family,
+                selected_host=decision.selected_host,
+                candidate_hosts=list(decision.candidate_hosts or []),
+                confidence=decision.confidence,
+                rule_version=decision.rule_version,
+                decision_source=decision.decision_source,
+                manual_override=decision.manual_override,
+                status=decision.status,
+                evidence=decision.evidence or {},
+                created_at=decision.created_at,
+                updated_at=decision.updated_at,
+            )
+            for decision in host_decisions
+        ],
+        raw_artifacts=[
+            AdminWorkflowArtifactItem(
+                id=artifact.id,
+                workflow_step_id=artifact.workflow_step_id,
+                artifact_type=artifact.artifact_type,
+                source_url=artifact.source_url,
+                payload=artifact.payload or {},
+                headers=artifact.headers or {},
+                created_at=artifact.created_at,
+            )
+            for artifact in raw_artifacts
+        ],
+        parse_artifacts=[
+            AdminWorkflowArtifactItem(
+                id=artifact.id,
+                workflow_step_id=artifact.workflow_step_id,
+                artifact_type=artifact.artifact_type,
+                source_url=artifact.source_url,
+                payload=artifact.payload or {},
+                headers={},
+                created_at=artifact.created_at,
+            )
+            for artifact in parse_artifacts
+        ],
+        governance_actions=[
+            AdminGovernanceActionItem(
+                id=item.id,
+                entity_type=item.entity_type,
+                entity_id=item.entity_id,
+                action_type=item.action_type,
+                actor_account_id=item.actor_account_id,
+                payload=item.payload or {},
+                created_at=item.created_at,
+            )
+            for item in governance_actions
+        ],
     )
 
 

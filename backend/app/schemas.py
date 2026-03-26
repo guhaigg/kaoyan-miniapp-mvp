@@ -825,6 +825,106 @@ class AdminContentExplainResponse(BaseModel):
     explain_payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class AdminWorkflowStepItem(BaseModel):
+    id: str
+    parent_step_id: str | None = None
+    step_type: str
+    scope_type: Literal["school", "department"]
+    scope_key: str
+    host_key: str | None = None
+    status: str
+    attempt_count: int
+    max_attempts: int
+    timeout_seconds: int
+    idempotency_key: str | None = None
+    available_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminPortalNodeItem(BaseModel):
+    id: str
+    node_type: str
+    url: str
+    host: str | None = None
+    title: str | None = None
+    status: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminPortalEdgeItem(BaseModel):
+    id: str
+    from_node_id: str
+    to_node_id: str
+    relation_type: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class AdminPortalHostDecisionItem(BaseModel):
+    id: str
+    family: str
+    selected_host: str | None = None
+    candidate_hosts: list[str] = Field(default_factory=list)
+    confidence: float
+    rule_version: str
+    decision_source: str
+    manual_override: int
+    status: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminWorkflowArtifactItem(BaseModel):
+    id: str
+    workflow_step_id: str
+    artifact_type: str
+    source_url: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    headers: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class AdminGovernanceActionItem(BaseModel):
+    id: str
+    entity_type: str
+    entity_id: str
+    action_type: str
+    actor_account_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class AdminWorkflowDetailResponse(BaseModel):
+    workflow_run_id: str
+    workflow_type: str
+    scope_type: Literal["school", "department"]
+    scope_key: str
+    scope_label: str | None = None
+    status: str
+    request_payload: dict[str, Any] = Field(default_factory=dict)
+    result_payload: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    steps: list[AdminWorkflowStepItem] = Field(default_factory=list)
+    portal_nodes: list[AdminPortalNodeItem] = Field(default_factory=list)
+    portal_edges: list[AdminPortalEdgeItem] = Field(default_factory=list)
+    host_decisions: list[AdminPortalHostDecisionItem] = Field(default_factory=list)
+    raw_artifacts: list[AdminWorkflowArtifactItem] = Field(default_factory=list)
+    parse_artifacts: list[AdminWorkflowArtifactItem] = Field(default_factory=list)
+    governance_actions: list[AdminGovernanceActionItem] = Field(default_factory=list)
+
+
 class MonitorTargetCreateRequest(BaseModel):
     scope_type: Literal["school", "department", "section"]
     school_id: str | None = None

@@ -45,6 +45,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - `POST /api/v1/admin/rebuilds` (requires portal admin login)
 - `POST /api/v1/admin/contents/{content_id}/reclassify` (requires portal admin login)
 - `GET /api/v1/admin/contents/{content_id}/explain` (requires portal admin login)
+- `GET /api/v1/admin/workflows/{workflow_run_id}` (requires portal admin login)
 - `POST /api/v1/monitoring/targets` (Phase 1 contract: premium user/admin)
 - `GET /api/v1/monitoring/targets` (Phase 1 contract: premium user/admin, scoped to current user unless admin)
 - `PATCH /api/v1/monitoring/targets/{target_id}` (Phase 1 contract: premium user/admin)
@@ -181,6 +182,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Legacy `crawl_jobs(job_kind=family_discovery)` can now be configured with `workflow_handoff=v2`. In that mode the worker creates a V2 `scope_rebuild` run from explicit `homepage_url/seed_urls` or maintained canonical seeds, instead of executing the legacy candidate-url discovery branch.
 - Legacy `ensure_*_search_bootstrap` compatibility helpers now default to queuing `family_discovery` jobs with `workflow_handoff=v2` whenever canonical/doc seeds are available. Schools without explicit maintained seeds still fall back to the legacy discovery queue for now.
 - For V2 handoff jobs, `homepage_url + seed_urls` are the only discovery inputs. `candidate_urls` remains in the payload only as a backward-compatible result field and is no longer used to drive discovery.
+- Governance now has a minimal read path for workflow-backed assets: `GET /api/v1/admin/workflows/{workflow_run_id}` returns the workflow run, steps, scoped portal graph, host decisions, artifacts, and governance actions in one response. This follows the same practical principle highlighted in the Yanbot notes: origin/channel assets must stay inspectable and governable.
 - OCR is now an explicit async step. `retry-parse` only reruns file parsing; `retry-ocr` enqueues a V2 `ocr_enqueue` workflow step.
 - API process no longer runs the crawl worker loop. V2 steps are consumed by the standalone worker entrypoint `python -m app.workers.crawler_v2_worker`.
 - Announcement visibility is now persisted in `content_classifications` and reused by search and premium monitoring instead of recomputing separate visibility decisions per surface.

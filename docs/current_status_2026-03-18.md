@@ -406,6 +406,7 @@
 - legacy `family_discovery` job 已新增受控 handoff 路径：带 `workflow_handoff=v2` 时，会直接转成 V2 `scope_rebuild` workflow，并优先使用显式 seed 或维护好的 canonical seed
 - legacy `ensure_*_search_bootstrap` 已开始默认排 V2 handoff job；只有缺少显式维护 seed 的学校才继续 fallback 到旧 discovery queue
 - 对这些 V2 handoff job，真实发现输入已经切到 `homepage_url + seed_urls`，旧 `candidate_urls` 只保留为兼容返回字段
+- 已新增 `GET /api/v1/admin/workflows/{id}`，可以直接查看某次 bootstrap/rebuild 的 step、portal graph、host decision、artifact 和治理动作；这也是参考 `yanbot` 笔记后优先补的治理能力
 
 当前边界：
 

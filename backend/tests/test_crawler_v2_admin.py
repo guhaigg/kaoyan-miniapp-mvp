@@ -69,6 +69,31 @@ def test_admin_bootstrap_school_enqueues_workflow_and_worker_persists_v2_graph(c
 
     with SessionLocal() as db:
         run = db.query(WorkflowRun).filter(WorkflowRun.id == payload["workflow_run_id"]).one()
+        db.add(
+            GovernanceAction(
+                entity_type="workflow_run",
+                entity_id="foreign-run",
+                scope_type="department",
+                scope_key=run.scope_key,
+                action_type="bootstrap.foreign_scope",
+                payload={},
+            )
+        )
+        db.commit()
+
+    detail_response = client.get(f"/api/v1/admin/workflows/{payload['workflow_run_id']}", headers=_admin_headers())
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["workflow_run_id"] == payload["workflow_run_id"]
+    assert [item["node_type"] for item in detail_payload["portal_nodes"]] == ["homepage", "seed", "section_candidate"]
+    assert [item["family"] for item in detail_payload["host_decisions"]] == ["announcement"]
+    assert [item["artifact_type"] for item in detail_payload["raw_artifacts"]] == ["bootstrap_input"]
+    assert [item["artifact_type"] for item in detail_payload["parse_artifacts"]] == ["section_candidates"]
+    assert detail_payload["steps"][0]["step_type"] == "school_portal_discovery"
+    assert [item["action_type"] for item in detail_payload["governance_actions"]] == ["bootstrap.completed"]
+
+    with SessionLocal() as db:
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == payload["workflow_run_id"]).one()
         step = db.query(WorkflowStep).filter(WorkflowStep.id == payload["step_id"]).one()
         section = db.query(SiteSection).filter(SiteSection.school.has(name="Workflow University")).one()
         nodes = db.query(PortalNode).filter(PortalNode.scope_key == run.scope_key).all()
