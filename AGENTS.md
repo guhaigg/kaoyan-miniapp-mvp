@@ -40,6 +40,26 @@ If any conflict appears, follow the stricter rule.
 - Install missing but necessary skills via `skill-installer`.
 - If a skill fails, continue with a safe fallback and report the fallback.
 
+## 5.1) Superpowers Workflow Rules
+
+This repository adopts the Superpowers-style execution flow for non-trivial work.
+
+- Default workflow for feature work, debugging, refactors, infra changes, and larger reviews:
+  1. `brainstorming`
+  2. `writing-plans`
+  3. `executing-plans` or `subagent-driven-development`
+  4. `test-driven-development` when practical
+  5. `requesting-code-review`
+  6. `finishing-a-development-branch`
+- Do not jump straight into broad code edits for non-trivial tasks unless the user explicitly asks for a fast tactical fix.
+- For trivial one-file or one-command tasks, a lightweight direct path is acceptable, but still keep the same discipline:
+  - clarify the ask
+  - make the smallest correct change
+  - verify it
+  - summarize it
+- When the runtime has the corresponding Superpowers skills available, prefer using those skills explicitly instead of ad-hoc equivalents.
+- If any Superpowers workflow step conflicts with the repository's stricter rules on validation, security, deployment, or documentation, the repository rules win.
+
 ## 6) Security Rules
 
 - Never commit real secrets (`.env`, PAT, AppSecret, DB passwords).

@@ -49,6 +49,15 @@ Production currently uses:
 - For larger frontend changes, prefer targeted edits over broad refactors.
 - Never commit secrets, tokens, database passwords, or `.env` files.
 - If behavior, deployment, process, or architecture changes, update docs in the same task.
+- For non-trivial work, follow the Superpowers workflow by default:
+  1. `brainstorming`
+  2. `writing-plans`
+  3. `executing-plans` or `subagent-driven-development`
+  4. `test-driven-development` when practical
+  5. `requesting-code-review`
+  6. `finishing-a-development-branch`
+- For small tactical fixes, you may compress the flow, but do not skip clarification, verification, or a final review mindset.
+- If Superpowers skills are available in the runtime, prefer them over improvised local workflow.
 
 ## Git Workflow
 
