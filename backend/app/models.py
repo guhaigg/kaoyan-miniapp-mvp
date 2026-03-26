@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from datetime import datetime, timezone
 
@@ -10,6 +11,10 @@ from .db import Base
 
 def new_id() -> str:
     return str(uuid.uuid4())
+
+
+def sha256_hex(value: str | None) -> str:
+    return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
 
 def utcnow() -> datetime:
@@ -202,7 +207,7 @@ class ContentSnapshot(Base):
 class PortalNode(Base):
     __tablename__ = "portal_nodes"
     __table_args__ = (
-        UniqueConstraint("scope_type", "scope_key", "node_type", "url", name="uq_portal_nodes_scope_type_url"),
+        UniqueConstraint("scope_type", "scope_key", "node_type", "url_hash", name="uq_portal_nodes_scope_type_url_hash"),
         Index("ix_portal_nodes_scope_status", "scope_type", "scope_key", "status"),
     )
 
@@ -213,6 +218,7 @@ class PortalNode(Base):
     scope_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     node_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    url_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     host: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="candidate", nullable=False, index=True)

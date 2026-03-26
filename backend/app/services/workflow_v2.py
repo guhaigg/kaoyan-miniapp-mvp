@@ -25,6 +25,7 @@ from ..models import (
     SiteSection,
     WorkflowRun,
     WorkflowStep,
+    sha256_hex,
     utcnow,
 )
 from .classification import sync_content_classification
@@ -303,7 +304,7 @@ def _ensure_portal_node(
             PortalNode.scope_type == scope_type,
             PortalNode.scope_key == scope_key,
             PortalNode.node_type == node_type,
-            PortalNode.url == url,
+            PortalNode.url_hash == sha256_hex(url),
         )
         .one_or_none()
     )
@@ -318,6 +319,7 @@ def _ensure_portal_node(
         )
         db.add(row)
     row.host = _host_from_url(url)
+    row.url_hash = sha256_hex(url)
     row.title = title
     row.status = status
     row.evidence = evidence
