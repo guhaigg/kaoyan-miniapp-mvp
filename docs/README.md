@@ -37,6 +37,7 @@
 - [Crawler V2 完全迁移总体架构（2026-03-26）](./crawler_v2_full_migration_architecture_2026-03-26.md)
 - [通知实时链路（Outbox + SSE）](./notification_realtime_architecture_2026-03-17.md)
 - [高校官网发现与公告情报管线方案（2026-03-18）](./school_notice_discovery_pipeline_2026-03-18.md)
+- [yanbot 公开侧拆解与可借鉴点（2026-03-26）](./yanbot_public_reverse_engineering_notes_2026-03-26.md)
 
 ### 2.3 开发与发布
 
