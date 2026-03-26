@@ -27,6 +27,7 @@ import {
   fetchSiteSections,
   markAdminPaymentOrderPaid,
   previewSiteSectionSelectors,
+  refreshAdminAnnouncementFoundation,
   reclassifyAdminContent,
   resetAdminUserPassword,
   promoteAdminUser,
@@ -342,6 +343,22 @@ export function useAdminAnnouncementRebuildMutation() {
         homepage_url: payload.homepageUrl ?? null,
         seed_urls: payload.seedUrls,
         max_sections: payload.maxSections,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin", "workflows"] });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
+    },
+  });
+}
+
+export function useAdminAnnouncementFoundationRefreshMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { schoolNames: string[]; dryRun: boolean; sources: string[] }) =>
+      refreshAdminAnnouncementFoundation({
+        school_names: payload.schoolNames,
+        dry_run: payload.dryRun,
+        sources: payload.sources,
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin", "workflows"] });

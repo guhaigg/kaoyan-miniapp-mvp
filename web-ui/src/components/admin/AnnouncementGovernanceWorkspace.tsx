@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, ShieldAlert, Waypoints } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import {
+  useAdminAnnouncementFoundationRefreshMutation,
   useAdminAnnouncementDepartmentBootstrapMutation,
   useAdminAnnouncementRebuildMutation,
   useAdminAnnouncementSchoolBootstrapMutation,
@@ -74,6 +75,8 @@ export default function AnnouncementGovernanceWorkspace({ enabled }: { enabled: 
   const [rebuildDepartmentName, setRebuildDepartmentName] = useState("");
   const [rebuildHomepage, setRebuildHomepage] = useState("");
   const [rebuildSeeds, setRebuildSeeds] = useState("");
+  const [refreshSchoolNames, setRefreshSchoolNames] = useState("");
+  const [refreshDryRun, setRefreshDryRun] = useState(false);
   const [contentIdInput, setContentIdInput] = useState("");
   const [explainContentId, setExplainContentId] = useState<string | null>(null);
 
@@ -92,6 +95,7 @@ export default function AnnouncementGovernanceWorkspace({ enabled }: { enabled: 
   const schoolBootstrapMutation = useAdminAnnouncementSchoolBootstrapMutation();
   const departmentBootstrapMutation = useAdminAnnouncementDepartmentBootstrapMutation();
   const rebuildMutation = useAdminAnnouncementRebuildMutation();
+  const foundationRefreshMutation = useAdminAnnouncementFoundationRefreshMutation();
   const reclassifyMutation = useAdminContentReclassifyMutation();
 
   const items = useMemo(() => workflowsQuery.data?.items || [], [workflowsQuery.data?.items]);
@@ -180,6 +184,21 @@ export default function AnnouncementGovernanceWorkspace({ enabled }: { enabled: 
       setMessage(`内容重分类已入队：${response.workflow_run_id}`);
     } catch (error) {
       setMessage(`内容重分类失败：${errorMessage(error)}`);
+    }
+  }
+
+  async function submitFoundationRefresh(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      const response = await foundationRefreshMutation.mutateAsync({
+        schoolNames: parseSeedUrls(refreshSchoolNames),
+        dryRun: refreshDryRun,
+        sources: ["chsi", "official_rosters", "school_homepages"],
+      });
+      setSelectedWorkflowId(response.workflow_run_id);
+      setMessage(`Announcement foundation refresh queued: ${response.workflow_run_id}`);
+    } catch (error) {
+      setMessage(`Announcement foundation refresh failed: ${errorMessage(error)}`);
     }
   }
 
@@ -358,6 +377,33 @@ export default function AnnouncementGovernanceWorkspace({ enabled }: { enabled: 
             <input className={INPUT_CLASS} value={rebuildHomepage} onChange={(event) => setRebuildHomepage(event.target.value)} placeholder="homepage_url（学校可留空）" />
             <textarea className={INPUT_CLASS} value={rebuildSeeds} onChange={(event) => setRebuildSeeds(event.target.value)} placeholder="seed_urls" />
             <button type="submit" disabled={rebuildMutation.isPending} className="w-full rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-semibold text-amber-50 disabled:opacity-70">{rebuildMutation.isPending ? "提交中..." : "提交 rebuild"}</button>
+          </div>
+        </form>
+      </div>
+      <div className="mt-6">
+        <form onSubmit={submitFoundationRefresh} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-3 text-sm font-semibold text-white">Announcement Foundation Refresh</div>
+          <div className="grid gap-3 xl:grid-cols-[1fr,auto,auto]">
+            <textarea
+              className={INPUT_CLASS}
+              value={refreshSchoolNames}
+              onChange={(event) => setRefreshSchoolNames(event.target.value)}
+              placeholder="Optional school_names, one per line or comma separated"
+            />
+            <label className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-200">
+              <input type="checkbox" checked={refreshDryRun} onChange={(event) => setRefreshDryRun(event.target.checked)} />
+              dry_run
+            </label>
+            <button
+              type="submit"
+              disabled={foundationRefreshMutation.isPending}
+              className="rounded-2xl border border-fuchsia-500/30 bg-fuchsia-500/15 px-4 py-3 text-sm font-semibold text-fuchsia-50 disabled:opacity-70"
+            >
+              {foundationRefreshMutation.isPending ? "Submitting..." : "Refresh catalog"}
+            </button>
+          </div>
+          <div className="mt-3 text-xs leading-6 text-slate-400">
+            Builds school / department / major snapshots and refreshes the announcement seed registry through workflow_v2.
           </div>
         </form>
       </div>

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import timezone, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -40,8 +41,15 @@ WORKFLOW_TYPE_FILE_FETCH = "file_fetch"
 WORKFLOW_TYPE_FILE_PARSE = "file_parse"
 WORKFLOW_TYPE_SCOPE_REBUILD = "scope_rebuild"
 WORKFLOW_TYPE_POLLUTION_CLEANUP = "pollution_cleanup"
+WORKFLOW_TYPE_ANNOUNCEMENT_CATALOG_REFRESH = "announcement_catalog_refresh"
 STEP_TYPE_OCR_ENQUEUE = "ocr_enqueue"
 STEP_TYPE_CONTENT_RECLASSIFY = "content_reclassify"
+STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG = "fetch_chsi_school_catalog"
+STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG = "fetch_chsi_major_catalog"
+STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS = "fetch_official_seed_rosters"
+STEP_TYPE_FETCH_SCHOOL_HOMEPAGES = "fetch_school_homepages"
+STEP_TYPE_BUILD_DEPARTMENT_CANDIDATES = "build_department_candidates"
+STEP_TYPE_MERGE_ANNOUNCEMENT_SEED_REGISTRY = "merge_announcement_seed_registry"
 RULE_VERSION = "crawler_v2_explicit_seed_v2"
 DEFAULT_BOOTSTRAP_FAMILIES = frozenset({"admissions", "notice"})
 SUPPORTED_BOOTSTRAP_FAMILIES = frozenset({"admissions", "notice", "adjustment"})
@@ -138,6 +146,12 @@ class PollutionCleanupPayload(WorkflowPayloadModel):
     scope_key: str
 
 
+class AnnouncementCatalogRefreshPayload(WorkflowPayloadModel):
+    school_names: list[str] = Field(default_factory=list)
+    dry_run: bool = False
+    sources: list[str] = Field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class StepPolicy:
     step_type: str
@@ -211,6 +225,48 @@ STEP_POLICIES: dict[str, StepPolicy] = {
         retry_backoff_seconds=0,
         host_limit=1,
     ),
+    STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG: StepPolicy(
+        step_type=STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG,
+        timeout_seconds=300,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=1,
+    ),
+    STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG: StepPolicy(
+        step_type=STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG,
+        timeout_seconds=300,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=1,
+    ),
+    STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS: StepPolicy(
+        step_type=STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS,
+        timeout_seconds=180,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=1,
+    ),
+    STEP_TYPE_FETCH_SCHOOL_HOMEPAGES: StepPolicy(
+        step_type=STEP_TYPE_FETCH_SCHOOL_HOMEPAGES,
+        timeout_seconds=180,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=1,
+    ),
+    STEP_TYPE_BUILD_DEPARTMENT_CANDIDATES: StepPolicy(
+        step_type=STEP_TYPE_BUILD_DEPARTMENT_CANDIDATES,
+        timeout_seconds=300,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=1,
+    ),
+    STEP_TYPE_MERGE_ANNOUNCEMENT_SEED_REGISTRY: StepPolicy(
+        step_type=STEP_TYPE_MERGE_ANNOUNCEMENT_SEED_REGISTRY,
+        timeout_seconds=180,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=1,
+    ),
     STEP_TYPE_OCR_ENQUEUE: StepPolicy(
         step_type=STEP_TYPE_OCR_ENQUEUE,
         timeout_seconds=60,
@@ -237,6 +293,14 @@ def _host_from_url(url: str | None) -> str | None:
     if not text:
         return None
     return urlparse(text).hostname or None
+
+
+def _as_utc(value):
+    if value is None:
+        return None
+    if getattr(value, "tzinfo", None) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _scope_key(*parts: str | None) -> str:
@@ -797,6 +861,39 @@ def create_scope_rebuild_run(
     )
 
 
+def create_announcement_catalog_refresh_run(
+    db: Session,
+    *,
+    actor_username: str | None,
+    school_names: list[str] | None = None,
+    dry_run: bool = False,
+    sources: list[str] | None = None,
+) -> tuple[WorkflowRun, WorkflowStep]:
+    from .announcement_foundation import ANNOUNCEMENT_FOUNDATION_SCOPE_KEY
+
+    normalized_school_names = list(
+        dict.fromkeys(str(item or "").strip() for item in (school_names or []) if str(item or "").strip())
+    )
+    normalized_sources = list(dict.fromkeys(str(item or "").strip() for item in (sources or []) if str(item or "").strip()))
+    payload = AnnouncementCatalogRefreshPayload(
+        school_names=normalized_school_names,
+        dry_run=bool(dry_run),
+        sources=normalized_sources,
+    ).model_dump()
+    return _create_run_with_step(
+        db,
+        workflow_type=WORKFLOW_TYPE_ANNOUNCEMENT_CATALOG_REFRESH,
+        step_type=STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG,
+        scope_type="school",
+        scope_key=ANNOUNCEMENT_FOUNDATION_SCOPE_KEY,
+        scope_label="announcement foundation",
+        actor_username=actor_username,
+        input_payload=payload,
+        host_key="yz.chsi.com.cn",
+        dedupe_mode="run_scope",
+    )
+
+
 def _scope_parts_for_section(section: SiteSection | None) -> tuple[str, str | None, str]:
     school_name = section.school.name if section and section.school else ""
     department_name = section.department.name if section and section.department else None
@@ -1114,8 +1211,8 @@ def _refresh_run_status(db: Session, run_id: str) -> None:
         run.finished_at = utcnow()
         return
 
-    started_values = [step.started_at for step in steps if step.started_at is not None]
-    finished_values = [step.finished_at for step in steps if step.finished_at is not None]
+    started_values = [_as_utc(step.started_at) for step in steps if step.started_at is not None]
+    finished_values = [_as_utc(step.finished_at) for step in steps if step.finished_at is not None]
     latest_result = next((dict(step.result_payload or {}) for step in reversed(steps) if step.result_payload), {})
 
     run.started_at = min(started_values) if started_values else run.started_at
@@ -1218,6 +1315,152 @@ def _process_scope_rebuild_step(db: Session, step: WorkflowStep) -> dict[str, An
         "child_step_id": child.id,
         "child_step_type": child.step_type,
         "seed_source": child_payload.get("seed_source"),
+    }
+
+
+def _announcement_catalog_refresh_host_key(step_type: str) -> str | None:
+    if step_type in {STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG, STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG}:
+        return "yz.chsi.com.cn"
+    if step_type == STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS:
+        return "yz.chsi.com.cn"
+    if step_type == STEP_TYPE_FETCH_SCHOOL_HOMEPAGES:
+        return "raw.githubusercontent.com"
+    return None
+
+
+def _queue_next_announcement_catalog_step(
+    db: Session,
+    *,
+    step: WorkflowStep,
+    next_step_type: str | None,
+    payload: AnnouncementCatalogRefreshPayload,
+) -> WorkflowStep | None:
+    if next_step_type is None:
+        return None
+    run = db.query(WorkflowRun).filter(WorkflowRun.id == step.run_id).one()
+    return _create_child_step(
+        db,
+        run=run,
+        parent_step=step,
+        step_type=next_step_type,
+        host_key=_announcement_catalog_refresh_host_key(next_step_type),
+        input_payload=payload.model_dump(),
+    )
+
+
+def _process_fetch_chsi_school_catalog_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import (
+        foundation_paths,
+        enrich_school_catalog_snapshot,
+        fetch_chsi_school_catalog,
+    )
+
+    payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
+    paths = foundation_paths()
+    schools = fetch_chsi_school_catalog(school_names=payload.school_names or None)
+    enriched = enrich_school_catalog_snapshot(schools, paths=paths)
+    next_step = _queue_next_announcement_catalog_step(
+        db,
+        step=step,
+        next_step_type=STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG,
+        payload=payload,
+    )
+    return {
+        "school_count": len(enriched),
+        "base_dir": str(paths.base_dir),
+        "child_step_id": next_step.id if next_step is not None else None,
+    }
+
+
+def _process_fetch_chsi_major_catalog_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import fetch_chsi_major_catalog, foundation_paths
+
+    payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
+    paths = foundation_paths()
+    schools = list(json.loads(paths.school_catalog.read_text(encoding="utf-8"))) if paths.school_catalog.exists() else []
+    majors = fetch_chsi_major_catalog(schools, paths=paths)
+    next_step = _queue_next_announcement_catalog_step(
+        db,
+        step=step,
+        next_step_type=STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS,
+        payload=payload,
+    )
+    return {
+        "major_count": len(majors),
+        "base_dir": str(paths.base_dir),
+        "child_step_id": next_step.id if next_step is not None else None,
+    }
+
+
+def _process_fetch_official_seed_rosters_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import fetch_official_seed_rosters, foundation_paths
+
+    payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
+    paths = foundation_paths()
+    records = fetch_official_seed_rosters(paths=paths)
+    next_step = _queue_next_announcement_catalog_step(
+        db,
+        step=step,
+        next_step_type=STEP_TYPE_FETCH_SCHOOL_HOMEPAGES,
+        payload=payload,
+    )
+    return {
+        "official_seed_candidate_count": len(records),
+        "base_dir": str(paths.base_dir),
+        "child_step_id": next_step.id if next_step is not None else None,
+    }
+
+
+def _process_fetch_school_homepages_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import fetch_school_homepages, foundation_paths
+
+    payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
+    paths = foundation_paths()
+    rows = fetch_school_homepages(paths=paths)
+    next_step = _queue_next_announcement_catalog_step(
+        db,
+        step=step,
+        next_step_type=STEP_TYPE_BUILD_DEPARTMENT_CANDIDATES,
+        payload=payload,
+    )
+    return {
+        "homepage_count": len(rows),
+        "base_dir": str(paths.base_dir),
+        "child_step_id": next_step.id if next_step is not None else None,
+    }
+
+
+def _process_build_department_candidates_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import build_department_candidates, foundation_paths
+
+    payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
+    paths = foundation_paths()
+    schools = list(json.loads(paths.school_catalog.read_text(encoding="utf-8"))) if paths.school_catalog.exists() else []
+    departments, candidates = build_department_candidates(schools, paths=paths)
+    next_step = _queue_next_announcement_catalog_step(
+        db,
+        step=step,
+        next_step_type=STEP_TYPE_MERGE_ANNOUNCEMENT_SEED_REGISTRY,
+        payload=payload,
+    )
+    return {
+        "department_count": len(departments),
+        "department_candidate_count": len(candidates),
+        "base_dir": str(paths.base_dir),
+        "child_step_id": next_step.id if next_step is not None else None,
+    }
+
+
+def _process_merge_announcement_seed_registry_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import foundation_paths, merge_announcement_seed_registry
+
+    payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
+    paths = foundation_paths()
+    diff_payload = merge_announcement_seed_registry(paths=paths, dry_run=payload.dry_run)
+    return {
+        "base_dir": str(paths.base_dir),
+        "dry_run": payload.dry_run,
+        "registry_diff": diff_payload,
     }
 
 
@@ -1614,6 +1857,18 @@ class WorkflowEngine:
                         result = _process_detail_fetch_step(db, step)
                     elif step.step_type == WORKFLOW_TYPE_SCOPE_REBUILD:
                         result = _process_scope_rebuild_step(db, step)
+                    elif step.step_type == STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG:
+                        result = _process_fetch_chsi_school_catalog_step(db, step)
+                    elif step.step_type == STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG:
+                        result = _process_fetch_chsi_major_catalog_step(db, step)
+                    elif step.step_type == STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS:
+                        result = _process_fetch_official_seed_rosters_step(db, step)
+                    elif step.step_type == STEP_TYPE_FETCH_SCHOOL_HOMEPAGES:
+                        result = _process_fetch_school_homepages_step(db, step)
+                    elif step.step_type == STEP_TYPE_BUILD_DEPARTMENT_CANDIDATES:
+                        result = _process_build_department_candidates_step(db, step)
+                    elif step.step_type == STEP_TYPE_MERGE_ANNOUNCEMENT_SEED_REGISTRY:
+                        result = _process_merge_announcement_seed_registry_step(db, step)
                     elif step.step_type == WORKFLOW_TYPE_FILE_PARSE:
                         result = _process_file_parse_step(db, step)
                     elif step.step_type == STEP_TYPE_OCR_ENQUEUE:

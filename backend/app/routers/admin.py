@@ -41,6 +41,7 @@ from ..schemas import (
     AdminChangePasswordResponse,
     AdminBootstrapDepartmentRequest,
     AdminBootstrapSchoolRequest,
+    AdminAnnouncementFoundationRefreshRequest,
     AdminContentFingerprintStatsResponse,
     AdminContentExplainResponse,
     AdminGovernanceActionItem,
@@ -100,9 +101,10 @@ from ..services.account_access import (
     set_password_hash,
     upsert_premium_entitlement,
 )
-from ..services.canonical_scope_seeds import resolve_announcement_school_seed
+from ..services.canonical_scope_seeds import get_announcement_department_seed, resolve_announcement_school_seed
 from ..services.content import _build_content_fingerprint, upsert_content
 from ..services.workflow_v2 import (
+    create_announcement_catalog_refresh_run,
     create_department_bootstrap_run,
     create_school_bootstrap_run,
     create_scope_rebuild_run,
@@ -1232,10 +1234,18 @@ def create_scope_rebuild(
         resolved_homepage_url = resolved_seed.homepage_url
         resolved_seed_urls = list(resolved_seed.seed_urls)
     elif not resolved_homepage_url and not resolved_seed_urls:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="announcement department rebuild requires explicit seeds or a canonical seed registry entry",
+        resolved_department_seed = get_announcement_department_seed(
+            payload.school_name,
+            str(payload.department_name or "").strip(),
         )
+        if resolved_department_seed is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="announcement department rebuild requires explicit seeds or a canonical seed registry entry",
+            )
+        resolved_homepage_url = resolved_department_seed.homepage_url
+        resolved_seed_urls = list(resolved_department_seed.seed_urls)
+        seed_source = "canonical_registry"
     run, step = create_scope_rebuild_run(
         db,
         scope_type=payload.scope_type,
@@ -1266,6 +1276,45 @@ def create_scope_rebuild(
         step_id=step.id,
         workflow_type=run.workflow_type,
         scope_type=payload.scope_type,
+        scope_key=run.scope_key,
+        status=run.status,
+    )
+
+
+@router.post("/catalog-refreshes/announcement-foundation", response_model=AdminWorkflowTriggerResponse)
+def create_announcement_foundation_refresh(
+    payload: AdminAnnouncementFoundationRefreshRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminWorkflowTriggerResponse:
+    require_admin_request(request)
+    actor = get_admin_identity(request)
+    run, step = create_announcement_catalog_refresh_run(
+        db,
+        actor_username=actor,
+        school_names=payload.school_names,
+        dry_run=payload.dry_run,
+        sources=payload.sources,
+    )
+    db.commit()
+    audit_event(
+        db,
+        request,
+        "admin.announcement_foundation_refresh",
+        None,
+        {
+            "workflow_run_id": run.id,
+            "step_id": step.id,
+            "school_names": payload.school_names,
+            "dry_run": payload.dry_run,
+            "sources": payload.sources,
+        },
+    )
+    return AdminWorkflowTriggerResponse(
+        workflow_run_id=run.id,
+        step_id=step.id,
+        workflow_type=run.workflow_type,
+        scope_type="school",
         scope_key=run.scope_key,
         status=run.status,
     )

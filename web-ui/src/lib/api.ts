@@ -819,6 +819,12 @@ export type AdminWorkflowTriggerResponse = {
   status: string;
 };
 
+export type AdminAnnouncementFoundationRefreshRequest = {
+  school_names?: string[];
+  dry_run?: boolean;
+  sources?: string[];
+};
+
 export type AdminContentExplainResponse = {
   content_id: string;
   scope_type: "school" | "department";

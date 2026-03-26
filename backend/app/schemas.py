@@ -820,6 +820,12 @@ class AdminScopeRebuildRequest(BaseModel):
     max_sections: int = Field(default=12, ge=1, le=30)
 
 
+class AdminAnnouncementFoundationRefreshRequest(BaseModel):
+    school_names: list[str] = Field(default_factory=list, max_length=200)
+    dry_run: bool = False
+    sources: list[str] = Field(default_factory=list)
+
+
 class AdminContentExplainResponse(BaseModel):
     content_id: str
     scope_type: Literal["school", "department"]

@@ -6,6 +6,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
+from .announcement_foundation import load_announcement_seed_registry
+
 ANNOUNCEMENT_FAMILIES = ("admissions", "notice")
 _DOC_SEED_FILES = (
     "adjustment_announcement_2025_summary.json",
@@ -151,6 +153,49 @@ def _announcement_school_seed_registry() -> dict[str, CanonicalScopeSeed]:
             homepage_url=doc_seed_urls[0],
             seed_urls=_dedupe_texts(doc_seed_urls),
         )
+    for row in load_announcement_seed_registry():
+        if str(row.get("scope_type") or "").strip() != "school":
+            continue
+        school_name = str(row.get("school_name") or "").strip()
+        homepage_url = _normalize_url(row.get("homepage_url"))
+        seed_urls = _dedupe_texts(row.get("seed_urls") or [homepage_url])
+        if not school_name or not homepage_url or not seed_urls or school_name in registry:
+            continue
+        registry[school_name] = CanonicalScopeSeed(
+            scope_type="school",
+            school_name=school_name,
+            department_name=None,
+            families=ANNOUNCEMENT_FAMILIES,
+            homepage_url=homepage_url,
+            seed_urls=seed_urls,
+            deny_prefixes=_dedupe_texts(row.get("deny_prefixes") or []),
+            notes=str(row.get("notes") or "").strip() or None,
+        )
+    return registry
+
+
+@lru_cache(maxsize=1)
+def _announcement_department_seed_registry() -> dict[tuple[str, str], CanonicalScopeSeed]:
+    registry: dict[tuple[str, str], CanonicalScopeSeed] = {}
+    for row in load_announcement_seed_registry():
+        if str(row.get("scope_type") or "").strip() != "department":
+            continue
+        school_name = str(row.get("school_name") or "").strip()
+        department_name = str(row.get("department_name") or "").strip()
+        homepage_url = _normalize_url(row.get("homepage_url"))
+        seed_urls = _dedupe_texts(row.get("seed_urls") or [homepage_url])
+        if not school_name or not department_name or not homepage_url or not seed_urls:
+            continue
+        registry[(school_name, department_name)] = CanonicalScopeSeed(
+            scope_type="department",
+            school_name=school_name,
+            department_name=department_name,
+            families=ANNOUNCEMENT_FAMILIES,
+            homepage_url=homepage_url,
+            seed_urls=seed_urls,
+            deny_prefixes=_dedupe_texts(row.get("deny_prefixes") or []),
+            notes=str(row.get("notes") or "").strip() or None,
+        )
     return registry
 
 
@@ -160,6 +205,16 @@ def get_announcement_school_seed(school_name: str) -> CanonicalScopeSeed | None:
 
 def list_announcement_school_seeds() -> dict[str, CanonicalScopeSeed]:
     return dict(_announcement_school_seed_registry())
+
+
+def get_announcement_department_seed(school_name: str, department_name: str) -> CanonicalScopeSeed | None:
+    return _announcement_department_seed_registry().get(
+        (str(school_name or "").strip(), str(department_name or "").strip())
+    )
+
+
+def list_announcement_department_seeds() -> dict[tuple[str, str], CanonicalScopeSeed]:
+    return dict(_announcement_department_seed_registry())
 
 
 def resolve_announcement_school_seed(

@@ -1,0 +1,169 @@
+from __future__ import annotations
+
+import json
+import shutil
+import uuid
+from pathlib import Path
+
+from app.services import announcement_foundation
+from app.services.canonical_scope_seeds import (
+    _announcement_department_seed_registry,
+    _announcement_school_seed_registry,
+    get_announcement_department_seed,
+    get_announcement_school_seed,
+)
+
+def _temp_dir() -> Path:
+    root = Path("backend/tests/.tmp")
+    root.mkdir(parents=True, exist_ok=True)
+    path = root.resolve() / f"announcement-foundation-{uuid.uuid4().hex}"
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_refresh_announcement_foundation_builds_snapshots_and_registry(monkeypatch):
+    tmp_path = _temp_dir()
+    school_catalog_html = """
+    <html><body>
+      <a href="/sch/schoolInfo--schId-1001.dhtml">示例大学</a>
+      <div>北京 主管部门：教育部</div>
+      <a href="https://yz.chsi.com.cn/sch/?start=20">2</a>
+    </body></html>
+    """
+    school_detail_html = """
+    <html><body>
+      <a href="/sch/schoolInfo--schId-1001,categoryId-481347.dhtml">院系设置</a>
+      <a href="/sch/listYzZyjs--schId-1001,categoryId-692157514.dhtml">专业介绍</a>
+      <a href="/sch/viewBulletin--infoId-5001,categoryId-481379,schId-1001,mindex-12.dhtml">示例大学研究生招生信息</a>
+    </body></html>
+    """
+    school_bulletin_html = """
+    <html><body>
+      详见 <a href="https://yz.example.edu.cn/">示例大学研究生招生网</a>
+    </body></html>
+    """
+    department_listing_html = """
+    <html><body>
+      <a href="https://example.edu.cn/cs/">计算机学院</a>
+      <a href="https://example.edu.cn/math/">数学学院</a>
+      <a href="https://example.edu.cn/news/">新闻网</a>
+    </body></html>
+    """
+    major_listing_html = """
+    <html><body>
+      <h2>硕士专业</h2>
+      工学
+      <ul>
+        <li>计算机系统结构[081201]</li>
+        <li>计算机软件与理论[081202]</li>
+      </ul>
+      <h2>博士专业</h2>
+      工学
+      <ul>
+        <li>计算机应用技术[081203]</li>
+      </ul>
+    </body></html>
+    """
+    roster_html = """
+    <html><body>
+      <a href="https://yz.example.edu.cn/">示例大学研招信息网址</a>
+    </body></html>
+    """
+    homepage_json = [
+        {"school_name": "示例大学", "website": "https://www.example.edu.cn/"},
+    ]
+    text_map = {
+        announcement_foundation.CHSI_SCHOOL_CATALOG_URL: school_catalog_html,
+        "https://yz.chsi.com.cn/sch/?start=20": "<html><body></body></html>",
+        "https://yz.chsi.com.cn/sch/schoolInfo--schId-1001.dhtml": school_detail_html,
+        "https://yz.chsi.com.cn/sch/viewBulletin--infoId-5001,categoryId-481379,schId-1001,mindex-12.dhtml": school_bulletin_html,
+        "https://yz.chsi.com.cn/sch/schoolInfo--schId-1001,categoryId-481347.dhtml": department_listing_html,
+        "https://yz.chsi.com.cn/sch/listYzZyjs--schId-1001,categoryId-692157514.dhtml": major_listing_html,
+        announcement_foundation.OFFICIAL_SEED_ROSTER_SOURCES[0]["source_url"]: roster_html,
+    }
+
+    try:
+        monkeypatch.setenv("ANNOUNCEMENT_FOUNDATION_DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(announcement_foundation, "_fetch_text", lambda url, timeout=20: text_map[url])
+        monkeypatch.setattr(announcement_foundation, "_fetch_json", lambda url, timeout=20: homepage_json)
+
+        result = announcement_foundation.refresh_announcement_foundation(dry_run=False)
+
+        assert result["school_count"] == 1
+        assert result["department_count"] == 2
+        assert result["major_count"] == 3
+        assert result["official_seed_candidate_count"] == 1
+
+        school_snapshot = json.loads((tmp_path / announcement_foundation.SCHOOL_CATALOG_FILENAME).read_text(encoding="utf-8"))
+        assert school_snapshot[0]["school_name"] == "示例大学"
+        assert school_snapshot[0]["source_meta"]["seed_hint_urls"] == ["https://yz.example.edu.cn/"]
+
+        department_snapshot = json.loads((tmp_path / announcement_foundation.DEPARTMENT_CATALOG_FILENAME).read_text(encoding="utf-8"))
+        assert [item["department_name"] for item in department_snapshot] == ["计算机学院", "数学学院"]
+
+        major_snapshot = json.loads((tmp_path / announcement_foundation.MAJOR_CATALOG_FILENAME).read_text(encoding="utf-8"))
+        assert {(item["major_code"], item["degree_type"]) for item in major_snapshot} == {
+            ("081201", "master"),
+            ("081202", "master"),
+            ("081203", "doctor"),
+        }
+
+        registry = json.loads((tmp_path / announcement_foundation.ANNOUNCEMENT_SEED_REGISTRY_FILENAME).read_text(encoding="utf-8"))
+        assert registry[0]["school_name"] == "示例大学"
+        assert registry[0]["homepage_url"] == "https://yz.example.edu.cn/"
+        assert registry[0]["source_type"] == "official_roster"
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_canonical_scope_seeds_reads_json_registry_and_department_override(monkeypatch):
+    tmp_path = _temp_dir()
+    try:
+        monkeypatch.setenv("ANNOUNCEMENT_FOUNDATION_DATA_DIR", str(tmp_path))
+        (tmp_path / announcement_foundation.ANNOUNCEMENT_SEED_REGISTRY_FILENAME).write_text(
+            json.dumps(
+                [
+                    {
+                        "scope_type": "school",
+                        "school_name": "离线大学",
+                        "department_name": None,
+                        "homepage_url": "https://yz.offline.edu.cn/",
+                        "seed_urls": ["https://yz.offline.edu.cn/"],
+                        "source_type": "official_roster",
+                        "confidence": "high",
+                        "deny_prefixes": [],
+                        "notes": "offline test",
+                        "last_verified_at": "2026-03-26T00:00:00+00:00",
+                    },
+                    {
+                        "scope_type": "department",
+                        "school_name": "离线大学",
+                        "department_name": "计算机学院",
+                        "homepage_url": "https://yz.offline.edu.cn/cs/",
+                        "seed_urls": ["https://yz.offline.edu.cn/cs/"],
+                        "source_type": "manual_override",
+                        "confidence": "high",
+                        "deny_prefixes": [],
+                        "notes": "department review passed",
+                        "last_verified_at": "2026-03-26T00:00:00+00:00",
+                    },
+                ],
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        _announcement_school_seed_registry.cache_clear()
+        _announcement_department_seed_registry.cache_clear()
+
+        school_seed = get_announcement_school_seed("离线大学")
+        department_seed = get_announcement_department_seed("离线大学", "计算机学院")
+
+        assert school_seed is not None
+        assert school_seed.homepage_url == "https://yz.offline.edu.cn/"
+        assert department_seed is not None
+        assert department_seed.homepage_url == "https://yz.offline.edu.cn/cs/"
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)

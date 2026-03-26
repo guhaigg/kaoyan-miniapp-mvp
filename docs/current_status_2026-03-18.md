@@ -395,6 +395,7 @@
   - `POST /api/v1/admin/bootstrap/schools`
   - `POST /api/v1/admin/bootstrap/departments`
   - `POST /api/v1/admin/rebuilds`
+  - `POST /api/v1/admin/catalog-refreshes/announcement-foundation`
   - `GET /api/v1/admin/workflows`
   - `GET /api/v1/admin/workflows/{id}`
   - `POST /api/v1/admin/contents/{id}/reclassify`
@@ -410,8 +411,16 @@
 - 公告侧 handoff 的真实发现输入已经固定为 `homepage_url + seed_urls`；旧 `candidate_urls` 只保留为兼容返回字段，不再驱动 discovery
 - 已新增 `GET /api/v1/admin/workflows` 和 `GET /api/v1/admin/workflows/{id}`，可按 family / scope / status / workflow_type / host_key 过滤，并查看 normalized seed、seed source、lease / retry / timeout、terminal reason、artifact 和 classification evidence
 - Admin Web UI 已补公告治理工作区：可直接查看 workflow 列表与详情，提交 school / department bootstrap、scope rebuild，以及执行 content explain / reclassify
+- Admin Web UI 已新增公告基础资产刷新入口：可一键触发 `announcement_catalog_refresh`，生成学校/院系/专业离线快照和公告 seed registry
 - 公告 `retry-parse` 已切到 V2 `file_parse` step；legacy `crawl_jobs(file_parse)` 不再是公告文件解析的主执行面
 - monitoring / notification announcement 消费已统一到 persisted `content_classifications`；`contents.extra` 只保留为分类输入与解释证据，不再作为消费面的最终判定
+- 公告 canonical seed 现在支持从 `docs/data/announcement_seed_registry.json` 读取，代码内常量仅保留少量 manual override / deny-prefix 资产
+- 已新增离线 foundation 产物：
+  - `school_catalog_snapshot.json`
+  - `department_catalog_snapshot.json`
+  - `major_catalog_snapshot.json`
+  - `announcement_seed_registry.json`
+  运行时只读这些产物，不再在线猜学校/院系研招入口
 
 当前边界：
 

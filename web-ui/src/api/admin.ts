@@ -176,6 +176,13 @@ export const fetchAdminContentExplain = (contentId: string) =>
 export const reclassifyAdminContent = (contentId: string) =>
   api.post<AdminWorkflowTriggerResponse>(`/admin/contents/${encodeURIComponent(contentId)}/reclassify`).then((response) => response.data);
 
+export const refreshAdminAnnouncementFoundation = (payload?: {
+  school_names?: string[];
+  dry_run?: boolean;
+  sources?: string[];
+}) =>
+  api.post<AdminWorkflowTriggerResponse>("/admin/catalog-refreshes/announcement-foundation", payload || {}).then((response) => response.data);
+
 export const fetchSchoolImportSeedSummaries = () =>
   api.get<SchoolImportSeedSummaryListResponse>("/schools/import/seed-summaries").then((response) => response.data);
 
