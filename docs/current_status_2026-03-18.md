@@ -403,6 +403,7 @@
 - 学校级与院系级 bootstrap 已按 `scope_type + scope_key` 分轨，新的 workflow 路径不再把 `announcement_portal_caches.candidate_urls`、旧详情页 URL 或历史 `content.source_url` 当 discovery seed
 - school / department bootstrap 已开始真实写入 `portal_nodes / portal_edges / portal_host_decisions / raw_artifacts / parse_artifacts`
 - department bootstrap 若产出 school-scoped section，会直接终态失败并回滚本次部分写入，不再把 scope 错误当成可重试故障
+- legacy `family_discovery` job 已新增受控 handoff 路径：带 `workflow_handoff=v2` 时，会直接转成 V2 `scope_rebuild` workflow，并优先使用显式 seed 或维护好的 canonical seed
 
 当前边界：
 

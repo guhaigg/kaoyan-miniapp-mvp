@@ -34,6 +34,8 @@ WORKFLOW_TYPE_SCOPE_REBUILD = "scope_rebuild"
 STEP_TYPE_OCR_ENQUEUE = "ocr_enqueue"
 STEP_TYPE_CONTENT_RECLASSIFY = "content_reclassify"
 RULE_VERSION = "crawler_v2_explicit_seed_v1"
+DEFAULT_BOOTSTRAP_FAMILIES = frozenset({"admissions", "notice"})
+SUPPORTED_BOOTSTRAP_FAMILIES = frozenset({"admissions", "notice", "adjustment"})
 
 
 def _compact(value: str | None) -> str:
@@ -50,6 +52,15 @@ def _host_from_url(url: str | None) -> str | None:
 def _scope_key(*parts: str | None) -> str:
     values = [_compact(part) for part in parts if _compact(part)]
     return "::".join(values)
+
+
+def _normalize_bootstrap_families(families: list[str] | set[str] | tuple[str, ...] | None) -> set[str]:
+    normalized = {
+        str(item or "").strip()
+        for item in (families or [])
+        if str(item or "").strip() in SUPPORTED_BOOTSTRAP_FAMILIES
+    }
+    return normalized or set(DEFAULT_BOOTSTRAP_FAMILIES)
 
 
 def _resolve_actor_account_id(db: Session, actor_username: str | None) -> str | None:
@@ -305,17 +316,20 @@ def create_school_bootstrap_run(
     seed_urls: list[str],
     actor_username: str | None,
     max_sections: int = 12,
+    families: list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> tuple[WorkflowRun, WorkflowStep]:
     school = db.query(School).filter(School.name == school_name.strip()).one_or_none()
     if school is None:
         school = School(name=school_name.strip(), aliases=[], enabled=1)
         db.add(school)
         db.flush()
+    normalized_families = sorted(_normalize_bootstrap_families(families))
     payload = {
         "school_name": school.name,
         "homepage_url": homepage_url.strip(),
         "seed_urls": [str(url).strip() for url in seed_urls if str(url).strip()],
         "max_sections": max_sections,
+        "families": normalized_families,
     }
     return _create_run_with_step(
         db,
@@ -340,6 +354,7 @@ def create_department_bootstrap_run(
     actor_username: str | None,
     department_type: str = "college",
     max_sections: int = 12,
+    families: list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> tuple[WorkflowRun, WorkflowStep]:
     school = db.query(School).filter(School.name == school_name.strip()).one_or_none()
     if school is None:
@@ -361,6 +376,7 @@ def create_department_bootstrap_run(
         )
         db.add(department)
         db.flush()
+    normalized_families = sorted(_normalize_bootstrap_families(families))
     payload = {
         "school_name": school.name,
         "department_name": department.name,
@@ -368,6 +384,7 @@ def create_department_bootstrap_run(
         "homepage_url": homepage_url.strip(),
         "seed_urls": [str(url).strip() for url in seed_urls if str(url).strip()],
         "max_sections": max_sections,
+        "families": normalized_families,
     }
     return _create_run_with_step(
         db,
@@ -392,7 +409,9 @@ def create_scope_rebuild_run(
     homepage_url: str | None = None,
     seed_urls: list[str] | None = None,
     max_sections: int = 12,
+    families: list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> tuple[WorkflowRun, WorkflowStep]:
+    normalized_families = sorted(_normalize_bootstrap_families(families))
     payload = {
         "scope_type": scope_type,
         "school_name": school_name.strip(),
@@ -400,6 +419,7 @@ def create_scope_rebuild_run(
         "homepage_url": str(homepage_url or "").strip() or None,
         "seed_urls": [str(url).strip() for url in (seed_urls or []) if str(url).strip()],
         "max_sections": max_sections,
+        "families": normalized_families,
     }
     return _create_run_with_step(
         db,
@@ -557,6 +577,9 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
 
     seed_urls = [str(url).strip() for url in (payload.get("seed_urls") or []) if str(url).strip()]
     max_sections = max(1, int(payload.get("max_sections") or 12))
+    families = _normalize_bootstrap_families(payload.get("families"))
+    family_key = "adjustment" if families == {"adjustment"} else "announcement"
+    portal_scope = "graduate_admissions" if families == set(DEFAULT_BOOTSTRAP_FAMILIES) else None
     result = bootstrap_site_sections(
         db,
         school_name=school_name,
@@ -567,8 +590,8 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
         enabled=False,
         queue_discovery=False,
         max_sections=max_sections,
-        families={"admissions", "notice"},
-        portal_scope="graduate_admissions",
+        families=families,
+        portal_scope=portal_scope,
     )
     school = result["school"]
     department = None
@@ -605,6 +628,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
             "department_name": department_name,
             "homepage_url": homepage_url,
             "seed_urls": seed_urls,
+            "families": sorted(families),
         },
     )
     homepage_node = _ensure_portal_node(
@@ -652,6 +676,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
             "scope_key": scope_key,
             "candidate_count": result["candidate_count"],
             "candidate_urls": list(result.get("candidate_urls") or []),
+            "families": sorted(families),
             "sections": [
                 {
                     "id": section.id,
@@ -719,7 +744,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
         department_id=department.id if department else None,
         scope_type=scope_type,
         scope_key=scope_key,
-        family="announcement",
+        family=family_key,
         selected_host=next(
             (host for host in [_host_from_url(section.section_url) for section in sections] if host),
             candidate_hosts[0] if candidate_hosts else None,
@@ -730,6 +755,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
             "seed_urls": seed_urls,
             "recommended_section_ids": [section.id for section in sections],
             "parse_artifact_id": parse_artifact.id,
+            "families": sorted(families),
         },
     )
     _record_governance_action(
@@ -749,6 +775,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
             "host_decision_id": host_decision.id,
             "raw_artifact_id": raw_artifact.id,
             "parse_artifact_id": parse_artifact.id,
+            "families": sorted(families),
         },
     )
     return {
@@ -760,6 +787,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
         "host_decision_id": host_decision.id,
         "raw_artifact_id": raw_artifact.id,
         "parse_artifact_id": parse_artifact.id,
+        "families": sorted(families),
     }
 
 

@@ -25,6 +25,7 @@ from .announcement_portal import (
 )
 from .crawler import _extract_links, _extract_title, _fetch_with_retry
 from .site_section_bootstrap import _host_scope, bootstrap_site_sections
+from .workflow_v2 import create_scope_rebuild_run
 
 _SEARCH_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -1398,6 +1399,95 @@ def _resolve_seed_urls_for_family_discovery(
     return _dedupe_texts([*seed_urls, *recovery_seed_urls])
 
 
+def _resolve_v2_family_handoff_inputs(
+    school_name: str,
+    *,
+    families: set[str],
+    query: dict[str, Any],
+) -> tuple[str | None, list[str]]:
+    homepage_url = _normalize_url(str(query.get("homepage_url") or ""))
+    seed_urls = _dedupe_texts(
+        [
+            _normalize_url(str(url or ""))
+            for url in (query.get("seed_urls") or [])
+            if _normalize_url(str(url or ""))
+        ]
+    )
+    if not homepage_url and seed_urls:
+        homepage_url = seed_urls[0]
+
+    if families == {"notice", "admissions"}:
+        override = _resolve_announcement_seed_override(school_name) or {}
+        override_homepage = _normalize_url(str(override.get("homepage_url") or ""))
+        override_seed_urls = _dedupe_texts(
+            [
+                _normalize_url(str(url or ""))
+                for url in (override.get("seed_urls") or [])
+                if _normalize_url(str(url or ""))
+            ]
+        )
+        if not homepage_url and override_homepage:
+            homepage_url = override_homepage
+        if override_seed_urls:
+            seed_urls = _dedupe_texts([*seed_urls, *override_seed_urls])
+
+    doc_seed_urls = _dedupe_texts(_load_school_seed_map().get(school_name, []))
+    if doc_seed_urls:
+        seed_urls = _dedupe_texts([*seed_urls, *doc_seed_urls])
+        if not homepage_url:
+            homepage_url = doc_seed_urls[0]
+
+    if homepage_url and homepage_url not in seed_urls:
+        seed_urls = _dedupe_texts([homepage_url, *seed_urls])
+    return (homepage_url or None), seed_urls
+
+
+def _handoff_family_discovery_job_to_v2(
+    db: Session,
+    *,
+    job: CrawlJob,
+    school_name: str,
+    families: set[str],
+    query: dict[str, Any],
+) -> tuple[None, str]:
+    homepage_url, seed_urls = _resolve_v2_family_handoff_inputs(
+        school_name,
+        families=families,
+        query=query,
+    )
+    next_query = dict(job.query or {})
+    next_query["families"] = sorted(families)
+    next_query["workflow_handoff"] = "v2"
+    next_query["workflow_scope_type"] = "school"
+
+    if not homepage_url:
+        next_query["result_state"] = "no_candidate"
+        next_query["result_candidate_urls"] = []
+        next_query["result_job_ids"] = []
+        job.query = next_query
+        return None, f"family discovery handoff skipped: explicit seeds missing for {school_name}"
+
+    run, step = create_scope_rebuild_run(
+        db,
+        scope_type="school",
+        school_name=school_name,
+        homepage_url=homepage_url,
+        seed_urls=seed_urls,
+        actor_username=None,
+        families=families,
+        max_sections=max(1, int(query.get("max_sections") or 12)),
+    )
+    next_query["homepage_url"] = homepage_url
+    next_query["seed_urls"] = seed_urls
+    next_query["result_state"] = "workflow_handoff"
+    next_query["result_candidate_urls"] = seed_urls
+    next_query["result_job_ids"] = [run.id]
+    next_query["workflow_run_id"] = run.id
+    next_query["workflow_step_id"] = step.id
+    job.query = next_query
+    return None, f"family discovery handed off to crawler v2 workflow {run.id}"
+
+
 def _bootstrap_family_sections(
     db: Session,
     *,
@@ -1604,6 +1694,15 @@ def run_family_discovery_job(db: Session, job: CrawlJob, query: dict[str, Any]) 
     }
     if not school_name or not families:
         raise ValueError("family discovery job requires school_name and families")
+
+    if str(query.get("workflow_handoff") or "").strip().lower() == "v2":
+        return _handoff_family_discovery_job_to_v2(
+            db,
+            job=job,
+            school_name=school_name,
+            families=families,
+            query=query,
+        )
 
     result = _bootstrap_family_sections(
         db,

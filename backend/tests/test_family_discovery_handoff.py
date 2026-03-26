@@ -1,0 +1,70 @@
+from app.db import SessionLocal
+from app.models import CrawlJob, WorkflowRun, WorkflowStep
+from app.services.school_cold_start import run_family_discovery_job
+
+
+def test_family_discovery_job_can_handoff_to_v2_with_explicit_seeds():
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "workflow_handoff": "v2",
+                "school_name": "Handoff University",
+                "families": ["admissions", "notice"],
+                "homepage_url": "https://handoff.example.edu.cn/",
+                "seed_urls": ["https://handoff.example.edu.cn/notices/"],
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+
+        _content_id, message = run_family_discovery_job(db, job, dict(job.query or {}))
+        assert "crawler v2 workflow" in message
+        db.commit()
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == job.query["workflow_run_id"]).one()
+        step = db.query(WorkflowStep).filter(WorkflowStep.id == job.query["workflow_step_id"]).one()
+
+        assert job.query["result_state"] == "workflow_handoff"
+        assert job.query["result_candidate_urls"] == [
+            "https://handoff.example.edu.cn/",
+            "https://handoff.example.edu.cn/notices/",
+        ]
+        assert run.workflow_type == "scope_rebuild"
+        assert run.request_payload["families"] == ["admissions", "notice"]
+        assert step.input_payload["families"] == ["admissions", "notice"]
+
+
+def test_family_discovery_job_v2_handoff_uses_canonical_announcement_seed_override():
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "workflow_handoff": "v2",
+                "school_name": "湖北大学",
+                "families": ["admissions", "notice"],
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+
+        _content_id, message = run_family_discovery_job(db, job, dict(job.query or {}))
+        assert "crawler v2 workflow" in message
+        db.commit()
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == job.query["workflow_run_id"]).one()
+
+        assert job.query["homepage_url"] == "https://yz.hubu.edu.cn/"
+        assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert run.request_payload["homepage_url"] == "https://yz.hubu.edu.cn/"
+        assert run.request_payload["seed_urls"] == ["https://yz.hubu.edu.cn/"]

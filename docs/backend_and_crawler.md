@@ -178,6 +178,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - `portal_edges` for `explicit_seed` and `section_candidate` relationships
   - `raw_artifacts(bootstrap_input)` and `parse_artifacts(section_candidates)` for replay/debugging
 - Scope violations are terminal workflow failures. If a department bootstrap returns school-scoped sections, the worker rolls back partial graph/asset writes and marks the step `failed` instead of retrying.
+- Legacy `crawl_jobs(job_kind=family_discovery)` can now be configured with `workflow_handoff=v2`. In that mode the worker creates a V2 `scope_rebuild` run from explicit `homepage_url/seed_urls` or maintained canonical seeds, instead of executing the legacy candidate-url discovery branch.
 - OCR is now an explicit async step. `retry-parse` only reruns file parsing; `retry-ocr` enqueues a V2 `ocr_enqueue` workflow step.
 - API process no longer runs the crawl worker loop. V2 steps are consumed by the standalone worker entrypoint `python -m app.workers.crawler_v2_worker`.
 - Announcement visibility is now persisted in `content_classifications` and reused by search and premium monitoring instead of recomputing separate visibility decisions per surface.
