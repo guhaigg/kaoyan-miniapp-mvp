@@ -16,6 +16,7 @@ from ..dependencies import (
 from ..models import (
     AccountPaymentOrder,
     Content,
+    ContentClassification,
     GovernanceAction,
     HistoricalAdjustmentProfile,
     HistoricalReleaseTimingProfile,
@@ -47,7 +48,10 @@ from ..schemas import (
     AdminPortalHostDecisionItem,
     AdminPortalNodeItem,
     AdminWorkflowArtifactItem,
+    AdminWorkflowClassificationItem,
     AdminWorkflowDetailResponse,
+    AdminWorkflowListItem,
+    AdminWorkflowListResponse,
     AdminWorkflowStepItem,
     AdjustmentIntelligenceBreakdownItem,
     AdjustmentMentorRadarSchoolItem,
@@ -106,6 +110,133 @@ from ..services.workflow_v2 import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def _normalized_workflow_families(payload: dict[str, object]) -> list[str]:
+    families = [
+        str(item or "").strip()
+        for item in (payload.get("families") or [])
+        if str(item or "").strip() in {"notice", "admissions", "adjustment"}
+    ]
+    if families:
+        return list(dict.fromkeys(families))
+    section_type = str(payload.get("section_type") or "").strip()
+    if section_type in {"notice", "admissions", "adjustment"}:
+        return [section_type]
+    discovery_category = str(payload.get("discovery_category") or "").strip()
+    if discovery_category == "announcement":
+        return ["admissions", "notice"]
+    if discovery_category == "adjustment":
+        return ["adjustment"]
+    return []
+
+
+def _normalized_request_payload(payload: dict[str, object]) -> dict[str, object]:
+    normalized = dict(payload or {})
+    homepage_url = str(normalized.get("homepage_url") or "").strip()
+    raw_seed_urls = normalized.get("seed_urls") or []
+    seed_urls: list[str] = []
+    seen: set[str] = set()
+    for raw_url in raw_seed_urls if isinstance(raw_seed_urls, list) else []:
+        url = str(raw_url or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        seed_urls.append(url)
+    if homepage_url and homepage_url not in seen:
+        seed_urls = [homepage_url, *seed_urls]
+    if homepage_url or seed_urls:
+        normalized["homepage_url"] = homepage_url or (seed_urls[0] if seed_urls else None)
+        normalized["seed_urls"] = seed_urls
+    return normalized
+
+
+def _workflow_seed_source(run: WorkflowRun, steps: list[WorkflowStep]) -> str | None:
+    request_payload = dict(run.request_payload or {})
+    seed_source = str(request_payload.get("seed_source") or "").strip()
+    if seed_source:
+        return seed_source
+    for step in reversed(steps):
+        for payload in (dict(step.input_payload or {}), dict(step.result_payload or {})):
+            seed_source = str(payload.get("seed_source") or "").strip()
+            if seed_source:
+                return seed_source
+    return None
+
+
+def _workflow_terminal_reason(run: WorkflowRun, steps: list[WorkflowStep]) -> str | None:
+    if str(run.status or "").strip() in {"pending", "running"}:
+        return None
+    latest_step = steps[-1] if steps else None
+    if str(run.error_message or "").strip():
+        return str(run.error_message).strip()
+    if latest_step is not None and str(latest_step.error_message or "").strip():
+        return str(latest_step.error_message).strip()
+    for payload in (dict(run.result_payload or {}), dict(latest_step.result_payload or {}) if latest_step is not None else {}):
+        for key in ("terminal_reason", "reason", "result_state", "classification_state", "parse_status", "ocr_status"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                return value
+    if latest_step is not None and str(latest_step.error_type or "").strip():
+        return str(latest_step.error_type).strip()
+    return None
+
+
+def _workflow_content_ids(run: WorkflowRun, steps: list[WorkflowStep]) -> list[str]:
+    content_ids: list[str] = []
+    seen: set[str] = set()
+    for payload in [
+        dict(run.request_payload or {}),
+        dict(run.result_payload or {}),
+        *[dict(step.input_payload or {}) for step in steps],
+        *[dict(step.result_payload or {}) for step in steps],
+    ]:
+        content_id = str(payload.get("content_id") or "").strip()
+        if content_id and content_id not in seen:
+            seen.add(content_id)
+            content_ids.append(content_id)
+    return content_ids
+
+
+def _workflow_host_keys(steps: list[WorkflowStep]) -> list[str]:
+    host_keys: list[str] = []
+    seen: set[str] = set()
+    for step in steps:
+        host_key = str(step.host_key or "").strip()
+        if not host_key or host_key in seen:
+            continue
+        seen.add(host_key)
+        host_keys.append(host_key)
+    return host_keys
+
+
+def _build_workflow_list_item(run: WorkflowRun, steps: list[WorkflowStep]) -> AdminWorkflowListItem:
+    request_payload = dict(run.request_payload or {})
+    families = _normalized_workflow_families(request_payload)
+    latest_step = steps[-1] if steps else None
+    return AdminWorkflowListItem(
+        workflow_run_id=run.id,
+        workflow_type=run.workflow_type,
+        scope_type=run.scope_type,  # type: ignore[arg-type]
+        scope_key=run.scope_key,
+        scope_label=run.scope_label,
+        status=run.status,
+        families=families,
+        seed_source=_workflow_seed_source(run, steps),
+        host_keys=_workflow_host_keys(steps),
+        latest_step_type=latest_step.step_type if latest_step is not None else None,
+        latest_step_status=latest_step.status if latest_step is not None else None,
+        latest_step_error=(
+            str(latest_step.error_message or "").strip() or str(latest_step.error_type or "").strip() or None
+            if latest_step is not None
+            else None
+        ),
+        terminal_reason=_workflow_terminal_reason(run, steps),
+        created_at=run.created_at,
+        updated_at=run.updated_at,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+    )
 
 
 def _normalize_username(username: str) -> str:
@@ -1014,6 +1145,7 @@ def bootstrap_school_scope(
         seed_urls=payload.seed_urls,
         actor_username=actor,
         max_sections=payload.max_sections,
+        seed_source="payload",
     )
     db.commit()
     audit_event(
@@ -1050,6 +1182,7 @@ def bootstrap_department_scope(
         seed_urls=payload.seed_urls,
         actor_username=actor,
         max_sections=payload.max_sections,
+        seed_source="payload",
     )
     db.commit()
     audit_event(
@@ -1084,6 +1217,7 @@ def create_scope_rebuild(
     actor = get_admin_identity(request)
     resolved_homepage_url = str(payload.homepage_url or "").strip() or None
     resolved_seed_urls = [str(url).strip() for url in payload.seed_urls if str(url).strip()]
+    seed_source = "payload" if resolved_homepage_url or resolved_seed_urls else "canonical_registry"
     if payload.scope_type == "school" and not str(payload.department_name or "").strip():
         resolved_seed = resolve_announcement_school_seed(
             payload.school_name,
@@ -1097,6 +1231,11 @@ def create_scope_rebuild(
             )
         resolved_homepage_url = resolved_seed.homepage_url
         resolved_seed_urls = list(resolved_seed.seed_urls)
+    elif not resolved_homepage_url and not resolved_seed_urls:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="announcement department rebuild requires explicit seeds or a canonical seed registry entry",
+        )
     run, step = create_scope_rebuild_run(
         db,
         scope_type=payload.scope_type,
@@ -1106,6 +1245,7 @@ def create_scope_rebuild(
         seed_urls=resolved_seed_urls,
         actor_username=actor,
         max_sections=payload.max_sections,
+        seed_source=seed_source,
     )
     db.commit()
     audit_event(
@@ -1187,6 +1327,81 @@ def get_content_explain(
     )
 
 
+@router.get("/workflows", response_model=AdminWorkflowListResponse)
+def list_workflows(
+    request: Request,
+    db: Session = Depends(get_db),
+    family: str | None = Query(default=None),
+    scope_type: str | None = Query(default=None),
+    scope_key: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    workflow_type: str | None = Query(default=None),
+    host_key: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> AdminWorkflowListResponse:
+    require_admin_request(request)
+    query = db.query(WorkflowRun)
+    if scope_type:
+        query = query.filter(WorkflowRun.scope_type == scope_type.strip())
+    if scope_key:
+        query = query.filter(WorkflowRun.scope_key == scope_key.strip())
+    if status:
+        query = query.filter(WorkflowRun.status == status.strip())
+    if workflow_type:
+        query = query.filter(WorkflowRun.workflow_type == workflow_type.strip())
+
+    runs = query.order_by(WorkflowRun.created_at.desc(), WorkflowRun.id.desc()).all()
+    run_ids = [run.id for run in runs]
+    steps_by_run: dict[str, list[WorkflowStep]] = defaultdict(list)
+    if run_ids:
+        steps = (
+            db.query(WorkflowStep)
+            .filter(WorkflowStep.run_id.in_(run_ids))
+            .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+            .all()
+        )
+        for step in steps:
+            steps_by_run[step.run_id].append(step)
+
+    filtered_items: list[AdminWorkflowListItem] = []
+    normalized_family = family.strip() if family else None
+    normalized_host_key = host_key.strip() if host_key else None
+    for run in runs:
+        steps = steps_by_run.get(run.id, [])
+        item = _build_workflow_list_item(run, steps)
+        if normalized_family and normalized_family not in item.families:
+            continue
+        if normalized_host_key and normalized_host_key not in item.host_keys:
+            continue
+        filtered_items.append(item)
+
+    total = len(filtered_items)
+    offset = (page - 1) * page_size
+    audit_event(
+        db,
+        request,
+        "admin.workflow_list",
+        None,
+        {
+            "family": normalized_family,
+            "scope_type": scope_type,
+            "scope_key": scope_key,
+            "status": status,
+            "workflow_type": workflow_type,
+            "host_key": normalized_host_key,
+            "page": page,
+            "page_size": page_size,
+        },
+    )
+    return AdminWorkflowListResponse(
+        total=total,
+        page=page,
+        page_size=page_size,
+        items=filtered_items[offset : offset + page_size],
+    )
+
+
 @router.get("/workflows/{workflow_run_id}", response_model=AdminWorkflowDetailResponse)
 def get_workflow_detail(
     workflow_run_id: str,
@@ -1205,6 +1420,7 @@ def get_workflow_detail(
         .all()
     )
     step_ids = [step.id for step in steps]
+    content_ids = _workflow_content_ids(run, steps)
     nodes = (
         db.query(PortalNode)
         .filter(PortalNode.scope_type == run.scope_type, PortalNode.scope_key == run.scope_key)
@@ -1262,6 +1478,14 @@ def get_workflow_detail(
         .order_by(GovernanceAction.created_at.asc(), GovernanceAction.id.asc())
         .all()
     )
+    classifications = (
+        db.query(ContentClassification)
+        .filter(ContentClassification.content_id.in_(content_ids))
+        .order_by(ContentClassification.updated_at.desc(), ContentClassification.id.desc())
+        .all()
+        if content_ids
+        else []
+    )
     audit_event(db, request, "admin.workflow_detail", None, {"workflow_run_id": run.id})
     return AdminWorkflowDetailResponse(
         workflow_run_id=run.id,
@@ -1270,7 +1494,9 @@ def get_workflow_detail(
         scope_key=run.scope_key,
         scope_label=run.scope_label,
         status=run.status,
-        request_payload=run.request_payload or {},
+        seed_source=_workflow_seed_source(run, steps),
+        terminal_reason=_workflow_terminal_reason(run, steps),
+        request_payload=_normalized_request_payload(dict(run.request_payload or {})),
         result_payload=run.result_payload or {},
         error_message=run.error_message,
         started_at=run.started_at,
@@ -1290,6 +1516,8 @@ def get_workflow_detail(
                 max_attempts=step.max_attempts,
                 timeout_seconds=step.timeout_seconds,
                 idempotency_key=step.idempotency_key,
+                lease_owner=step.lease_owner,
+                leased_at=step.leased_at,
                 available_at=step.available_at,
                 started_at=step.started_at,
                 finished_at=step.finished_at,
@@ -1365,6 +1593,18 @@ def get_workflow_detail(
                 created_at=artifact.created_at,
             )
             for artifact in parse_artifacts
+        ],
+        content_classifications=[
+            AdminWorkflowClassificationItem(
+                content_id=item.content_id,
+                classification_state=item.classification_state,
+                visibility=item.visibility,
+                scope_type=item.scope_type,  # type: ignore[arg-type]
+                scope_key=item.scope_key,
+                explain_payload=item.explain_payload or {},
+                updated_at=item.updated_at,
+            )
+            for item in classifications
         ],
         governance_actions=[
             AdminGovernanceActionItem(

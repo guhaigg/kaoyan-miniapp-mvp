@@ -30,7 +30,7 @@ from .canonical_scope_seeds import (
 )
 from .crawler import _extract_links, _extract_title, _fetch_with_retry
 from .site_section_bootstrap import _host_scope, bootstrap_site_sections
-from .workflow_v2 import create_scope_rebuild_run, latest_scope_run
+from .workflow_v2 import ASSET_WORKFLOW_TYPES, create_scope_rebuild_run, latest_scope_run
 
 _SEARCH_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -1446,6 +1446,12 @@ def _handoff_family_discovery_job_to_v2(
         job.query = next_query
         return None, f"family discovery requires governed explicit seeds for {school_name}"
 
+    seed_source = (
+        "payload"
+        if str(query.get("homepage_url") or "").strip() or any(str(url or "").strip() for url in (query.get("seed_urls") or []))
+        else "canonical_registry"
+    )
+
     run, step = create_scope_rebuild_run(
         db,
         scope_type="school",
@@ -1455,9 +1461,11 @@ def _handoff_family_discovery_job_to_v2(
         actor_username=None,
         families=families,
         max_sections=max(1, int(query.get("max_sections") or 12)),
+        seed_source=seed_source,
     )
     next_query["homepage_url"] = homepage_url
     next_query["seed_urls"] = seed_urls
+    next_query["seed_source"] = seed_source
     next_query["result_state"] = "workflow_handoff"
     next_query["result_candidate_urls"] = seed_urls
     next_query["result_job_ids"] = [run.id]
@@ -1506,7 +1514,12 @@ def _readonly_announcement_bootstrap_status(db: Session, school_name: str) -> di
                 "job_ids": [],
             }
 
-    latest_run = latest_scope_run(db, scope_type="school", school_name=normalized_school_name)
+    latest_run = latest_scope_run(
+        db,
+        scope_type="school",
+        school_name=normalized_school_name,
+        workflow_types=ASSET_WORKFLOW_TYPES,
+    )
     if latest_run is not None and str(latest_run.status or "").strip() in {"pending", "running"}:
         payload = dict(latest_run.request_payload or {})
         candidate_urls = _dedupe_texts(

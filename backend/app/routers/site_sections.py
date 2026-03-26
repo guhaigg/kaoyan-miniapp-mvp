@@ -36,7 +36,7 @@ from ..services import crawler as crawler_service
 from ..services.crawler import build_site_section_detail_selector_config, build_site_section_list_selector_config
 from ..services.site_section_bootstrap import bootstrap_site_sections as bootstrap_site_sections_service
 from ..services.site_section_probe import ContainerCandidate, build_list_selector_overrides, probe_section_page, resolve_candidate_links_for_section
-from ..services.workflow_v2 import queue_ocr_retry
+from ..services.workflow_v2 import queue_detail_fetch_retry, queue_file_parse_retry, queue_ocr_retry
 
 router = APIRouter(prefix="/site-sections", tags=["site-sections"])
 
@@ -251,6 +251,23 @@ def _find_existing_file_parse_job(db: Session, *, content_file_id: str) -> Crawl
     return None
 
 
+def _find_existing_file_parse_step(db: Session, *, content_file_id: str) -> WorkflowStep | None:
+    rows = (
+        db.query(WorkflowStep)
+        .filter(
+            WorkflowStep.step_type == "file_parse",
+            WorkflowStep.status.in_(["pending", "running"]),
+        )
+        .order_by(WorkflowStep.created_at.desc())
+        .all()
+    )
+    for row in rows:
+        payload = dict(row.input_payload or {})
+        if str(payload.get("content_file_id") or "").strip() == content_file_id:
+            return row
+    return None
+
+
 def _find_existing_ocr_step(db: Session, *, content_file_id: str) -> WorkflowStep | None:
     rows = (
         db.query(WorkflowStep)
@@ -279,6 +296,29 @@ def _find_existing_detail_fetch_job(db: Session, *, site_section_link_id: str) -
     return None
 
 
+def _find_existing_detail_fetch_step(db: Session, *, site_section_link_id: str) -> WorkflowStep | None:
+    rows = (
+        db.query(WorkflowStep)
+        .filter(
+            WorkflowStep.step_type == "detail_fetch",
+            WorkflowStep.status.in_(["pending", "running"]),
+        )
+        .order_by(WorkflowStep.created_at.desc())
+        .all()
+    )
+    for row in rows:
+        payload = dict(row.input_payload or {})
+        if str(payload.get("site_section_link_id") or "").strip() == site_section_link_id:
+            return row
+    return None
+
+
+def _is_announcement_file_record(file_record: ContentFile) -> bool:
+    link = file_record.site_section_link
+    section = link.site_section if link else None
+    return bool(section is not None and section.discovery_category == "announcement")
+
+
 def _link_scope(section: SiteSection | None) -> dict[str, str | None]:
     return {
         "school_name": section.school.name if section and section.school else None,
@@ -287,16 +327,54 @@ def _link_scope(section: SiteSection | None) -> dict[str, str | None]:
     }
 
 
-def _queue_detail_fetch_for_link(db: Session, *, link: SiteSectionLink) -> tuple[CrawlJob, str, str]:
+def _queue_detail_fetch_for_link(
+    db: Session,
+    *,
+    link: SiteSectionLink,
+    actor_username: str | None = None,
+) -> dict[str, str | None]:
+    section = link.site_section
+    if section is None:
+        raise ValueError("site section not found for link")
+
+    if section.discovery_category == "announcement":
+        existing_step = _find_existing_detail_fetch_step(db, site_section_link_id=link.id)
+        if existing_step is not None:
+            link.status = "enqueued"
+            link.snapshot_meta = {
+                **dict(link.snapshot_meta or {}),
+                "detail_workflow_run_id": existing_step.run_id,
+                "detail_workflow_step_id": existing_step.id,
+            }
+            return {
+                "status": "existing",
+                "job_id": None,
+                "workflow_run_id": existing_step.run_id,
+                "step_id": existing_step.id,
+                "message": "existing detail_fetch workflow",
+            }
+
     existing_job = _find_existing_detail_fetch_job(db, site_section_link_id=link.id)
     if existing_job is not None:
         link.crawl_job_id = existing_job.id
         link.status = "enqueued"
-        return existing_job, "existing", "existing detail_fetch job"
+        return {
+            "status": "existing",
+            "job_id": existing_job.id,
+            "workflow_run_id": None,
+            "step_id": None,
+            "message": "existing detail_fetch job",
+        }
 
-    section = link.site_section
-    if section is None:
-        raise ValueError("site section not found for link")
+    if section.discovery_category == "announcement":
+        run, step = queue_detail_fetch_retry(db, link=link, actor_username=actor_username)
+        return {
+            "status": "queued",
+            "job_id": None,
+            "workflow_run_id": run.id,
+            "step_id": step.id,
+            "message": "queued detail_fetch workflow",
+        }
 
     scope = _link_scope(section)
     title = link.title or crawler_service._fallback_link_title(link.link_url)
@@ -321,7 +399,13 @@ def _queue_detail_fetch_for_link(db: Session, *, link: SiteSectionLink) -> tuple
     db.flush()
     link.crawl_job_id = job.id
     link.status = "enqueued"
-    return job, "queued", "queued detail_fetch job"
+    return {
+        "status": "queued",
+        "job_id": job.id,
+        "workflow_run_id": None,
+        "step_id": None,
+        "message": "queued detail_fetch job",
+    }
 
 
 def _ensure_content_file_for_link(db: Session, *, link: SiteSectionLink) -> ContentFile:
@@ -359,14 +443,44 @@ def _queue_file_parse_for_record(
     *,
     file_record: ContentFile,
     message: str,
-) -> tuple[CrawlJob, str]:
+    actor_username: str | None = None,
+) -> dict[str, str | None]:
+    existing_step = _find_existing_file_parse_step(db, content_file_id=file_record.id)
     existing_job = _find_existing_file_parse_job(db, content_file_id=file_record.id)
     link = file_record.site_section_link
+    if existing_step is not None:
+        if link is not None:
+            link.status = "file_recorded"
+            link.snapshot_meta = {
+                **dict(link.snapshot_meta or {}),
+                "parse_workflow_run_id": existing_step.run_id,
+                "parse_workflow_step_id": existing_step.id,
+            }
+        return {
+            "status": "existing",
+            "job_id": None,
+            "workflow_run_id": existing_step.run_id,
+            "step_id": existing_step.id,
+        }
     if existing_job is not None:
         if link is not None:
             link.crawl_job_id = existing_job.id
             link.status = "file_recorded"
-        return existing_job, "existing"
+        return {
+            "status": "existing",
+            "job_id": existing_job.id,
+            "workflow_run_id": None,
+            "step_id": None,
+        }
+
+    if _is_announcement_file_record(file_record):
+        run, step = queue_file_parse_retry(db, file_record=file_record, actor_username=actor_username)
+        return {
+            "status": "queued",
+            "job_id": None,
+            "workflow_run_id": run.id,
+            "step_id": step.id,
+        }
 
     section = link.site_section if link else None
     scope = _link_scope(section)
@@ -401,7 +515,12 @@ def _queue_file_parse_for_record(
     if link is not None:
         link.crawl_job_id = job.id
         link.status = "file_recorded"
-    return job, "queued"
+    return {
+        "status": "queued",
+        "job_id": job.id,
+        "workflow_run_id": None,
+        "step_id": None,
+    }
 
 
 @router.post("", response_model=SiteSectionItem)
@@ -842,6 +961,7 @@ def retry_site_section_links(
     existing = 0
     failed = 0
     items: list[SiteSectionLinkRetryItem] = []
+    actor_username = get_admin_identity(request)
 
     for link_id in link_ids:
         link = links_by_id.get(link_id)
@@ -851,6 +971,8 @@ def retry_site_section_links(
                 SiteSectionLinkRetryItem(
                     link_id=link_id,
                     job_id=None,
+                    workflow_run_id=None,
+                    step_id=None,
                     status="failed",
                     link_type=None,
                     message="site section link not found",
@@ -862,24 +984,37 @@ def retry_site_section_links(
             with db.begin_nested():
                 if link.link_type == "pdf":
                     file_record = _ensure_content_file_for_link(db, link=link)
-                    job, item_status = _queue_file_parse_for_record(
+                    queued_parse = _queue_file_parse_for_record(
                         db,
                         file_record=file_record,
                         message=f"queued manual retry parse for site section link {link.id}",
+                        actor_username=actor_username,
                     )
-                    item_message = (
-                        "existing file_parse job"
-                        if item_status == "existing"
-                        else f"queued file_parse job for content file {file_record.id}"
-                    )
+                    item_status = str(queued_parse["status"] or "queued")
+                    if item_status == "existing":
+                        item_message = (
+                            "existing file_parse workflow"
+                            if queued_parse.get("step_id")
+                            else "existing file_parse job"
+                        )
+                    else:
+                        item_message = (
+                            "queued file_parse workflow"
+                            if queued_parse.get("step_id")
+                            else f"queued file_parse job for content file {file_record.id}"
+                        )
                 else:
-                    job, item_status, item_message = _queue_detail_fetch_for_link(db, link=link)
+                    queued_detail = _queue_detail_fetch_for_link(db, link=link, actor_username=actor_username)
+                    item_status = str(queued_detail["status"] or "queued")
+                    item_message = str(queued_detail["message"] or "")
         except Exception as exc:
             failed += 1
             items.append(
                 SiteSectionLinkRetryItem(
                     link_id=link.id,
                     job_id=None,
+                    workflow_run_id=None,
+                    step_id=None,
                     status="failed",
                     link_type=link.link_type if link.link_type in {"html", "pdf"} else None,
                     message=str(exc),
@@ -894,7 +1029,9 @@ def retry_site_section_links(
         items.append(
             SiteSectionLinkRetryItem(
                 link_id=link.id,
-                job_id=job.id,
+                job_id=queued_parse["job_id"] if link.link_type == "pdf" else queued_detail["job_id"],
+                workflow_run_id=queued_parse["workflow_run_id"] if link.link_type == "pdf" else queued_detail["workflow_run_id"],
+                step_id=queued_parse["step_id"] if link.link_type == "pdf" else queued_detail["step_id"],
                 status=item_status,
                 link_type=link.link_type if link.link_type in {"html", "pdf"} else None,
                 message=item_message,
@@ -957,26 +1094,53 @@ def retry_content_file_parse(
     if file_record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="content file not found")
 
+    existing_step = _find_existing_file_parse_step(db, content_file_id=content_file_id)
+    if existing_step is not None:
+        return ContentFileRetryParseResponse(
+            content_file_id=file_record.id,
+            job_id=None,
+            workflow_run_id=existing_step.run_id,
+            step_id=existing_step.id,
+            status="existing",
+            parse_status=file_record.parse_status,
+        )
+
     existing_job = _find_existing_file_parse_job(db, content_file_id=content_file_id)
     if existing_job is not None:
         return ContentFileRetryParseResponse(
             content_file_id=file_record.id,
             job_id=existing_job.id,
+            workflow_run_id=None,
+            step_id=None,
             status="existing",
             parse_status=file_record.parse_status,
         )
 
-    job, _status = _queue_file_parse_for_record(
+    queued_parse = _queue_file_parse_for_record(
         db,
         file_record=file_record,
         message=f"queued manual retry parse for content file {file_record.id}",
+        actor_username=get_admin_identity(request),
     )
 
     db.commit()
-    audit_event(db, request, "site_section.content_file.retry_parse", None, {"content_file_id": file_record.id, "job_id": job.id})
+    audit_event(
+        db,
+        request,
+        "site_section.content_file.retry_parse",
+        None,
+        {
+            "content_file_id": file_record.id,
+            "job_id": queued_parse["job_id"],
+            "workflow_run_id": queued_parse["workflow_run_id"],
+            "step_id": queued_parse["step_id"],
+        },
+    )
     return ContentFileRetryParseResponse(
         content_file_id=file_record.id,
-        job_id=job.id,
+        job_id=queued_parse["job_id"],
+        workflow_run_id=queued_parse["workflow_run_id"],
+        step_id=queued_parse["step_id"],
         status="queued",
         parse_status=file_record.parse_status,
     )

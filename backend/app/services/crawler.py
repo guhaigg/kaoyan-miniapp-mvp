@@ -949,6 +949,406 @@ def _finalize_ingest_extra(
     return normalized_extra
 
 
+def _annotate_ingest_extra(
+    extra: dict[str, Any],
+    *,
+    work_item_kind: str,
+    work_item_id: str,
+    crawl_mode: str,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    next_extra = dict(extra)
+    next_extra["crawl_mode"] = crawl_mode
+    if work_item_kind == "crawl_job":
+        next_extra["crawl_job_id"] = work_item_id
+    elif work_item_kind == "workflow_step":
+        next_extra["workflow_step_id"] = work_item_id
+        if run_id:
+            next_extra["workflow_run_id"] = run_id
+    return next_extra
+
+
+def ingest_url_work_item(
+    db: Session,
+    *,
+    category: str,
+    query: dict[str, Any],
+    source_url: str,
+    work_item_kind: str,
+    work_item_id: str,
+    run_id: str | None = None,
+) -> tuple[str, str]:
+    response = _fetch_with_retry(source_url)
+    raw_html = response.text or ""
+    detail_selector_config: dict[str, Any] | None = None
+    site_section_id = str(query.get("site_section_id") or "").strip()
+    section: SiteSection | None = None
+    if site_section_id:
+        section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+        if section is not None:
+            detail_selector_config = build_site_section_detail_selector_config(section)
+    extracted_body, extraction_method, readability_title = _extract_detail_body(
+        raw_html,
+        detail_selector_config=detail_selector_config,
+    )
+    body = str(query.get("body") or "").strip() or extracted_body
+    if not body:
+        raise ValueError("parsed body is empty")
+
+    title = (
+        str(query.get("title") or "").strip()
+        or readability_title
+        or _extract_title(raw_html)
+        or f"{category} crawl {work_item_id[:8]}"
+    )
+    summary = str(query.get("summary") or "").strip() or summarize_text(body)
+    extra = dict(query.get("extra") or {})
+    outbound_links = _extract_outbound_links(raw_html, base_url=source_url, current_url=source_url)
+    if _looks_like_link_notice(body=body, raw_html=raw_html, outbound_links=outbound_links):
+        body, summary = _build_link_notice_content(title, outbound_links)
+        extra["notice_kind"] = "link_notice"
+        extra["outbound_links"] = outbound_links
+    extra = _annotate_ingest_extra(
+        extra,
+        work_item_kind=work_item_kind,
+        work_item_id=work_item_id,
+        crawl_mode="url_fetch",
+        run_id=run_id,
+    )
+    if detail_selector_config:
+        extra["detail_selector_applied"] = extraction_method == "selector"
+    extra["detail_extraction_method"] = extraction_method
+    extra["tags"] = _build_content_tags(title, summary, body)
+    extra = _finalize_ingest_extra(
+        db,
+        category=category,
+        title=title,
+        summary=summary,
+        body=body,
+        extra=extra,
+        query=query,
+        section=section,
+    )
+
+    payload = ContentIn(
+        category=category,
+        title=title,
+        body=body,
+        summary=summary,
+        school_name=(str(query.get("school_name") or "").strip() or None),
+        source_url=source_url,
+        source_type="crawler",
+        published_at=(
+            _coerce_datetime(query.get("published_at"))
+            or _extract_published_at_from_raw_html(raw_html)
+        ),
+        region=(str(query.get("region") or "").strip() or None),
+        major=(str(query.get("major") or "").strip() or None),
+        extra=extra,
+        raw_html=raw_html,
+    )
+    content, status = upsert_content(db, payload)
+    return content.id, status
+
+
+def ingest_file_work_item(
+    db: Session,
+    *,
+    category: str,
+    query: dict[str, Any],
+    file_record: ContentFile,
+    work_item_kind: str,
+    work_item_id: str,
+    run_id: str | None = None,
+) -> tuple[str, str]:
+    file_url = str(query.get("source_url") or file_record.file_url or "").strip()
+    if not file_url:
+        raise ValueError("file url is empty")
+
+    link = file_record.site_section_link
+    title = (
+        str(query.get("title") or "").strip()
+        or (str(link.title).strip() if link and link.title else "")
+        or _fallback_link_title(file_url)
+    )
+
+    file_bytes, mime_type = _download_binary_with_retry(file_url)
+    extracted_text = _extract_pdf_text_from_bytes(file_bytes)
+    summary = None
+    extra = dict(query.get("extra") or {})
+    extra = _annotate_ingest_extra(
+        extra,
+        work_item_kind=work_item_kind,
+        work_item_id=work_item_id,
+        crawl_mode="pdf_file",
+        run_id=run_id,
+    )
+    extra["content_file_id"] = file_record.id
+    if link is not None:
+        extra["site_section_link_id"] = link.id
+
+    if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH:
+        body = extracted_text
+        summary = summarize_text(extracted_text)
+        extra["pdf_parse_status"] = "done"
+        extra["pdf_text_extracted"] = True
+    else:
+        body, summary = _build_scan_pdf_notice_content(title, file_url)
+        extra["pdf_parse_status"] = "needs_ocr"
+        extra["pdf_text_extracted"] = False
+
+    extra["tags"] = _build_content_tags(title, summary, extracted_text or body)
+    extra = _finalize_ingest_extra(
+        db,
+        category=category,
+        title=title,
+        summary=summary,
+        body=extracted_text or body,
+        extra=extra,
+        query=query,
+        section=link.site_section if link is not None else None,
+    )
+
+    payload = ContentIn(
+        category=category,
+        title=title,
+        body=body,
+        summary=summary,
+        school_name=(str(query.get("school_name") or "").strip() or None),
+        source_url=file_url,
+        source_type="crawler",
+        published_at=_coerce_datetime(query.get("published_at")),
+        region=(str(query.get("region") or "").strip() or None),
+        major=(str(query.get("major") or "").strip() or None),
+        extra=extra,
+        raw_html=None,
+    )
+    content, status = upsert_content(db, payload)
+
+    file_record.content_id = content.id
+    file_record.mime_type = mime_type or file_record.mime_type or "application/pdf"
+    file_record.text_extracted = extracted_text or None
+    file_record.parse_status = "done" if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH else "needs_ocr"
+    file_record.ocr_status = "not_started" if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH else "skipped_mvp"
+    file_record.file_meta = {
+        **dict(file_record.file_meta or {}),
+        ("parse_job_id" if work_item_kind == "crawl_job" else "parse_workflow_step_id"): work_item_id,
+        **({"parse_workflow_run_id": run_id} if work_item_kind == "workflow_step" and run_id else {}),
+        "pdf_text_extracted": bool(extracted_text and len(extracted_text) >= _MIN_PDF_TEXT_LENGTH),
+    }
+    if link is not None:
+        link.status = "parsed" if file_record.parse_status == "done" else "file_needs_ocr"
+
+    return content.id, f"{status}:pdf_{file_record.parse_status}"
+
+
+def discover_site_section_work_item(
+    db: Session,
+    *,
+    section: SiteSection,
+    source_url: str,
+    work_item_kind: str,
+    work_item_id: str,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    if not str(source_url or "").strip():
+        raise ValueError("site section url is empty")
+
+    response = _fetch_with_retry(source_url)
+    raw_html = response.text or ""
+    selector_config = build_site_section_list_selector_config(section)
+    discovered_links: list[dict[str, str]] = []
+    if _selector_config_has_probe_replay(selector_config):
+
+        def _fetch_probe_html(url: str) -> tuple[str, str | None]:
+            probe_response = _fetch_with_retry(url)
+            probe_html = probe_response.text or ""
+            return probe_html, _extract_title(probe_html)
+
+        discovered_links = resolve_candidate_links_for_section(
+            source_url,
+            selector_config,
+            raw_html=raw_html,
+            fetch_html=_fetch_probe_html,
+            family_hint=str(selector_config.get("probe_family") or section.section_type or "").strip() or None,
+            allow_browser=True,
+        )
+
+    if not discovered_links:
+        discovered_links = _extract_links_by_selector(raw_html, selector_config)
+    if not discovered_links and selector_config.get("fallback_to_all_links"):
+        discovered_links = _extract_links(raw_html)
+    if not discovered_links:
+        section.last_discovered_at = utcnow()
+        section.last_discovery_status = "done"
+        section.last_error = None
+        return {
+            "new_links": 0,
+            "html_jobs": 0,
+            "pdf_files": 0,
+            "workflow_run_ids": [],
+            "workflow_step_ids": [],
+        }
+
+    existing_url_hashes = {
+        row[0]
+        for row in db.query(SiteSectionLink.link_url_hash)
+        .filter(SiteSectionLink.site_section_id == section.id)
+        .all()
+    }
+    html_jobs = 0
+    pdf_files = 0
+    new_links = 0
+    workflow_run_ids: list[str] = []
+    workflow_step_ids: list[str] = []
+
+    for item in discovered_links:
+        href = (item.get("href") or "").strip()
+        if not href or href.startswith("javascript:") or href.startswith("#"):
+            continue
+
+        absolute_url = urljoin(source_url, href)
+        link_text = (item.get("text") or "").strip()
+        if not _link_matches_selector_config(
+            section_url=source_url,
+            absolute_url=absolute_url,
+            text=link_text,
+            config=selector_config,
+        ):
+            continue
+        url_hash = _url_hash(absolute_url)
+        if url_hash in existing_url_hashes:
+            continue
+
+        link_type = "pdf" if _is_pdf_url(absolute_url) else "html"
+        title = link_text or _fallback_link_title(absolute_url)
+        snapshot_meta = {
+            "section_url": source_url,
+            "section_type": section.section_type,
+        }
+        if work_item_kind == "crawl_job":
+            snapshot_meta["crawl_job_id"] = work_item_id
+        else:
+            snapshot_meta["section_discovery_workflow_step_id"] = work_item_id
+            if run_id:
+                snapshot_meta["section_discovery_workflow_run_id"] = run_id
+        link = SiteSectionLink(
+            site_section_id=section.id,
+            link_url=absolute_url,
+            link_url_hash=url_hash,
+            title=title,
+            link_type=link_type,
+            status="discovered",
+            snapshot_meta=snapshot_meta,
+        )
+        db.add(link)
+        db.flush()
+        existing_url_hashes.add(url_hash)
+        new_links += 1
+
+        if link_type == "pdf":
+            file_record = ContentFile(
+                site_section_link_id=link.id,
+                file_url=absolute_url,
+                file_url_hash=_url_hash(absolute_url),
+                file_type="pdf",
+                mime_type="application/pdf",
+                parse_status="pending",
+                ocr_status="not_started",
+                file_meta={
+                    "site_section_id": section.id,
+                    "section_url": source_url,
+                    **({"crawl_job_id": work_item_id} if work_item_kind == "crawl_job" else {}),
+                    **(
+                        {
+                            "section_discovery_workflow_step_id": work_item_id,
+                            **({"section_discovery_workflow_run_id": run_id} if run_id else {}),
+                        }
+                        if work_item_kind == "workflow_step"
+                        else {}
+                    ),
+                },
+            )
+            db.add(file_record)
+            db.flush()
+            if section.discovery_category == "announcement":
+                from .workflow_v2 import queue_file_parse_retry
+
+                run, step = queue_file_parse_retry(db, file_record=file_record, actor_username=None)
+                workflow_run_ids.append(run.id)
+                workflow_step_ids.append(step.id)
+            else:
+                child_job = CrawlJob(
+                    category=section.discovery_category,
+                    status="pending",
+                    requested_at=utcnow(),
+                    message=f"queued pdf parse by site section discovery {section.id}",
+                    query={
+                        "job_kind": "file_parse",
+                        "content_file_id": file_record.id,
+                        "site_section_id": section.id,
+                        "site_section_link_id": link.id,
+                        "source_url": absolute_url,
+                        "title": title,
+                        "school_name": section.school.name if section.school else None,
+                        "department_name": section.department.name if section.department else None,
+                        "section_type": section.section_type,
+                    },
+                )
+                db.add(child_job)
+                db.flush()
+                link.crawl_job_id = child_job.id
+                file_record.file_meta = {
+                    **dict(file_record.file_meta or {}),
+                    "parse_job_id": child_job.id,
+                }
+            link.status = "file_recorded"
+            pdf_files += 1
+            continue
+
+        if section.discovery_category == "announcement":
+            from .workflow_v2 import queue_detail_fetch_retry
+
+            run, step = queue_detail_fetch_retry(db, link=link, actor_username=None)
+            workflow_run_ids.append(run.id)
+            workflow_step_ids.append(step.id)
+            html_jobs += 1
+            continue
+
+        child_job = CrawlJob(
+            category=section.discovery_category,
+            status="pending",
+            requested_at=utcnow(),
+            message=f"queued by site section discovery {section.id}",
+            query={
+                "job_kind": "detail_fetch",
+                "site_section_id": section.id,
+                "site_section_link_id": link.id,
+                "source_url": absolute_url,
+                "title": title,
+                "school_name": section.school.name if section.school else None,
+                "department_name": section.department.name if section.department else None,
+                "section_type": section.section_type,
+            },
+        )
+        db.add(child_job)
+        db.flush()
+        link.crawl_job_id = child_job.id
+        link.status = "enqueued"
+        html_jobs += 1
+
+    section.last_discovered_at = utcnow()
+    section.last_discovery_status = "done"
+    section.last_error = None
+    return {
+        "new_links": new_links,
+        "html_jobs": html_jobs,
+        "pdf_files": pdf_files,
+        "workflow_run_ids": workflow_run_ids,
+        "workflow_step_ids": workflow_step_ids,
+    }
+
+
 class CrawlEngine:
     def process_job_batch(self) -> int:
         settings = get_settings()
@@ -1025,14 +1425,17 @@ class CrawlEngine:
         query = dict(job.query or {})
         source_url = str(query.get("source_url") or "").strip()
         content_payload = query.get("content")
+        job_kind = str(query.get("job_kind") or "").strip()
 
-        if query.get("job_kind") == "family_discovery":
+        if job_kind == "family_discovery":
             from .school_cold_start import run_family_discovery_job
 
             return run_family_discovery_job(db, job, query)
-        if query.get("job_kind") == "site_section_discovery":
+        if job.category == "announcement" and job_kind in {"site_section_discovery", "detail_fetch", "file_parse"}:
+            return self._handoff_announcement_job_to_v2(db, job, query, job_kind=job_kind)
+        if job_kind == "site_section_discovery":
             return self._discover_site_section(db, job, query)
-        if query.get("job_kind") == "file_parse":
+        if job_kind == "file_parse":
             return self._ingest_from_file(db, job, query)
 
         if query.get("simulate") is True:
@@ -1046,6 +1449,65 @@ class CrawlEngine:
 
         return None, "done(noop): no crawl source provided"
 
+    def _handoff_announcement_job_to_v2(
+        self,
+        db: Session,
+        job: CrawlJob,
+        query: dict[str, Any],
+        *,
+        job_kind: str,
+    ) -> tuple[None, str]:
+        from .workflow_v2 import queue_detail_fetch_retry, queue_file_parse_retry, queue_section_discovery_retry
+
+        next_query = dict(job.query or {})
+        next_query["workflow_handoff"] = "v2"
+        if job_kind == "site_section_discovery":
+            site_section_id = str(query.get("site_section_id") or "").strip()
+            section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
+            if section is None:
+                raise ValueError("site section not found")
+            run, step = queue_section_discovery_retry(
+                db,
+                section=section,
+                actor_username=None,
+                source_crawl_job_id=job.id,
+            )
+            next_query["result_state"] = "workflow_handoff"
+            next_query["workflow_run_id"] = run.id
+            next_query["workflow_step_id"] = step.id
+            next_query["result_job_ids"] = [run.id]
+            job.query = next_query
+            return None, f"site section discovery handed off to crawler v2 workflow {run.id}"
+        if job_kind == "detail_fetch":
+            site_section_link_id = str(query.get("site_section_link_id") or "").strip()
+            if not site_section_link_id:
+                raise ValueError("site_section_link_id is required for announcement detail handoff")
+            link = db.query(SiteSectionLink).filter(SiteSectionLink.id == site_section_link_id).one_or_none()
+            if link is None:
+                raise ValueError("site section link not found")
+            run, step = queue_detail_fetch_retry(db, link=link, actor_username=None)
+            next_query["result_state"] = "workflow_handoff"
+            next_query["workflow_run_id"] = run.id
+            next_query["workflow_step_id"] = step.id
+            next_query["result_job_ids"] = [run.id]
+            job.query = next_query
+            return None, f"detail fetch handed off to crawler v2 workflow {run.id}"
+        if job_kind == "file_parse":
+            content_file_id = str(query.get("content_file_id") or "").strip()
+            if not content_file_id:
+                raise ValueError("content_file_id is required for announcement file parse handoff")
+            file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one_or_none()
+            if file_record is None:
+                raise ValueError("content file not found")
+            run, step = queue_file_parse_retry(db, file_record=file_record, actor_username=None)
+            next_query["result_state"] = "workflow_handoff"
+            next_query["workflow_run_id"] = run.id
+            next_query["workflow_step_id"] = step.id
+            next_query["result_job_ids"] = [run.id]
+            job.query = next_query
+            return None, f"file parse handed off to crawler v2 workflow {run.id}"
+        raise ValueError(f"unsupported announcement crawl job handoff: {job_kind}")
+
     def _discover_site_section(self, db: Session, job: CrawlJob, query: dict[str, Any]) -> tuple[None, str]:
         site_section_id = str(query.get("site_section_id") or "").strip()
         if not site_section_id:
@@ -1058,155 +1520,17 @@ class CrawlEngine:
         section_url = str(query.get("source_url") or section.section_url or "").strip()
         if not section_url:
             raise ValueError("site section url is empty")
-
-        response = _fetch_with_retry(section_url)
-        raw_html = response.text or ""
-        selector_config = build_site_section_list_selector_config(section)
-        discovered_links: list[dict[str, str]] = []
-        if _selector_config_has_probe_replay(selector_config):
-            def _fetch_probe_html(url: str) -> tuple[str, str | None]:
-                probe_response = _fetch_with_retry(url)
-                probe_html = probe_response.text or ""
-                return probe_html, _extract_title(probe_html)
-
-            discovered_links = resolve_candidate_links_for_section(
-                section_url,
-                selector_config,
-                raw_html=raw_html,
-                fetch_html=_fetch_probe_html,
-                family_hint=str(selector_config.get("probe_family") or section.section_type or "").strip() or None,
-                allow_browser=True,
-            )
-
-        if not discovered_links:
-            discovered_links = _extract_links_by_selector(raw_html, selector_config)
-        if not discovered_links and selector_config.get("fallback_to_all_links"):
-            discovered_links = _extract_links(raw_html)
-        if not discovered_links:
-            section.last_discovered_at = utcnow()
-            section.last_discovery_status = "done"
-            section.last_error = None
-            return None, "discovery done: 0 new links"
-
-        existing_url_hashes = {
-            row[0]
-            for row in db.query(SiteSectionLink.link_url_hash)
-            .filter(SiteSectionLink.site_section_id == section.id)
-            .all()
-        }
-        html_jobs = 0
-        pdf_files = 0
-        new_links = 0
-
-        for item in discovered_links:
-            href = (item.get("href") or "").strip()
-            if not href or href.startswith("javascript:") or href.startswith("#"):
-                continue
-
-            absolute_url = urljoin(section_url, href)
-            link_text = (item.get("text") or "").strip()
-            if not _link_matches_selector_config(
-                section_url=section_url,
-                absolute_url=absolute_url,
-                text=link_text,
-                config=selector_config,
-            ):
-                continue
-            url_hash = _url_hash(absolute_url)
-            if url_hash in existing_url_hashes:
-                continue
-
-            link_type = "pdf" if _is_pdf_url(absolute_url) else "html"
-            title = link_text or _fallback_link_title(absolute_url)
-            link = SiteSectionLink(
-                site_section_id=section.id,
-                link_url=absolute_url,
-                link_url_hash=url_hash,
-                title=title,
-                link_type=link_type,
-                status="discovered",
-                snapshot_meta={
-                    "crawl_job_id": job.id,
-                    "section_url": section_url,
-                    "section_type": section.section_type,
-                },
-            )
-            db.add(link)
-            db.flush()
-            existing_url_hashes.add(url_hash)
-            new_links += 1
-
-            if link_type == "pdf":
-                file_record = ContentFile(
-                    site_section_link_id=link.id,
-                    file_url=absolute_url,
-                    file_url_hash=_url_hash(absolute_url),
-                    file_type="pdf",
-                    mime_type="application/pdf",
-                    parse_status="pending",
-                    ocr_status="not_started",
-                    file_meta={
-                        "crawl_job_id": job.id,
-                        "site_section_id": section.id,
-                        "section_url": section_url,
-                    },
-                )
-                db.add(file_record)
-                db.flush()
-                child_job = CrawlJob(
-                    category=section.discovery_category,
-                    status="pending",
-                    requested_at=utcnow(),
-                    message=f"queued pdf parse by site section discovery {section.id}",
-                    query={
-                        "job_kind": "file_parse",
-                        "content_file_id": file_record.id,
-                        "site_section_id": section.id,
-                        "site_section_link_id": link.id,
-                        "source_url": absolute_url,
-                        "title": title,
-                        "school_name": section.school.name if section.school else None,
-                        "department_name": section.department.name if section.department else None,
-                        "section_type": section.section_type,
-                    },
-                )
-                db.add(child_job)
-                db.flush()
-                link.crawl_job_id = child_job.id
-                link.status = "file_recorded"
-                file_record.file_meta = {
-                    **dict(file_record.file_meta or {}),
-                    "parse_job_id": child_job.id,
-                }
-                pdf_files += 1
-                continue
-
-            child_job = CrawlJob(
-                category=section.discovery_category,
-                status="pending",
-                requested_at=utcnow(),
-                message=f"queued by site section discovery {section.id}",
-                query={
-                    "job_kind": "detail_fetch",
-                    "site_section_id": section.id,
-                    "site_section_link_id": link.id,
-                    "source_url": absolute_url,
-                    "title": title,
-                    "school_name": section.school.name if section.school else None,
-                    "department_name": section.department.name if section.department else None,
-                    "section_type": section.section_type,
-                },
-            )
-            db.add(child_job)
-            db.flush()
-            link.crawl_job_id = child_job.id
-            link.status = "enqueued"
-            html_jobs += 1
-
-        section.last_discovered_at = utcnow()
-        section.last_discovery_status = "done"
-        section.last_error = None
-        return None, f"discovery done: {new_links} links, {html_jobs} html jobs, {pdf_files} pdf files"
+        result = discover_site_section_work_item(
+            db,
+            section=section,
+            source_url=section_url,
+            work_item_kind="crawl_job",
+            work_item_id=job.id,
+        )
+        return (
+            None,
+            f"discovery done: {result['new_links']} links, {result['html_jobs']} html jobs, {result['pdf_files']} pdf files",
+        )
 
     def _ingest_from_url(
         self,
@@ -1215,72 +1539,14 @@ class CrawlEngine:
         query: dict[str, Any],
         source_url: str,
     ) -> tuple[str, str]:
-        response = _fetch_with_retry(source_url)
-        raw_html = response.text or ""
-        detail_selector_config: dict[str, Any] | None = None
-        site_section_id = str(query.get("site_section_id") or "").strip()
-        section: SiteSection | None = None
-        if site_section_id:
-            section = db.query(SiteSection).filter(SiteSection.id == site_section_id).one_or_none()
-            if section is not None:
-                detail_selector_config = build_site_section_detail_selector_config(section)
-        extracted_body, extraction_method, readability_title = _extract_detail_body(
-            raw_html,
-            detail_selector_config=detail_selector_config,
-        )
-        body = str(query.get("body") or "").strip() or extracted_body
-        if not body:
-            raise ValueError("parsed body is empty")
-
-        title = (
-            str(query.get("title") or "").strip()
-            or readability_title
-            or _extract_title(raw_html)
-            or f"{job.category} crawl {job.id[:8]}"
-        )
-        summary = str(query.get("summary") or "").strip() or summarize_text(body)
-        extra = dict(query.get("extra") or {})
-        outbound_links = _extract_outbound_links(raw_html, base_url=source_url, current_url=source_url)
-        if _looks_like_link_notice(body=body, raw_html=raw_html, outbound_links=outbound_links):
-            body, summary = _build_link_notice_content(title, outbound_links)
-            extra["notice_kind"] = "link_notice"
-            extra["outbound_links"] = outbound_links
-        extra["crawl_job_id"] = job.id
-        extra["crawl_mode"] = "url_fetch"
-        if detail_selector_config:
-            extra["detail_selector_applied"] = extraction_method == "selector"
-        extra["detail_extraction_method"] = extraction_method
-        extra["tags"] = _build_content_tags(title, summary, body)
-        extra = _finalize_ingest_extra(
+        return ingest_url_work_item(
             db,
             category=job.category,
-            title=title,
-            summary=summary,
-            body=body,
-            extra=extra,
             query=query,
-            section=section,
-        )
-
-        payload = ContentIn(
-            category=job.category,
-            title=title,
-            body=body,
-            summary=summary,
-            school_name=(str(query.get("school_name") or "").strip() or None),
             source_url=source_url,
-            source_type="crawler",
-            published_at=(
-                _coerce_datetime(query.get("published_at"))
-                or _extract_published_at_from_raw_html(raw_html)
-            ),
-            region=(str(query.get("region") or "").strip() or None),
-            major=(str(query.get("major") or "").strip() or None),
-            extra=extra,
-            raw_html=raw_html,
+            work_item_kind="crawl_job",
+            work_item_id=job.id,
         )
-        content, status = upsert_content(db, payload)
-        return content.id, status
 
     def _ingest_from_file(
         self,
@@ -1295,80 +1561,14 @@ class CrawlEngine:
         file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one_or_none()
         if file_record is None:
             raise ValueError("content file not found")
-
-        file_url = str(query.get("source_url") or file_record.file_url or "").strip()
-        if not file_url:
-            raise ValueError("file url is empty")
-
-        link = file_record.site_section_link
-        title = (
-            str(query.get("title") or "").strip()
-            or (str(link.title).strip() if link and link.title else "")
-            or _fallback_link_title(file_url)
-        )
-
-        file_bytes, mime_type = _download_binary_with_retry(file_url)
-        extracted_text = _extract_pdf_text_from_bytes(file_bytes)
-        summary = None
-        extra = dict(query.get("extra") or {})
-        extra["crawl_job_id"] = job.id
-        extra["crawl_mode"] = "pdf_file"
-        extra["content_file_id"] = file_record.id
-        if link is not None:
-            extra["site_section_link_id"] = link.id
-
-        if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH:
-            body = extracted_text
-            summary = summarize_text(extracted_text)
-            extra["pdf_parse_status"] = "done"
-            extra["pdf_text_extracted"] = True
-        else:
-            body, summary = _build_scan_pdf_notice_content(title, file_url)
-            extra["pdf_parse_status"] = "needs_ocr"
-            extra["pdf_text_extracted"] = False
-
-        extra["tags"] = _build_content_tags(title, summary, extracted_text or body)
-        extra = _finalize_ingest_extra(
+        return ingest_file_work_item(
             db,
             category=job.category,
-            title=title,
-            summary=summary,
-            body=extracted_text or body,
-            extra=extra,
             query=query,
-            section=link.site_section if link is not None else None,
+            file_record=file_record,
+            work_item_kind="crawl_job",
+            work_item_id=job.id,
         )
-
-        payload = ContentIn(
-            category=job.category,
-            title=title,
-            body=body,
-            summary=summary,
-            school_name=(str(query.get("school_name") or "").strip() or None),
-            source_url=file_url,
-            source_type="crawler",
-            published_at=_coerce_datetime(query.get("published_at")),
-            region=(str(query.get("region") or "").strip() or None),
-            major=(str(query.get("major") or "").strip() or None),
-            extra=extra,
-            raw_html=None,
-        )
-        content, status = upsert_content(db, payload)
-
-        file_record.content_id = content.id
-        file_record.mime_type = mime_type or file_record.mime_type or "application/pdf"
-        file_record.text_extracted = extracted_text or None
-        file_record.parse_status = "done" if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH else "needs_ocr"
-        file_record.ocr_status = "not_started" if len(extracted_text) >= _MIN_PDF_TEXT_LENGTH else "skipped_mvp"
-        file_record.file_meta = {
-            **dict(file_record.file_meta or {}),
-            "parse_job_id": job.id,
-            "pdf_text_extracted": bool(extracted_text and len(extracted_text) >= _MIN_PDF_TEXT_LENGTH),
-        }
-        if link is not None:
-            link.status = "parsed" if file_record.parse_status == "done" else "file_needs_ocr"
-
-        return content.id, f"{status}:pdf_{file_record.parse_status}"
 
     def _ingest_from_content_dict(
         self,

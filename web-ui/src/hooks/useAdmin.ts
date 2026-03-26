@@ -2,12 +2,18 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  bootstrapAdminAnnouncementDepartment,
+  bootstrapAdminAnnouncementSchool,
   backfillSiteSectionSelectorConfig,
+  createAdminAnnouncementRebuild,
   createAdminPaymentOrderForUser,
   demoteAdminUser,
+  fetchAdminContentExplain,
   fetchAdminAdjustmentIntelligence,
   fetchAdminContentFingerprintStats,
   fetchAdminRawDatasets,
+  fetchAdminWorkflowDetail,
+  fetchAdminWorkflows,
   fetchContentFiles,
   fetchAdminAudits,
   fetchAdminMe,
@@ -21,6 +27,7 @@ import {
   fetchSiteSections,
   markAdminPaymentOrderPaid,
   previewSiteSectionSelectors,
+  reclassifyAdminContent,
   resetAdminUserPassword,
   promoteAdminUser,
   retryContentFileParse,
@@ -39,6 +46,9 @@ const adminQueryKeys = {
   contentFiles: ["admin", "content-files"] as const,
   schoolImportSeeds: ["admin", "school-import-seeds"] as const,
   rawDatasets: ["admin", "raw-datasets"] as const,
+  workflows: (params: Record<string, unknown>) => ["admin", "workflows", params] as const,
+  workflowDetail: (workflowRunId: string) => ["admin", "workflow-detail", workflowRunId] as const,
+  contentExplain: (contentId: string) => ["admin", "content-explain", contentId] as const,
 };
 
 export function useAdminMeQuery(enabled: boolean = true) {
@@ -130,6 +140,45 @@ export function useAdminRawDatasetsQuery(enabled: boolean) {
     queryKey: adminQueryKeys.rawDatasets,
     queryFn: fetchAdminRawDatasets,
     enabled,
+  });
+}
+
+export function useAdminWorkflowsQuery(
+  enabled: boolean,
+  params: {
+    family?: string;
+    scope_type?: string;
+    scope_key?: string;
+    status?: string;
+    workflow_type?: string;
+    host_key?: string;
+    page?: number;
+    page_size?: number;
+  },
+) {
+  return useQuery({
+    queryKey: adminQueryKeys.workflows(params),
+    queryFn: () => fetchAdminWorkflows(params),
+    enabled,
+    refetchInterval: enabled ? 20_000 : false,
+  });
+}
+
+export function useAdminWorkflowDetailQuery(enabled: boolean, workflowRunId: string | null) {
+  return useQuery({
+    queryKey: adminQueryKeys.workflowDetail(workflowRunId || ""),
+    queryFn: () => fetchAdminWorkflowDetail(workflowRunId || ""),
+    enabled: enabled && Boolean(workflowRunId),
+    refetchInterval: enabled && workflowRunId ? 20_000 : false,
+  });
+}
+
+export function useAdminContentExplainQuery(enabled: boolean, contentId: string | null) {
+  return useQuery({
+    queryKey: adminQueryKeys.contentExplain(contentId || ""),
+    queryFn: () => fetchAdminContentExplain(contentId || ""),
+    enabled: enabled && Boolean(contentId),
+    retry: false,
   });
 }
 
@@ -228,6 +277,87 @@ export function useAdminContentFileRetryMutation() {
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.contentFiles });
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
       await queryClient.invalidateQueries({ queryKey: adminQueryKeys.siteSections });
+    },
+  });
+}
+
+export function useAdminAnnouncementSchoolBootstrapMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { schoolName: string; homepageUrl: string; seedUrls: string[]; maxSections: number }) =>
+      bootstrapAdminAnnouncementSchool({
+        school_name: payload.schoolName,
+        homepage_url: payload.homepageUrl,
+        seed_urls: payload.seedUrls,
+        max_sections: payload.maxSections,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin", "workflows"] });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
+    },
+  });
+}
+
+export function useAdminAnnouncementDepartmentBootstrapMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      schoolName: string;
+      departmentName: string;
+      departmentType: string;
+      homepageUrl: string;
+      seedUrls: string[];
+      maxSections: number;
+    }) =>
+      bootstrapAdminAnnouncementDepartment({
+        school_name: payload.schoolName,
+        department_name: payload.departmentName,
+        department_type: payload.departmentType,
+        homepage_url: payload.homepageUrl,
+        seed_urls: payload.seedUrls,
+        max_sections: payload.maxSections,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin", "workflows"] });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
+    },
+  });
+}
+
+export function useAdminAnnouncementRebuildMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      scopeType: "school" | "department";
+      schoolName: string;
+      departmentName?: string | null;
+      homepageUrl?: string | null;
+      seedUrls: string[];
+      maxSections: number;
+    }) =>
+      createAdminAnnouncementRebuild({
+        scope_type: payload.scopeType,
+        school_name: payload.schoolName,
+        department_name: payload.departmentName ?? null,
+        homepage_url: payload.homepageUrl ?? null,
+        seed_urls: payload.seedUrls,
+        max_sections: payload.maxSections,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin", "workflows"] });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
+    },
+  });
+}
+
+export function useAdminContentReclassifyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (contentId: string) => reclassifyAdminContent(contentId),
+    onSuccess: async (_result, contentId) => {
+      await queryClient.invalidateQueries({ queryKey: ["admin", "workflows"] });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.contentExplain(contentId) });
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.audits });
     },
   });
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Activity, CreditCard, ExternalLink, FileSearch, LayoutDashboard, RotateCcw, ScrollText, Settings2, TestTube2, TriangleAlert, UserCog, WandSparkles } from "lucide-react";
 import ActivityChart from "@/components/admin/ActivityChart";
+import AnnouncementGovernanceWorkspace from "@/components/admin/AnnouncementGovernanceWorkspace";
 import { useDocumentVisibility } from "@/hooks/useDocumentVisibility";
 import {
   ApiError,
@@ -52,6 +53,7 @@ type SelectorPreviewMap = Record<string, SiteSectionSelectorPreviewResponse>;
 const ADMIN_NAV_ITEMS = [
   { id: "overview", label: "总览", description: "健康、吞吐和覆盖率", icon: LayoutDashboard },
   { id: "intelligence", label: "调剂情报", description: "多源数据图表", icon: WandSparkles },
+  { id: "announcement-governance", label: "Workflow", description: "Workflow / rebuild / explain", icon: TriangleAlert },
   { id: "users", label: "用户管理", description: "角色、密码和权益", icon: UserCog },
   { id: "audits", label: "审计事件", description: "管理员动作轨迹", icon: ScrollText },
   { id: "payments", label: "会员订单", description: "订单到账本和放权", icon: CreditCard },
@@ -831,6 +833,7 @@ export default function AdminPage() {
           </div>
         </section>
 
+        <AnnouncementGovernanceWorkspace enabled={isAuthenticated} />
         <section id="users" className="rounded-3xl border border-white/10 bg-black/40 p-6 shadow-2xl md:col-span-2">
           <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
             <UserCog size={18} className="text-cyan-400" />

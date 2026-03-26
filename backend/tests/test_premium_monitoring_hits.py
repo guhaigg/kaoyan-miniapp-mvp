@@ -6,8 +6,10 @@ from sqlalchemy import inspect
 from app import models as app_models
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Department, NotificationDelivery, NotificationOutbox, School, SiteSection
+from app.models import Content, ContentClassification, Department, NotificationDelivery, NotificationOutbox, School, SiteSection
+from app.services.monitor_target_signals import build_monitor_target_recent_signals
 from app.services.notifications import notification_engine
+from app.services.premium_monitoring import evaluate_content_for_premium_monitoring
 
 TARGET_MODEL = getattr(app_models, "PortalUserMonitorTarget", None)
 KEYWORD_MODEL = getattr(app_models, "PortalUserMonitorKeyword", None)
@@ -350,6 +352,98 @@ def test_invisible_supplemental_announcement_does_not_create_monitor_hit(client)
         hits = db.query(HIT_MODEL).filter(HIT_MODEL.user_id == user_id).all()
         assert hits == []
         assert _monitor_outboxes_for_user(db, user_id=user_id) == []
+
+
+def test_hidden_persisted_classification_blocks_monitor_hit_even_when_extra_looks_visible(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_persisted_hidden")
+    _create_monitor_target_and_keyword(user_id, school_name="Persist Hidden University", keyword="复试")
+
+    with SessionLocal() as db:
+        school = db.query(School).filter(School.name == "Persist Hidden University").one()
+        content = Content(
+            school_id=school.id,
+            category="announcement",
+            title="Persist Hidden University 复试公告",
+            body="这是研究生复试公告正文。",
+            summary="这是研究生复试公告正文。",
+            source_type="crawler",
+            source_url="https://example.com/pm-hit-persisted-hidden",
+            extra={
+                "school_name": "Persist Hidden University",
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+                "system_tags": ["复试"],
+            },
+        )
+        db.add(content)
+        db.flush()
+        db.add(
+            ContentClassification(
+                content_id=content.id,
+                scope_type="school",
+                scope_key="Persist Hidden University",
+                visibility="hidden",
+                classification_state="hidden_non_admissions",
+                is_visible=0,
+                explain_payload={"reason": "forced hidden for test"},
+            )
+        )
+        db.flush()
+        evaluate_content_for_premium_monitoring(db, content, trigger_status="created")
+        db.commit()
+
+    with SessionLocal() as db:
+        hits = db.query(HIT_MODEL).filter(HIT_MODEL.user_id == user_id).all()
+        assert hits == []
+        assert _monitor_outboxes_for_user(db, user_id=user_id) == []
+
+
+def test_monitor_target_recent_signals_only_use_persisted_visible_classification(client):
+    user_id, _token = _register_user_and_token(client, "pmhit_signal_persisted")
+    target_id = _create_monitor_target_and_keyword(user_id, school_name="Persist Signal University", keyword=None)
+
+    with SessionLocal() as db:
+        school = db.query(School).filter(School.name == "Persist Signal University").one()
+        content = Content(
+            school_id=school.id,
+            category="announcement",
+            title="Persist Signal University 最新公告",
+            body="这是公告正文。",
+            summary="这是公告正文。",
+            source_type="crawler",
+            source_url="https://example.com/pm-signal-persisted-hidden",
+            extra={
+                "school_name": "Persist Signal University",
+                "portal_scope": "graduate_admissions",
+                "channel_label": "通知公告",
+                "channel_tier": "core",
+                "system_tags": ["通知"],
+            },
+        )
+        db.add(content)
+        db.flush()
+        db.add(
+            ContentClassification(
+                content_id=content.id,
+                scope_type="school",
+                scope_key="Persist Signal University",
+                visibility="hidden",
+                classification_state="hidden_non_admissions",
+                is_visible=0,
+                explain_payload={"reason": "forced hidden for signal test"},
+            )
+        )
+        db.commit()
+
+        target = db.query(TARGET_MODEL).filter(TARGET_MODEL.id == target_id).one()
+        signal_map, overview = build_monitor_target_recent_signals(db, [target])
+
+    signal = signal_map[target_id]
+    assert signal["recent_announcement_count"] == 0
+    assert signal["latest_announcement"] is None
+    assert overview["total_recent_announcements"] == 0
+    assert overview["latest_announcement"] is None
 
 
 def test_monitor_hit_generates_bark_delivery_when_enabled(client):

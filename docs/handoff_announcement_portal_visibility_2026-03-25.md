@@ -209,3 +209,17 @@ npm run test:backend
 - 旧数据仍需要 backfill 重新分类
 - 重点学校还需要人工抽样验证
 - 后台还缺解释性和治理面板
+
+## 9. 2026-03-26 follow-up
+
+- The follow-up governance surface is now in place for announcements:
+  - `GET /api/v1/admin/workflows`
+  - `GET /api/v1/admin/workflows/{id}`
+  - Admin UI workspace for workflow list/detail, bootstrap/rebuild, and content explain/reclassify
+- Announcement runtime has been tightened further:
+  - legal runtime entrypoints are now V2 workflows plus the legacy `family_discovery` handoff shell
+  - announcement `retry-parse` runs through V2 `file_parse`
+  - monitoring / notification surfaces consume persisted `content_classifications` only
+- Remaining work after this handoff is operational rather than architectural:
+  - manual smoke on the admin governance workspace
+  - deployment / production data backfill when explicitly scheduled

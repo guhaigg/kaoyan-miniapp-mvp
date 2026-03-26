@@ -23,6 +23,21 @@ class _DummyResponse:
             raise RuntimeError(f"http {self.status_code}")
 
 
+def _process_announcement_discovery_handoff() -> int:
+    assert crawl_engine.process_job_batch() == 1
+    return workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker")
+
+
+def _drain_workflow_steps(max_rounds: int = 5) -> list[int]:
+    processed_batches: list[int] = []
+    for _ in range(max_rounds):
+        processed = workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker")
+        if processed == 0:
+            break
+        processed_batches.append(processed)
+    return processed_batches
+
+
 def test_site_section_create_and_discover_job_creation(client):
     create_resp = client.post(
         "/api/v1/site-sections",
@@ -960,7 +975,7 @@ def test_site_section_discovery_replays_container_links_before_fallback(client, 
         headers=_admin_headers(),
     )
     assert discover_resp.status_code == 200
-    assert crawl_engine.process_job_batch() == 1
+    assert _process_announcement_discovery_handoff() == 1
 
     with SessionLocal() as db:
         links = (
@@ -1009,8 +1024,7 @@ def test_site_section_discovery_creates_html_jobs_and_pdf_records(client, monkey
     )
     job_id = discover_resp.json()["job_ids"][0]
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
 
     with SessionLocal() as db:
         section = db.query(SiteSection).filter(SiteSection.id == section_id).one()
@@ -1022,23 +1036,27 @@ def test_site_section_discovery_creates_html_jobs_and_pdf_records(client, monkey
         pdf_link = next(link for link in links if link.link_type == "pdf")
         assert html_link.status == "enqueued"
         assert pdf_link.status == "file_recorded"
-
-        child_job = db.query(CrawlJob).filter(CrawlJob.id == html_link.crawl_job_id).one()
-        assert child_job.query["source_url"] == "https://example.com/detail/notice-1.html"
-        assert child_job.query["site_section_id"] == section_id
-        assert child_job.query["site_section_link_id"] == html_link.id
+        assert html_link.crawl_job_id is None
+        html_step = db.query(WorkflowStep).filter(WorkflowStep.id == html_link.snapshot_meta["detail_workflow_step_id"]).one()
+        html_run = db.query(WorkflowRun).filter(WorkflowRun.id == html_link.snapshot_meta["detail_workflow_run_id"]).one()
+        assert html_run.workflow_type == "detail_fetch"
+        assert html_step.input_payload["source_url"] == "https://example.com/detail/notice-1.html"
+        assert html_step.input_payload["site_section_id"] == section_id
+        assert html_step.input_payload["site_section_link_id"] == html_link.id
 
         file_record = db.query(ContentFile).filter(ContentFile.site_section_link_id == pdf_link.id).one()
         assert file_record.file_url == "https://example.com/college/notices/files/notice-1.pdf"
         assert file_record.file_type == "pdf"
         assert file_record.parse_status == "pending"
-        assert pdf_link.crawl_job_id is not None
-        pdf_job = db.query(CrawlJob).filter(CrawlJob.id == pdf_link.crawl_job_id).one()
-        assert pdf_job.query["job_kind"] == "file_parse"
-        assert pdf_job.query["content_file_id"] == file_record.id
+        assert pdf_link.crawl_job_id is None
+        pdf_step = db.query(WorkflowStep).filter(WorkflowStep.id == pdf_link.snapshot_meta["parse_workflow_step_id"]).one()
+        pdf_run = db.query(WorkflowRun).filter(WorkflowRun.id == pdf_link.snapshot_meta["parse_workflow_run_id"]).one()
+        assert pdf_run.workflow_type == "file_parse"
+        assert pdf_step.input_payload["content_file_id"] == file_record.id
 
         parent_job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
         assert parent_job.status == "done"
+        assert parent_job.query["result_state"] == "workflow_handoff"
 
     links_resp = client.get(f"/api/v1/site-sections/{section_id}/links", headers=_admin_headers())
     assert links_resp.status_code == 200
@@ -1091,8 +1109,7 @@ def test_site_section_discovery_accepts_shnu_legacy_detail_urls_outside_list_pre
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
 
     with SessionLocal() as db:
         links = (
@@ -1106,13 +1123,13 @@ def test_site_section_discovery_accepts_shnu_legacy_detail_urls_outside_list_pre
             "http://web.shnu.edu.cn/yjspyzx/ec/d6/c19513a847062/page.htm",
         ]
         assert all(link.status == "enqueued" for link in links)
-        child_jobs = (
-            db.query(CrawlJob)
-            .filter(CrawlJob.id.in_([link.crawl_job_id for link in links if link.crawl_job_id]))
+        child_steps = (
+            db.query(WorkflowStep)
+            .filter(WorkflowStep.id.in_([link.snapshot_meta["detail_workflow_step_id"] for link in links]))
             .all()
         )
-        assert len(child_jobs) == 2
-        assert all(job.query["job_kind"] == "detail_fetch" for job in child_jobs)
+        assert len(child_steps) == 2
+        assert all(step.step_type == "detail_fetch" for step in child_steps)
 
 
 def test_site_section_discovery_accepts_shnu_subdomain_detail_urls_outside_list_prefix(client, monkeypatch):
@@ -1162,8 +1179,7 @@ def test_site_section_discovery_accepts_shnu_subdomain_detail_urls_outside_list_
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
 
     with SessionLocal() as db:
         links = (
@@ -1250,16 +1266,20 @@ def test_site_section_link_retry_queues_html_jobs_and_reuses_existing_jobs(clien
     assert items[existing_link_id]["status"] == "existing"
     assert items[existing_link_id]["job_id"] == existing_job_id
     assert items[fresh_link_id]["status"] == "queued"
-    assert items[fresh_link_id]["job_id"] is not None
+    assert items[fresh_link_id]["job_id"] is None
+    assert items[fresh_link_id]["workflow_run_id"] is not None
+    assert items[fresh_link_id]["step_id"] is not None
 
     with SessionLocal() as db:
         fresh_link = db.query(SiteSectionLink).filter(SiteSectionLink.id == fresh_link_id).one()
         assert fresh_link.status == "enqueued"
-        queued_job = db.query(CrawlJob).filter(CrawlJob.id == fresh_link.crawl_job_id).one()
-        assert queued_job.query["job_kind"] == "detail_fetch"
-        assert queued_job.query["site_section_link_id"] == fresh_link_id
-        assert queued_job.query["site_section_id"] == fresh_link.site_section_id
-        assert queued_job.query["published_at"].startswith("2025-05-21")
+        assert fresh_link.crawl_job_id is None
+        queued_step = db.query(WorkflowStep).filter(WorkflowStep.id == items[fresh_link_id]["step_id"]).one()
+        queued_run = db.query(WorkflowRun).filter(WorkflowRun.id == items[fresh_link_id]["workflow_run_id"]).one()
+        assert queued_run.workflow_type == "detail_fetch"
+        assert queued_step.input_payload["site_section_link_id"] == fresh_link_id
+        assert queued_step.input_payload["site_section_id"] == fresh_link.site_section_id
+        assert queued_step.input_payload["published_at"].startswith("2025-05-21")
 
 
 def test_site_section_link_retry_queues_pdf_jobs_and_creates_missing_content_file(client):
@@ -1329,17 +1349,19 @@ def test_site_section_link_retry_queues_pdf_jobs_and_creates_missing_content_fil
     with SessionLocal() as db:
         existing_file = db.query(ContentFile).filter(ContentFile.id == existing_file_id).one()
         assert existing_file.parse_status == "pending"
-        queued_existing_job = db.query(CrawlJob).filter(CrawlJob.id == existing_file.site_section_link.crawl_job_id).one()
-        assert queued_existing_job.query["job_kind"] == "file_parse"
-        assert queued_existing_job.query["content_file_id"] == existing_file.id
+        queued_existing_step = db.query(WorkflowStep).filter(WorkflowStep.id == existing_file.file_meta["parse_workflow_step_id"]).one()
+        queued_existing_run = db.query(WorkflowRun).filter(WorkflowRun.id == existing_file.file_meta["parse_workflow_run_id"]).one()
+        assert queued_existing_run.workflow_type == "file_parse"
+        assert queued_existing_step.input_payload["content_file_id"] == existing_file.id
 
         missing_link = db.query(SiteSectionLink).filter(SiteSectionLink.id == missing_file_link_id).one()
         created_file = db.query(ContentFile).filter(ContentFile.site_section_link_id == missing_file_link_id).one()
         assert created_file.file_url == missing_link.link_url
         assert created_file.file_type == "pdf"
-        queued_missing_job = db.query(CrawlJob).filter(CrawlJob.id == missing_link.crawl_job_id).one()
-        assert queued_missing_job.query["job_kind"] == "file_parse"
-        assert queued_missing_job.query["content_file_id"] == created_file.id
+        queued_missing_step = db.query(WorkflowStep).filter(WorkflowStep.id == created_file.file_meta["parse_workflow_step_id"]).one()
+        queued_missing_run = db.query(WorkflowRun).filter(WorkflowRun.id == created_file.file_meta["parse_workflow_run_id"]).one()
+        assert queued_missing_run.workflow_type == "file_parse"
+        assert queued_missing_step.input_payload["content_file_id"] == created_file.id
 
 
 def test_site_section_link_retry_reingests_existing_content_and_cleans_summary(client, monkeypatch):
@@ -1429,8 +1451,7 @@ def test_site_section_link_retry_reingests_existing_content_and_cleans_summary(c
     )
     assert retry_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
 
     with SessionLocal() as db:
         content = db.query(Content).filter(Content.source_url == source_url).one()
@@ -1478,20 +1499,27 @@ def test_site_section_discovery_failure_writes_crawl_error(client, monkeypatch):
     )
     job_id = discover_resp.json()["job_ids"][0]
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert crawl_engine.process_job_batch() == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
 
     with SessionLocal() as db:
         job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
-        assert job.status == "failed"
+        assert job.status == "done"
+        assert job.query["result_state"] == "workflow_handoff"
 
         section = db.query(SiteSection).filter(SiteSection.id == section_id).one()
-        assert section.last_discovery_status == "failed"
-        assert "network boom" in (section.last_error or "")
+        assert section.last_discovery_status in {"queued", "failed"}
 
         errors = db.query(CrawlError).all()
-        assert len(errors) == 1
-        assert errors[0].payload["crawl_job_id"] == job_id
+        assert errors == []
+        runs = db.query(WorkflowRun).all()
+        steps = db.query(WorkflowStep).all()
+        assert len(runs) == 1
+        assert len(steps) == 1
+        assert runs[0].status == "running"
+        assert steps[0].status == "pending"
+        assert steps[0].attempt_count == 1
+        assert "network boom" in (steps[0].error_message or "")
 
 
 def test_site_section_discovery_applies_list_selector_config_filters_noise(client, monkeypatch):
@@ -1536,8 +1564,7 @@ def test_site_section_discovery_applies_list_selector_config_filters_noise(clien
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
 
     with SessionLocal() as db:
         links = db.query(SiteSectionLink).filter(SiteSectionLink.site_section_id == section_id).all()
@@ -1584,8 +1611,7 @@ def test_site_section_discovery_supports_css_selector_for_list_page(client, monk
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
 
     with SessionLocal() as db:
         links = db.query(SiteSectionLink).filter(SiteSectionLink.site_section_id == section_id).all()
@@ -1806,8 +1832,7 @@ def test_site_section_discovery_supports_xpath_selector_for_list_page(client, mo
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
 
     with SessionLocal() as db:
         links = db.query(SiteSectionLink).filter(SiteSectionLink.site_section_id == section_id).all()
@@ -1870,16 +1895,14 @@ def test_site_section_detail_selector_limits_body_text(client, monkeypatch):
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
 
     with SessionLocal() as db:
-        child_job = next(
-            job for job in db.query(CrawlJob).all() if (job.query or {}).get("job_kind") == "detail_fetch"
-        )
-        assert child_job.status == "done"
+        child_step = db.query(WorkflowStep).filter(WorkflowStep.step_type == "detail_fetch").one()
+        child_run = db.query(WorkflowRun).filter(WorkflowRun.id == child_step.run_id).one()
+        assert child_step.status == "done"
+        assert child_run.status == "done"
 
         links = db.query(SiteSectionLink).all()
         assert len(links) == 1
@@ -1943,10 +1966,8 @@ def test_short_detail_page_with_target_link_becomes_link_notice(client, monkeypa
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
 
     with SessionLocal() as db:
         content = db.query(Content).filter(Content.source_url == "https://example.com/link-notice/detail-1.html").one()
@@ -2000,10 +2021,8 @@ def test_pdf_file_parse_ingests_text_based_pdf(client, monkeypatch):
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
 
     with SessionLocal() as db:
         section_links = db.query(SiteSectionLink).filter(SiteSectionLink.site_section_id == section_id).all()
@@ -2062,10 +2081,8 @@ def test_pdf_file_parse_falls_back_to_placeholder_when_text_is_too_short(client,
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
 
     with SessionLocal() as db:
         file_record = db.query(ContentFile).one()
@@ -2110,8 +2127,7 @@ def test_content_file_admin_list_and_retry_reuses_existing_pending_job(client, m
         headers=_admin_headers(),
     )
     assert discover_resp.status_code == 200
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
 
     list_resp = client.get("/api/v1/site-sections/content-files", headers=_admin_headers())
     assert list_resp.status_code == 200
@@ -2125,10 +2141,14 @@ def test_content_file_admin_list_and_retry_reuses_existing_pending_job(client, m
     assert retry_resp.status_code == 200
     retry_payload = retry_resp.json()
     assert retry_payload["status"] == "existing"
+    assert retry_payload["workflow_run_id"] is not None
+    assert retry_payload["step_id"] is not None
 
     with SessionLocal() as db:
         jobs = [job for job in db.query(CrawlJob).all() if (job.query or {}).get("job_kind") == "file_parse"]
-        assert len(jobs) == 1
+        steps = db.query(WorkflowStep).filter(WorkflowStep.step_type == "file_parse").all()
+        assert len(jobs) == 0
+        assert len(steps) == 1
 
 
 def test_content_file_retry_creates_new_job_after_needs_ocr(client, monkeypatch):
@@ -2169,10 +2189,8 @@ def test_content_file_retry_creates_new_job_after_needs_ocr(client, monkeypatch)
         headers=_admin_headers(),
     )
     assert discover_resp.status_code == 200
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert _process_announcement_discovery_handoff() == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
 
     list_resp = client.get(
         "/api/v1/site-sections/content-files",
@@ -2186,14 +2204,17 @@ def test_content_file_retry_creates_new_job_after_needs_ocr(client, monkeypatch)
     assert retry_resp.status_code == 200
     retry_payload = retry_resp.json()
     assert retry_payload["status"] == "queued"
+    assert retry_payload["workflow_run_id"] is not None
+    assert retry_payload["step_id"] is not None
 
     with SessionLocal() as db:
         file_record = db.query(ContentFile).filter(ContentFile.id == item["id"]).one()
         assert file_record.parse_status == "pending"
         assert file_record.ocr_status == "not_started"
-        queued_job = db.query(CrawlJob).filter(CrawlJob.id == retry_payload["job_id"]).one()
-        assert queued_job.status == "pending"
-        assert queued_job.query["job_kind"] == "file_parse"
+        queued_step = db.query(WorkflowStep).filter(WorkflowStep.id == retry_payload["step_id"]).one()
+        queued_run = db.query(WorkflowRun).filter(WorkflowRun.id == retry_payload["workflow_run_id"]).one()
+        assert queued_step.status == "pending"
+        assert queued_run.workflow_type == "file_parse"
 
 
 def test_content_file_retry_ocr_queues_workflow_step_after_needs_ocr(client, monkeypatch):
@@ -2234,8 +2255,8 @@ def test_content_file_retry_ocr_queues_workflow_step_after_needs_ocr(client, mon
         headers=_admin_headers(),
     )
     assert discover_resp.status_code == 200
-    assert crawl_engine.process_job_batch() == 1
-    assert crawl_engine.process_job_batch() == 1
+    assert _process_announcement_discovery_handoff() == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
 
     list_resp = client.get(
         "/api/v1/site-sections/content-files",
@@ -2291,8 +2312,8 @@ def test_site_section_discovery_retries_temporary_fetch_failure(client, monkeypa
     )
     assert discover_resp.status_code == 200
 
-    processed = crawl_engine.process_job_batch()
-    assert processed == 1
+    assert crawl_engine.process_job_batch() == 1
+    assert workflow_engine.process_step_batch(batch_size=10, worker_name="test-worker") == 1
     assert attempts["count"] == 3
 
 

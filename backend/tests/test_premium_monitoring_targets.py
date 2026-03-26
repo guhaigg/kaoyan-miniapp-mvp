@@ -7,7 +7,7 @@ from fastapi.routing import APIRoute
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import Content, Department, PortalUser, PortalUserMonitorHit, PortalUserMonitorTarget, School, SiteSection, utcnow
+from app.models import Content, ContentClassification, Department, PortalUser, PortalUserMonitorHit, PortalUserMonitorTarget, School, SiteSection, utcnow
 from app.services.account_access import ENTITLEMENT_SOURCE_ADMIN_GRANT, upsert_premium_entitlement
 from app.services.monitor_target_repair import repair_broken_monitor_targets
 
@@ -114,6 +114,29 @@ def _ensure_asset_ids() -> tuple[str, str, str]:
             db.refresh(section)
 
         return school.id, department.id, section.id
+
+
+def _add_content_classification(
+    db,
+    *,
+    content_id: str,
+    scope_type: str,
+    scope_key: str,
+    classification_state: str,
+    visibility: str,
+    is_visible: int,
+) -> None:
+    db.add(
+        ContentClassification(
+            content_id=content_id,
+            scope_type=scope_type,
+            scope_key=scope_key,
+            classification_state=classification_state,
+            visibility=visibility,
+            is_visible=is_visible,
+            explain_payload={"source": "test"},
+        )
+    )
 
 
 def _create_target(client, headers: dict[str, str], payload: dict):
@@ -263,48 +286,73 @@ def test_target_list_includes_recent_three_day_announcement_signal_summary(clien
 
     now = utcnow()
     with SessionLocal() as db:
-        db.add_all(
-            [
-                Content(
-                    school_id=school_id,
-                    category="announcement",
-                    title="电子科技大学校园公告",
-                    body="校园一般通知",
-                    summary="校园一般通知摘要",
-                    source_url="https://example.com/campus-general",
-                    source_type="crawler",
-                    published_at=now - timedelta(hours=12),
-                    extra={},
-                ),
-                Content(
-                    school_id=school_id,
-                    category="announcement",
-                    title="计算机学院2026年硕士研究生招生简章",
-                    body="这里是最新研究生招生安排",
-                    summary="最新招生安排",
-                    source_url="https://example.com/cs-admission",
-                    source_type="crawler",
-                    published_at=now - timedelta(hours=2),
-                    extra={
-                        "department_id": department_id,
-                        "department_name": "计算机学院",
-                        "site_section_id": section_id,
-                        "site_section_name": "计算机学院通知公告",
-                        "tags": ["招生简章"],
-                    },
-                ),
-                Content(
-                    school_id=school_id,
-                    category="announcement",
-                    title="过期公告",
-                    body="五天前的旧公告",
-                    summary="五天前的旧公告",
-                    source_url="https://example.com/stale",
-                    source_type="crawler",
-                    published_at=now - timedelta(days=5),
-                    extra={},
-                ),
-            ]
+        campus_content = Content(
+            school_id=school_id,
+            category="announcement",
+            title="电子科技大学校园公告",
+            body="校园一般通知",
+            summary="校园一般通知摘要",
+            source_url="https://example.com/campus-general",
+            source_type="crawler",
+            published_at=now - timedelta(hours=12),
+            extra={},
+        )
+        department_content = Content(
+            school_id=school_id,
+            category="announcement",
+            title="计算机学院2026年硕士研究生招生简章",
+            body="这里是最新研究生招生安排",
+            summary="最新招生安排",
+            source_url="https://example.com/cs-admission",
+            source_type="crawler",
+            published_at=now - timedelta(hours=2),
+            extra={
+                "department_id": department_id,
+                "department_name": "计算机学院",
+                "site_section_id": section_id,
+                "site_section_name": "计算机学院通知公告",
+                "tags": ["招生简章"],
+            },
+        )
+        stale_content = Content(
+            school_id=school_id,
+            category="announcement",
+            title="过期公告",
+            body="五天前的旧公告",
+            summary="五天前的旧公告",
+            source_url="https://example.com/stale",
+            source_type="crawler",
+            published_at=now - timedelta(days=5),
+            extra={},
+        )
+        db.add_all([campus_content, department_content, stale_content])
+        db.flush()
+        _add_content_classification(
+            db,
+            content_id=campus_content.id,
+            scope_type="school",
+            scope_key="电子科技大学",
+            classification_state="hidden_non_admissions",
+            visibility="hidden",
+            is_visible=0,
+        )
+        _add_content_classification(
+            db,
+            content_id=department_content.id,
+            scope_type="department",
+            scope_key="电子科技大学::计算机学院",
+            classification_state="department_visible",
+            visibility="visible",
+            is_visible=1,
+        )
+        _add_content_classification(
+            db,
+            content_id=stale_content.id,
+            scope_type="school",
+            scope_key="电子科技大学",
+            classification_state="school_visible",
+            visibility="visible",
+            is_visible=1,
         )
         db.commit()
 
@@ -350,43 +398,59 @@ def test_target_list_recent_signals_skip_invisible_supplemental_announcements(cl
 
     now = utcnow()
     with SessionLocal() as db:
-        db.add_all(
-            [
-                Content(
-                    school_id=school_id,
-                    category="announcement",
-                    title="电子科技大学2026年招生简章",
-                    body="这是学校级核心研招公告。",
-                    summary="核心栏目样本",
-                    source_url="https://example.com/visible-core-guide",
-                    source_type="crawler",
-                    published_at=now - timedelta(hours=2),
-                    extra={
-                        "portal_scope": "graduate_admissions",
-                        "channel_label": "招生简章",
-                        "channel_tier": "core",
-                        "system_tags": ["招生简章"],
-                        "tags": ["招生简章"],
-                    },
-                ),
-                Content(
-                    school_id=school_id,
-                    category="announcement",
-                    title="电子科技大学信息公开说明",
-                    body="这是更晚发布的非研招信息公开。",
-                    summary="补充栏目非研招内容",
-                    source_url="https://example.com/hidden-supplemental-public",
-                    source_type="crawler",
-                    published_at=now - timedelta(hours=1),
-                    extra={
-                        "portal_scope": "graduate_admissions",
-                        "channel_label": "信息公开",
-                        "channel_tier": "supplemental",
-                        "system_tags": ["信息公开"],
-                        "tags": ["信息公开"],
-                    },
-                ),
-            ]
+        visible_content = Content(
+            school_id=school_id,
+            category="announcement",
+            title="电子科技大学2026年招生简章",
+            body="这是学校级核心研招公告。",
+            summary="核心栏目样本",
+            source_url="https://example.com/visible-core-guide",
+            source_type="crawler",
+            published_at=now - timedelta(hours=2),
+            extra={
+                "portal_scope": "graduate_admissions",
+                "channel_label": "招生简章",
+                "channel_tier": "core",
+                "system_tags": ["招生简章"],
+                "tags": ["招生简章"],
+            },
+        )
+        hidden_content = Content(
+            school_id=school_id,
+            category="announcement",
+            title="电子科技大学信息公开说明",
+            body="这是更晚发布的非研招信息公开。",
+            summary="补充栏目非研招内容",
+            source_url="https://example.com/hidden-supplemental-public",
+            source_type="crawler",
+            published_at=now - timedelta(hours=1),
+            extra={
+                "portal_scope": "graduate_admissions",
+                "channel_label": "信息公开",
+                "channel_tier": "supplemental",
+                "system_tags": ["信息公开"],
+                "tags": ["信息公开"],
+            },
+        )
+        db.add_all([visible_content, hidden_content])
+        db.flush()
+        _add_content_classification(
+            db,
+            content_id=visible_content.id,
+            scope_type="school",
+            scope_key="电子科技大学",
+            classification_state="school_visible",
+            visibility="visible",
+            is_visible=1,
+        )
+        _add_content_classification(
+            db,
+            content_id=hidden_content.id,
+            scope_type="school",
+            scope_key="电子科技大学",
+            classification_state="hidden_non_admissions",
+            visibility="hidden",
+            is_visible=0,
         )
         db.commit()
 

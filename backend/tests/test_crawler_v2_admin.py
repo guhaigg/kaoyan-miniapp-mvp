@@ -116,6 +116,91 @@ def test_admin_bootstrap_school_enqueues_workflow_and_worker_persists_v2_graph(c
         assert parse_artifact.payload["candidate_urls"] == ["https://seed.example.edu.cn/notices/"]
 
 
+def test_admin_workflow_list_filters_and_detail_expose_seed_source_and_step_runtime(client, monkeypatch):
+    def _fake_bootstrap(db, **kwargs):
+        school = db.query(School).filter(School.name == kwargs["school_name"]).one()
+        section = SiteSection(
+            school_id=school.id,
+            name="Admissions Notices",
+            section_type="notice",
+            section_url="https://seed.example.edu.cn/notices/",
+            discovery_category="announcement",
+            enabled=0,
+            list_selector_config={},
+            detail_selector_config={},
+        )
+        db.add(section)
+        db.flush()
+        return {
+            "school": school,
+            "homepage_url": kwargs["homepage_url"],
+            "seed_urls": list(kwargs["seed_urls"]),
+            "candidate_count": 1,
+            "candidate_urls": [section.section_url],
+            "created_sections": 1,
+            "existing_sections": 0,
+            "job_ids": [],
+            "items": [section],
+        }
+
+    monkeypatch.setattr("app.services.workflow_v2.bootstrap_site_sections", _fake_bootstrap)
+
+    response = client.post(
+        "/api/v1/admin/bootstrap/schools",
+        json={
+            "school_name": "Workflow List University",
+            "homepage_url": "https://seed.example.edu.cn/",
+            "seed_urls": ["https://seed.example.edu.cn/notices/"],
+            "max_sections": 8,
+        },
+        headers=_admin_headers(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert workflow_engine.process_step_batch(batch_size=5, worker_name="test-worker") == 1
+
+    list_response = client.get(
+        "/api/v1/admin/workflows",
+        params={
+            "family": "notice",
+            "scope_type": "school",
+            "scope_key": "WorkflowListUniversity",
+            "status": "done",
+            "workflow_type": "school_portal_discovery",
+            "host_key": "seed.example.edu.cn",
+            "page": 1,
+            "page_size": 10,
+        },
+        headers=_admin_headers(),
+    )
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert list_payload["total"] == 1
+    item = list_payload["items"][0]
+    assert item["workflow_run_id"] == payload["workflow_run_id"]
+    assert item["seed_source"] == "payload"
+    assert item["families"] == ["admissions", "notice"]
+    assert item["host_keys"] == ["seed.example.edu.cn"]
+    assert item["latest_step_type"] == "school_portal_discovery"
+    assert item["latest_step_status"] == "done"
+
+    detail_response = client.get(f"/api/v1/admin/workflows/{payload['workflow_run_id']}", headers=_admin_headers())
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["seed_source"] == "payload"
+    assert detail_payload["terminal_reason"] is None
+    assert detail_payload["request_payload"]["homepage_url"] == "https://seed.example.edu.cn/"
+    assert detail_payload["request_payload"]["seed_urls"] == [
+        "https://seed.example.edu.cn/",
+        "https://seed.example.edu.cn/notices/",
+    ]
+    assert detail_payload["steps"][0]["lease_owner"] is None
+    assert detail_payload["steps"][0]["leased_at"] is None
+    assert detail_payload["steps"][0]["timeout_seconds"] > 0
+    assert detail_payload["steps"][0]["max_attempts"] >= 1
+
+
 def test_department_bootstrap_rejects_school_scoped_sections_and_rolls_back_partial_writes(client, monkeypatch):
     def _fake_bootstrap(db, **kwargs):
         school = db.query(School).filter(School.name == kwargs["school_name"]).one()
@@ -203,8 +288,10 @@ def test_admin_scope_rebuild_uses_canonical_announcement_seed_when_payload_seed_
         step = db.query(WorkflowStep).filter(WorkflowStep.id == payload["step_id"]).one()
         assert run.request_payload["homepage_url"] == "https://yz.hubu.edu.cn/"
         assert run.request_payload["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert run.request_payload["seed_source"] == "canonical_registry"
         assert step.input_payload["homepage_url"] == "https://yz.hubu.edu.cn/"
         assert step.input_payload["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert step.input_payload["seed_source"] == "canonical_registry"
 
 
 def test_admin_scope_rebuild_requires_governed_seed_for_school_announcement_scope(client):
@@ -293,3 +380,10 @@ def test_admin_content_reclassify_queues_workflow_step(client):
         step = db.query(WorkflowStep).filter(WorkflowStep.id == payload["step_id"]).one()
         assert row.classification_state == "school_visible"
         assert step.status == "done"
+
+    detail_response = client.get(f"/api/v1/admin/workflows/{payload['workflow_run_id']}", headers=_admin_headers())
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["terminal_reason"] == "school_visible"
+    assert detail_payload["content_classifications"][0]["content_id"] == content_id
+    assert detail_payload["content_classifications"][0]["classification_state"] == "school_visible"

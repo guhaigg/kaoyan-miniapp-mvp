@@ -39,7 +39,7 @@ from ..services.content_repair import infer_non_detail_announcement_reason, reso
 from ..services.announcement_portal import normalize_portal_tags
 from ..services.classification import get_effective_content_classification
 from ..services.search_cache import search_response_cache
-from ..services.workflow_v2 import latest_scope_run
+from ..services.workflow_v2 import ASSET_WORKFLOW_TYPES, latest_scope_run
 
 router = APIRouter(prefix="/search", tags=["search"])
 ANONYMOUS_PREVIEW_LIMIT = 2
@@ -127,6 +127,7 @@ def _resolve_search_asset_state(
         db,
         scope_type="school",
         school_name=requested_school_name,
+        workflow_types=ASSET_WORKFLOW_TYPES,
     )
     if latest_run is not None and str(latest_run.status or "").strip() in {"pending", "running"}:
         return "rebuilding", "school", None, latest_run.id

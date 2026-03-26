@@ -395,6 +395,8 @@
   - `POST /api/v1/admin/bootstrap/schools`
   - `POST /api/v1/admin/bootstrap/departments`
   - `POST /api/v1/admin/rebuilds`
+  - `GET /api/v1/admin/workflows`
+  - `GET /api/v1/admin/workflows/{id}`
   - `POST /api/v1/admin/contents/{id}/reclassify`
   - `GET /api/v1/admin/contents/{id}/explain`
   - `POST /api/v1/site-sections/content-files/{id}/retry-ocr`
@@ -406,7 +408,10 @@
 - 公告侧 legacy `family_discovery` 已收口成 handoff-only compatibility shell：有显式 seed 或 canonical seed 时直接转 V2 `scope_rebuild`，没有 governed seed 时终态写成 `no_candidate`
 - legacy `ensure_announcement_search_bootstrap` 已删除：公告 readiness 现在只由搜索资产状态解析和 V2 workflow 状态表达，不再保留 announcement 侧兼容 helper
 - 公告侧 handoff 的真实发现输入已经固定为 `homepage_url + seed_urls`；旧 `candidate_urls` 只保留为兼容返回字段，不再驱动 discovery
-- 已新增 `GET /api/v1/admin/workflows/{id}`，可以直接查看某次 bootstrap/rebuild 的 step、portal graph、host decision、artifact 和治理动作；这也是参考 `yanbot` 笔记后优先补的治理能力
+- 已新增 `GET /api/v1/admin/workflows` 和 `GET /api/v1/admin/workflows/{id}`，可按 family / scope / status / workflow_type / host_key 过滤，并查看 normalized seed、seed source、lease / retry / timeout、terminal reason、artifact 和 classification evidence
+- Admin Web UI 已补公告治理工作区：可直接查看 workflow 列表与详情，提交 school / department bootstrap、scope rebuild，以及执行 content explain / reclassify
+- 公告 `retry-parse` 已切到 V2 `file_parse` step；legacy `crawl_jobs(file_parse)` 不再是公告文件解析的主执行面
+- monitoring / notification announcement 消费已统一到 persisted `content_classifications`；`contents.extra` 只保留为分类输入与解释证据，不再作为消费面的最终判定
 
 当前边界：
 

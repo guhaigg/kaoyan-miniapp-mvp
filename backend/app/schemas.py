@@ -729,6 +729,8 @@ class SiteSectionLinkRetryRequest(BaseModel):
 class SiteSectionLinkRetryItem(BaseModel):
     link_id: str
     job_id: str | None
+    workflow_run_id: str | None = None
+    step_id: str | None = None
     status: Literal["queued", "existing", "failed"]
     link_type: Literal["html", "pdf"] | None = None
     message: str | None = None
@@ -769,7 +771,9 @@ class ContentFileListResponse(BaseModel):
 
 class ContentFileRetryParseResponse(BaseModel):
     content_file_id: str
-    job_id: str
+    job_id: str | None = None
+    workflow_run_id: str | None = None
+    step_id: str | None = None
     status: Literal["queued", "existing"]
     parse_status: str
 
@@ -837,6 +841,8 @@ class AdminWorkflowStepItem(BaseModel):
     max_attempts: int
     timeout_seconds: int
     idempotency_key: str | None = None
+    lease_owner: str | None = None
+    leased_at: datetime | None = None
     available_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -902,6 +908,43 @@ class AdminGovernanceActionItem(BaseModel):
     created_at: datetime
 
 
+class AdminWorkflowClassificationItem(BaseModel):
+    content_id: str
+    classification_state: str
+    visibility: str
+    scope_type: Literal["school", "department"]
+    scope_key: str
+    explain_payload: dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime
+
+
+class AdminWorkflowListItem(BaseModel):
+    workflow_run_id: str
+    workflow_type: str
+    scope_type: Literal["school", "department"]
+    scope_key: str
+    scope_label: str | None = None
+    status: str
+    families: list[str] = Field(default_factory=list)
+    seed_source: str | None = None
+    host_keys: list[str] = Field(default_factory=list)
+    latest_step_type: str | None = None
+    latest_step_status: str | None = None
+    latest_step_error: str | None = None
+    terminal_reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class AdminWorkflowListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[AdminWorkflowListItem] = Field(default_factory=list)
+
+
 class AdminWorkflowDetailResponse(BaseModel):
     workflow_run_id: str
     workflow_type: str
@@ -909,6 +952,8 @@ class AdminWorkflowDetailResponse(BaseModel):
     scope_key: str
     scope_label: str | None = None
     status: str
+    seed_source: str | None = None
+    terminal_reason: str | None = None
     request_payload: dict[str, Any] = Field(default_factory=dict)
     result_payload: dict[str, Any] = Field(default_factory=dict)
     error_message: str | None = None
@@ -922,6 +967,7 @@ class AdminWorkflowDetailResponse(BaseModel):
     host_decisions: list[AdminPortalHostDecisionItem] = Field(default_factory=list)
     raw_artifacts: list[AdminWorkflowArtifactItem] = Field(default_factory=list)
     parse_artifacts: list[AdminWorkflowArtifactItem] = Field(default_factory=list)
+    content_classifications: list[AdminWorkflowClassificationItem] = Field(default_factory=list)
     governance_actions: list[AdminGovernanceActionItem] = Field(default_factory=list)
 
 

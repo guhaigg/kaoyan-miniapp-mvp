@@ -183,9 +183,12 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Legacy `ensure_announcement_search_bootstrap` has been removed. Announcement readiness now lives only in `POST /api/v1/search/announcements` asset-state resolution and V2 workflow state.
 - For announcement V2 handoff jobs, `homepage_url + seed_urls` are the only discovery inputs. `candidate_urls` remains in the payload only as a backward-compatible result field and is no longer used to drive discovery.
 - Governance now has a minimal read path for workflow-backed assets: `GET /api/v1/admin/workflows/{workflow_run_id}` returns the workflow run, steps, scoped portal graph, host decisions, artifacts, and governance actions in one response. This follows the same practical principle highlighted in the Yanbot notes: origin/channel assets must stay inspectable and governable.
+- Governance now also has a list endpoint: `GET /api/v1/admin/workflows` supports filtering by `family`, `scope_type`, `scope_key`, `status`, `workflow_type`, and `host_key`, so operators can inspect announcement rebuild/discovery state without digging through raw tables.
 - OCR is now an explicit async step. `retry-parse` only reruns file parsing; `retry-ocr` enqueues a V2 `ocr_enqueue` workflow step.
+- Announcement `retry-parse` now enqueues a V2 `file_parse` workflow step. Legacy `crawl_jobs(file_parse)` remains only for non-announcement paths and backward-compatible handoff shells.
 - API process no longer runs the crawl worker loop. V2 steps are consumed by the standalone worker entrypoint `python -m app.workers.crawler_v2_worker`.
 - Announcement visibility is now persisted in `content_classifications` and reused by search and premium monitoring instead of recomputing separate visibility decisions per surface.
+- Notification and monitoring announcement consumers now read persisted `content_classifications` only. Rows marked `hidden_scope_conflict`, `hidden_non_admissions`, or other hidden states do not enter school/department announcement surfaces even if `contents.extra` still contains portal-like metadata.
 
 ## 9) Premium Monitoring Phase 1 Baseline (Implemented + Known Gaps)
 
@@ -217,6 +220,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - As of `2026-03-26`, school-limited announcement search no longer performs online cold start or self-repair. If no approved school asset exists, the response returns `asset_state=not_ready` or `asset_state=rebuilding` and points operators to the admin bootstrap/rebuild flow.
 - `announcement_portal_caches` remain historical audit data, but the V2 runtime path does not use cached candidate URLs as discovery seeds.
 - Search and monitoring consume `content_classifications` as the canonical announcement verdict. `classification_state` currently includes `school_visible`, `department_visible`, `hidden_scope_conflict`, `hidden_non_admissions`, and `non_announcement`.
+- Admin UI now exposes the governance loop directly from `/admin`: operators can browse workflow state, inspect step/runtime details, bootstrap school/department announcement scopes, trigger rebuilds, and run content explain/reclassify without reaching for SQL or ad-hoc scripts.
 - Search and premium monitoring only expose announcement rows that are considered visible in the graduate-admissions portal scope, unless the row is explicitly department-scoped.
 - `site_section_id / site_section_name` are treated as scope-matching metadata and must be preserved during content upsert/backfill even when portal classification is recomputed.
 - Explicitly provided `system_tags` are authoritative and should not be broadened again during upsert.

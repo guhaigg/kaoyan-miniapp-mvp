@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 from urllib.parse import urlparse
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..db import SessionLocal
 from ..models import (
@@ -30,12 +32,199 @@ from .site_section_bootstrap import bootstrap_site_sections
 
 WORKFLOW_TYPE_SCHOOL_BOOTSTRAP = "school_portal_discovery"
 WORKFLOW_TYPE_DEPARTMENT_BOOTSTRAP = "department_portal_discovery"
+WORKFLOW_TYPE_SCHOOL_SECTION_DISCOVERY = "school_section_discovery"
+WORKFLOW_TYPE_DEPARTMENT_SECTION_DISCOVERY = "department_section_discovery"
+WORKFLOW_TYPE_DETAIL_FETCH = "detail_fetch"
+WORKFLOW_TYPE_FILE_FETCH = "file_fetch"
+WORKFLOW_TYPE_FILE_PARSE = "file_parse"
 WORKFLOW_TYPE_SCOPE_REBUILD = "scope_rebuild"
+WORKFLOW_TYPE_POLLUTION_CLEANUP = "pollution_cleanup"
 STEP_TYPE_OCR_ENQUEUE = "ocr_enqueue"
 STEP_TYPE_CONTENT_RECLASSIFY = "content_reclassify"
-RULE_VERSION = "crawler_v2_explicit_seed_v1"
+RULE_VERSION = "crawler_v2_explicit_seed_v2"
 DEFAULT_BOOTSTRAP_FAMILIES = frozenset({"admissions", "notice"})
 SUPPORTED_BOOTSTRAP_FAMILIES = frozenset({"admissions", "notice", "adjustment"})
+STEP_LEASE_TIMEOUT = timedelta(minutes=10)
+ASSET_WORKFLOW_TYPES = frozenset(
+    {
+        WORKFLOW_TYPE_SCOPE_REBUILD,
+        WORKFLOW_TYPE_SCHOOL_BOOTSTRAP,
+        WORKFLOW_TYPE_DEPARTMENT_BOOTSTRAP,
+    }
+)
+
+
+class WorkflowPayloadModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class SchoolBootstrapPayload(WorkflowPayloadModel):
+    school_name: str
+    homepage_url: str
+    seed_urls: list[str] = Field(default_factory=list)
+    max_sections: int = 12
+    families: list[str] = Field(default_factory=list)
+    seed_source: str | None = None
+
+
+class DepartmentBootstrapPayload(SchoolBootstrapPayload):
+    department_name: str
+    department_type: str = "college"
+
+
+class ScopeRebuildPayload(WorkflowPayloadModel):
+    scope_type: str
+    school_name: str
+    department_name: str | None = None
+    department_type: str = "college"
+    homepage_url: str | None = None
+    seed_urls: list[str] = Field(default_factory=list)
+    max_sections: int = 12
+    families: list[str] = Field(default_factory=list)
+    seed_source: str | None = None
+
+
+class SectionDiscoveryPayload(WorkflowPayloadModel):
+    site_section_id: str
+    source_url: str
+    school_name: str | None = None
+    department_name: str | None = None
+    section_type: str | None = None
+    discovery_category: str = "announcement"
+    source_crawl_job_id: str | None = None
+
+
+class DetailFetchPayload(WorkflowPayloadModel):
+    site_section_id: str | None = None
+    site_section_link_id: str
+    source_url: str
+    title: str | None = None
+    school_name: str | None = None
+    department_name: str | None = None
+    section_type: str | None = None
+    published_at: str | None = None
+    seed_source: str | None = None
+
+
+class FileParsePayload(WorkflowPayloadModel):
+    content_file_id: str
+    file_url: str | None = None
+    site_section_link_id: str | None = None
+    site_section_id: str | None = None
+    title: str | None = None
+    school_name: str | None = None
+    department_name: str | None = None
+    section_type: str | None = None
+    published_at: str | None = None
+    seed_source: str | None = None
+
+
+class OcrEnqueuePayload(WorkflowPayloadModel):
+    content_file_id: str
+    file_url: str | None = None
+    school_name: str | None = None
+    department_name: str | None = None
+
+
+class ContentReclassifyPayload(WorkflowPayloadModel):
+    content_id: str
+    school_name: str | None = None
+    department_name: str | None = None
+
+
+class PollutionCleanupPayload(WorkflowPayloadModel):
+    scope_type: str
+    scope_key: str
+
+
+@dataclass(frozen=True)
+class StepPolicy:
+    step_type: str
+    timeout_seconds: int
+    max_attempts: int
+    retry_backoff_seconds: int
+    host_limit: int = 2
+
+
+STEP_POLICIES: dict[str, StepPolicy] = {
+    WORKFLOW_TYPE_SCHOOL_BOOTSTRAP: StepPolicy(
+        step_type=WORKFLOW_TYPE_SCHOOL_BOOTSTRAP,
+        timeout_seconds=180,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=1,
+    ),
+    WORKFLOW_TYPE_DEPARTMENT_BOOTSTRAP: StepPolicy(
+        step_type=WORKFLOW_TYPE_DEPARTMENT_BOOTSTRAP,
+        timeout_seconds=180,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=1,
+    ),
+    WORKFLOW_TYPE_SCHOOL_SECTION_DISCOVERY: StepPolicy(
+        step_type=WORKFLOW_TYPE_SCHOOL_SECTION_DISCOVERY,
+        timeout_seconds=180,
+        max_attempts=2,
+        retry_backoff_seconds=20,
+        host_limit=1,
+    ),
+    WORKFLOW_TYPE_DEPARTMENT_SECTION_DISCOVERY: StepPolicy(
+        step_type=WORKFLOW_TYPE_DEPARTMENT_SECTION_DISCOVERY,
+        timeout_seconds=180,
+        max_attempts=2,
+        retry_backoff_seconds=20,
+        host_limit=1,
+    ),
+    WORKFLOW_TYPE_DETAIL_FETCH: StepPolicy(
+        step_type=WORKFLOW_TYPE_DETAIL_FETCH,
+        timeout_seconds=180,
+        max_attempts=3,
+        retry_backoff_seconds=20,
+        host_limit=2,
+    ),
+    WORKFLOW_TYPE_FILE_FETCH: StepPolicy(
+        step_type=WORKFLOW_TYPE_FILE_FETCH,
+        timeout_seconds=180,
+        max_attempts=3,
+        retry_backoff_seconds=20,
+        host_limit=2,
+    ),
+    WORKFLOW_TYPE_FILE_PARSE: StepPolicy(
+        step_type=WORKFLOW_TYPE_FILE_PARSE,
+        timeout_seconds=240,
+        max_attempts=3,
+        retry_backoff_seconds=20,
+        host_limit=2,
+    ),
+    WORKFLOW_TYPE_SCOPE_REBUILD: StepPolicy(
+        step_type=WORKFLOW_TYPE_SCOPE_REBUILD,
+        timeout_seconds=60,
+        max_attempts=2,
+        retry_backoff_seconds=10,
+        host_limit=1,
+    ),
+    WORKFLOW_TYPE_POLLUTION_CLEANUP: StepPolicy(
+        step_type=WORKFLOW_TYPE_POLLUTION_CLEANUP,
+        timeout_seconds=120,
+        max_attempts=1,
+        retry_backoff_seconds=0,
+        host_limit=1,
+    ),
+    STEP_TYPE_OCR_ENQUEUE: StepPolicy(
+        step_type=STEP_TYPE_OCR_ENQUEUE,
+        timeout_seconds=60,
+        max_attempts=2,
+        retry_backoff_seconds=10,
+        host_limit=1,
+    ),
+    STEP_TYPE_CONTENT_RECLASSIFY: StepPolicy(
+        step_type=STEP_TYPE_CONTENT_RECLASSIFY,
+        timeout_seconds=60,
+        max_attempts=2,
+        retry_backoff_seconds=10,
+        host_limit=2,
+    ),
+}
 
 
 def _compact(value: str | None) -> str:
@@ -69,6 +258,30 @@ def _resolve_actor_account_id(db: Session, actor_username: str | None) -> str | 
         return None
     row = db.query(PortalUser.id).filter(PortalUser.username == username).limit(1).scalar()
     return str(row) if row else None
+
+
+def _step_policy(step_type: str) -> StepPolicy:
+    policy = STEP_POLICIES.get(step_type)
+    if policy is None:
+        return StepPolicy(step_type=step_type, timeout_seconds=300, max_attempts=2, retry_backoff_seconds=10)
+    return policy
+
+
+def _step_idempotency_key(
+    *,
+    step_type: str,
+    scope_key: str,
+    host_key: str | None,
+    input_payload: dict[str, Any],
+) -> str:
+    for field in ("content_id", "content_file_id", "site_section_link_id", "site_section_id", "homepage_url"):
+        value = str(input_payload.get(field) or "").strip()
+        if value:
+            return f"{step_type}:{scope_key}:{field}:{value}"
+    families = ",".join(
+        sorted(str(item or "").strip() for item in (input_payload.get("families") or []) if str(item or "").strip())
+    )
+    return f"{step_type}:{scope_key}:{families or host_key or 'none'}"
 
 
 def _ensure_portal_node(
@@ -266,6 +479,68 @@ def _validate_bootstrap_sections(
             raise ValueError("school bootstrap returned department-scoped section")
 
 
+def _existing_active_run(
+    db: Session,
+    *,
+    workflow_type: str,
+    scope_type: str,
+    scope_key: str,
+) -> tuple[WorkflowRun, WorkflowStep] | None:
+    run = (
+        db.query(WorkflowRun)
+        .filter(
+            WorkflowRun.workflow_type == workflow_type,
+            WorkflowRun.scope_type == scope_type,
+            WorkflowRun.scope_key == scope_key,
+            WorkflowRun.status.in_(["pending", "running"]),
+        )
+        .order_by(WorkflowRun.created_at.desc())
+        .first()
+    )
+    if run is None:
+        return None
+    step = (
+        db.query(WorkflowStep)
+        .filter(WorkflowStep.run_id == run.id, WorkflowStep.status.in_(["pending", "running"]))
+        .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+        .first()
+    )
+    if step is None:
+        step = (
+            db.query(WorkflowStep)
+            .filter(WorkflowStep.run_id == run.id)
+            .order_by(WorkflowStep.created_at.desc(), WorkflowStep.id.desc())
+            .first()
+        )
+    if step is None:
+        return None
+    return run, step
+
+
+def _existing_active_step(
+    db: Session,
+    *,
+    step_type: str,
+    idempotency_key: str,
+) -> tuple[WorkflowRun, WorkflowStep] | None:
+    step = (
+        db.query(WorkflowStep)
+        .filter(
+            WorkflowStep.step_type == step_type,
+            WorkflowStep.idempotency_key == idempotency_key,
+            WorkflowStep.status.in_(["pending", "running"]),
+        )
+        .order_by(WorkflowStep.created_at.desc(), WorkflowStep.id.desc())
+        .first()
+    )
+    if step is None:
+        return None
+    run = db.query(WorkflowRun).filter(WorkflowRun.id == step.run_id).one_or_none()
+    if run is None:
+        return None
+    return run, step
+
+
 def _create_run_with_step(
     db: Session,
     *,
@@ -277,8 +552,34 @@ def _create_run_with_step(
     actor_username: str | None,
     input_payload: dict[str, Any],
     host_key: str | None = None,
+    dedupe_mode: str = "none",
 ) -> tuple[WorkflowRun, WorkflowStep]:
+    idempotency_key = _step_idempotency_key(
+        step_type=step_type,
+        scope_key=scope_key,
+        host_key=host_key,
+        input_payload=input_payload,
+    )
+    if dedupe_mode == "run_scope":
+        active = _existing_active_run(
+            db,
+            workflow_type=workflow_type,
+            scope_type=scope_type,
+            scope_key=scope_key,
+        )
+        if active is not None:
+            return active
+    elif dedupe_mode == "step_idempotency":
+        active = _existing_active_step(
+            db,
+            step_type=step_type,
+            idempotency_key=idempotency_key,
+        )
+        if active is not None:
+            return active
+
     actor_account_id = _resolve_actor_account_id(db, actor_username)
+    policy = _step_policy(step_type)
     run = WorkflowRun(
         workflow_type=workflow_type,
         scope_type=scope_type,
@@ -298,14 +599,65 @@ def _create_run_with_step(
         scope_key=scope_key,
         host_key=host_key,
         status="pending",
+        max_attempts=policy.max_attempts,
+        timeout_seconds=policy.timeout_seconds,
         available_at=utcnow(),
         input_payload=input_payload,
         result_payload={},
-        idempotency_key=f"{step_type}:{scope_key}:{host_key or 'none'}",
+        idempotency_key=idempotency_key,
     )
     db.add(step)
     db.flush()
     return run, step
+
+
+def _create_child_step(
+    db: Session,
+    *,
+    run: WorkflowRun,
+    parent_step: WorkflowStep,
+    step_type: str,
+    host_key: str | None,
+    input_payload: dict[str, Any],
+) -> WorkflowStep:
+    existing = (
+        db.query(WorkflowStep)
+        .filter(
+            WorkflowStep.run_id == run.id,
+            WorkflowStep.parent_step_id == parent_step.id,
+            WorkflowStep.step_type == step_type,
+            WorkflowStep.status.in_(["pending", "running"]),
+        )
+        .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+        .first()
+    )
+    if existing is not None:
+        return existing
+
+    policy = _step_policy(step_type)
+    child = WorkflowStep(
+        run_id=run.id,
+        parent_step_id=parent_step.id,
+        step_type=step_type,
+        scope_type=parent_step.scope_type,
+        scope_key=parent_step.scope_key,
+        host_key=host_key,
+        status="pending",
+        max_attempts=policy.max_attempts,
+        timeout_seconds=policy.timeout_seconds,
+        available_at=utcnow(),
+        input_payload=input_payload,
+        result_payload={},
+        idempotency_key=_step_idempotency_key(
+            step_type=step_type,
+            scope_key=parent_step.scope_key,
+            host_key=host_key,
+            input_payload=input_payload,
+        ),
+    )
+    db.add(child)
+    db.flush()
+    return child
 
 
 def create_school_bootstrap_run(
@@ -317,6 +669,7 @@ def create_school_bootstrap_run(
     actor_username: str | None,
     max_sections: int = 12,
     families: list[str] | set[str] | tuple[str, ...] | None = None,
+    seed_source: str = "payload",
 ) -> tuple[WorkflowRun, WorkflowStep]:
     school = db.query(School).filter(School.name == school_name.strip()).one_or_none()
     if school is None:
@@ -324,13 +677,14 @@ def create_school_bootstrap_run(
         db.add(school)
         db.flush()
     normalized_families = sorted(_normalize_bootstrap_families(families))
-    payload = {
-        "school_name": school.name,
-        "homepage_url": homepage_url.strip(),
-        "seed_urls": [str(url).strip() for url in seed_urls if str(url).strip()],
-        "max_sections": max_sections,
-        "families": normalized_families,
-    }
+    payload = SchoolBootstrapPayload(
+        school_name=school.name,
+        homepage_url=homepage_url.strip(),
+        seed_urls=[str(url).strip() for url in seed_urls if str(url).strip()],
+        max_sections=max_sections,
+        families=normalized_families,
+        seed_source=seed_source,
+    ).model_dump()
     return _create_run_with_step(
         db,
         workflow_type=WORKFLOW_TYPE_SCHOOL_BOOTSTRAP,
@@ -341,6 +695,7 @@ def create_school_bootstrap_run(
         actor_username=actor_username,
         input_payload=payload,
         host_key=_host_from_url(homepage_url),
+        dedupe_mode="run_scope",
     )
 
 
@@ -355,6 +710,7 @@ def create_department_bootstrap_run(
     department_type: str = "college",
     max_sections: int = 12,
     families: list[str] | set[str] | tuple[str, ...] | None = None,
+    seed_source: str = "payload",
 ) -> tuple[WorkflowRun, WorkflowStep]:
     school = db.query(School).filter(School.name == school_name.strip()).one_or_none()
     if school is None:
@@ -377,15 +733,16 @@ def create_department_bootstrap_run(
         db.add(department)
         db.flush()
     normalized_families = sorted(_normalize_bootstrap_families(families))
-    payload = {
-        "school_name": school.name,
-        "department_name": department.name,
-        "department_type": department.department_type,
-        "homepage_url": homepage_url.strip(),
-        "seed_urls": [str(url).strip() for url in seed_urls if str(url).strip()],
-        "max_sections": max_sections,
-        "families": normalized_families,
-    }
+    payload = DepartmentBootstrapPayload(
+        school_name=school.name,
+        department_name=department.name,
+        department_type=department.department_type,
+        homepage_url=homepage_url.strip(),
+        seed_urls=[str(url).strip() for url in seed_urls if str(url).strip()],
+        max_sections=max_sections,
+        families=normalized_families,
+        seed_source=seed_source,
+    ).model_dump()
     return _create_run_with_step(
         db,
         workflow_type=WORKFLOW_TYPE_DEPARTMENT_BOOTSTRAP,
@@ -396,6 +753,7 @@ def create_department_bootstrap_run(
         actor_username=actor_username,
         input_payload=payload,
         host_key=_host_from_url(homepage_url),
+        dedupe_mode="run_scope",
     )
 
 
@@ -410,17 +768,19 @@ def create_scope_rebuild_run(
     seed_urls: list[str] | None = None,
     max_sections: int = 12,
     families: list[str] | set[str] | tuple[str, ...] | None = None,
+    seed_source: str | None = None,
 ) -> tuple[WorkflowRun, WorkflowStep]:
     normalized_families = sorted(_normalize_bootstrap_families(families))
-    payload = {
-        "scope_type": scope_type,
-        "school_name": school_name.strip(),
-        "department_name": str(department_name or "").strip() or None,
-        "homepage_url": str(homepage_url or "").strip() or None,
-        "seed_urls": [str(url).strip() for url in (seed_urls or []) if str(url).strip()],
-        "max_sections": max_sections,
-        "families": normalized_families,
-    }
+    payload = ScopeRebuildPayload(
+        scope_type=scope_type,
+        school_name=school_name.strip(),
+        department_name=str(department_name or "").strip() or None,
+        homepage_url=str(homepage_url or "").strip() or None,
+        seed_urls=[str(url).strip() for url in (seed_urls or []) if str(url).strip()],
+        max_sections=max_sections,
+        families=normalized_families,
+        seed_source=str(seed_source or "").strip() or None,
+    ).model_dump()
     return _create_run_with_step(
         db,
         workflow_type=WORKFLOW_TYPE_SCOPE_REBUILD,
@@ -431,21 +791,173 @@ def create_scope_rebuild_run(
         actor_username=actor_username,
         input_payload=payload,
         host_key=_host_from_url(homepage_url),
+        dedupe_mode="run_scope",
     )
+
+
+def _scope_parts_for_section(section: SiteSection | None) -> tuple[str, str | None, str]:
+    school_name = section.school.name if section and section.school else ""
+    department_name = section.department.name if section and section.department else None
+    scope_type = "department" if department_name else "school"
+    return school_name, department_name, scope_type
+
+
+def _detail_fetch_payload_from_link(link) -> dict[str, Any]:
+    section = link.site_section if link else None
+    school_name, department_name, _scope_type = _scope_parts_for_section(section)
+    return DetailFetchPayload(
+        site_section_id=section.id if section else None,
+        site_section_link_id=link.id,
+        source_url=link.link_url,
+        title=link.title,
+        school_name=school_name or None,
+        department_name=department_name,
+        section_type=section.section_type if section else None,
+        published_at=link.published_at.isoformat() if link and link.published_at else None,
+        seed_source="approved_section_asset",
+    ).model_dump()
+
+
+def _file_parse_payload_from_record(file_record: ContentFile) -> dict[str, Any]:
+    link = file_record.site_section_link
+    section = link.site_section if link else None
+    school_name, department_name, _scope_type = _scope_parts_for_section(section)
+    return FileParsePayload(
+        content_file_id=file_record.id,
+        file_url=file_record.file_url,
+        site_section_link_id=link.id if link else None,
+        site_section_id=section.id if section else None,
+        title=link.title if link else None,
+        school_name=school_name or None,
+        department_name=department_name,
+        section_type=section.section_type if section else None,
+        published_at=link.published_at.isoformat() if link and link.published_at else None,
+        seed_source="approved_section_asset",
+    ).model_dump()
+
+
+def queue_section_discovery_retry(
+    db: Session,
+    *,
+    section: SiteSection,
+    actor_username: str | None,
+    source_crawl_job_id: str | None = None,
+) -> tuple[WorkflowRun, WorkflowStep]:
+    school_name, department_name, scope_type = _scope_parts_for_section(section)
+    payload = SectionDiscoveryPayload(
+        site_section_id=section.id,
+        source_url=section.section_url,
+        school_name=school_name or None,
+        department_name=department_name,
+        section_type=section.section_type,
+        discovery_category=section.discovery_category,
+        source_crawl_job_id=source_crawl_job_id,
+    ).model_dump()
+    workflow_type = (
+        WORKFLOW_TYPE_DEPARTMENT_SECTION_DISCOVERY
+        if scope_type == "department"
+        else WORKFLOW_TYPE_SCHOOL_SECTION_DISCOVERY
+    )
+    run, step = _create_run_with_step(
+        db,
+        workflow_type=workflow_type,
+        step_type=workflow_type,
+        scope_type=scope_type,
+        scope_key=_scope_key(school_name, department_name) or section.id,
+        scope_label="/".join(part for part in [school_name, department_name or ""] if part) or section.name,
+        actor_username=actor_username,
+        input_payload=payload,
+        host_key=_host_from_url(section.section_url),
+        dedupe_mode="step_idempotency",
+    )
+    section.last_discovery_status = "queued"
+    section.last_error = None
+    db.flush()
+    return run, step
+
+
+def queue_detail_fetch_retry(
+    db: Session,
+    *,
+    link,
+    actor_username: str | None,
+) -> tuple[WorkflowRun, WorkflowStep]:
+    section = link.site_section if link else None
+    school_name, department_name, scope_type = _scope_parts_for_section(section)
+    payload = _detail_fetch_payload_from_link(link)
+    run, step = _create_run_with_step(
+        db,
+        workflow_type=WORKFLOW_TYPE_DETAIL_FETCH,
+        step_type=WORKFLOW_TYPE_DETAIL_FETCH,
+        scope_type=scope_type,
+        scope_key=_scope_key(school_name, department_name) or link.id,
+        scope_label="/".join(part for part in [school_name, department_name or ""] if part) or (link.title or link.id),
+        actor_username=actor_username,
+        input_payload=payload,
+        host_key=_host_from_url(link.link_url),
+        dedupe_mode="step_idempotency",
+    )
+    link.status = "enqueued"
+    link.snapshot_meta = {
+        **dict(link.snapshot_meta or {}),
+        "detail_workflow_run_id": run.id,
+        "detail_workflow_step_id": step.id,
+    }
+    db.flush()
+    return run, step
+
+
+def queue_file_parse_retry(
+    db: Session,
+    *,
+    file_record: ContentFile,
+    actor_username: str | None,
+) -> tuple[WorkflowRun, WorkflowStep]:
+    link = file_record.site_section_link
+    section = link.site_section if link else None
+    school_name, department_name, scope_type = _scope_parts_for_section(section)
+    payload = _file_parse_payload_from_record(file_record)
+    run, step = _create_run_with_step(
+        db,
+        workflow_type=WORKFLOW_TYPE_FILE_PARSE,
+        step_type=WORKFLOW_TYPE_FILE_PARSE,
+        scope_type=scope_type,
+        scope_key=_scope_key(school_name, department_name) or file_record.id,
+        scope_label="/".join(part for part in [school_name, department_name or ""] if part),
+        actor_username=actor_username,
+        input_payload=payload,
+        host_key=_host_from_url(file_record.file_url),
+        dedupe_mode="step_idempotency",
+    )
+    file_record.parse_status = "pending"
+    file_record.ocr_status = "not_started"
+    file_record.file_meta = {
+        **dict(file_record.file_meta or {}),
+        "parse_workflow_run_id": run.id,
+        "parse_workflow_step_id": step.id,
+        "retry_requested_at": utcnow().isoformat(),
+    }
+    if link is not None:
+        link.status = "file_recorded"
+        link.snapshot_meta = {
+            **dict(link.snapshot_meta or {}),
+            "parse_workflow_run_id": run.id,
+            "parse_workflow_step_id": step.id,
+        }
+    db.flush()
+    return run, step
 
 
 def queue_ocr_retry(db: Session, *, file_record: ContentFile, actor_username: str | None) -> tuple[WorkflowRun, WorkflowStep]:
     link = file_record.site_section_link
     section = link.site_section if link else None
-    school_name = section.school.name if section and section.school else ""
-    department_name = section.department.name if section and section.department else None
-    scope_type = "department" if department_name else "school"
-    payload = {
-        "content_file_id": file_record.id,
-        "file_url": file_record.file_url,
-        "school_name": school_name,
-        "department_name": department_name,
-    }
+    school_name, department_name, scope_type = _scope_parts_for_section(section)
+    payload = OcrEnqueuePayload(
+        content_file_id=file_record.id,
+        file_url=file_record.file_url,
+        school_name=school_name or None,
+        department_name=department_name,
+    ).model_dump()
     run, step = _create_run_with_step(
         db,
         workflow_type=STEP_TYPE_OCR_ENQUEUE,
@@ -456,6 +968,7 @@ def queue_ocr_retry(db: Session, *, file_record: ContentFile, actor_username: st
         actor_username=actor_username,
         input_payload=payload,
         host_key=_host_from_url(file_record.file_url),
+        dedupe_mode="step_idempotency",
     )
     file_record.ocr_status = "queued"
     db.flush()
@@ -467,11 +980,11 @@ def queue_content_reclassify(db: Session, *, content: Content, actor_username: s
     school_name = str(getattr(getattr(content, "school", None), "name", None) or extra.get("school_name") or "").strip()
     department_name = str(extra.get("department_name") or "").strip() or None
     scope_type = "department" if department_name else "school"
-    payload = {
-        "content_id": content.id,
-        "school_name": school_name,
-        "department_name": department_name,
-    }
+    payload = ContentReclassifyPayload(
+        content_id=content.id,
+        school_name=school_name or None,
+        department_name=department_name,
+    ).model_dump()
     return _create_run_with_step(
         db,
         workflow_type=STEP_TYPE_CONTENT_RECLASSIFY,
@@ -482,6 +995,7 @@ def queue_content_reclassify(db: Session, *, content: Content, actor_username: s
         actor_username=actor_username,
         input_payload=payload,
         host_key=_host_from_url(content.source_url),
+        dedupe_mode="step_idempotency",
     )
 
 
@@ -491,20 +1005,40 @@ def latest_scope_run(
     scope_type: str,
     school_name: str,
     department_name: str | None = None,
+    workflow_types: set[str] | frozenset[str] | None = None,
 ) -> WorkflowRun | None:
-    return (
-        db.query(WorkflowRun)
-        .filter(
-            WorkflowRun.scope_type == scope_type,
-            WorkflowRun.scope_key == _scope_key(school_name, department_name),
-        )
-        .order_by(WorkflowRun.created_at.desc())
-        .first()
+    query = db.query(WorkflowRun).filter(
+        WorkflowRun.scope_type == scope_type,
+        WorkflowRun.scope_key == _scope_key(school_name, department_name),
     )
+    normalized_workflow_types = {str(item or "").strip() for item in (workflow_types or set()) if str(item or "").strip()}
+    if normalized_workflow_types:
+        query = query.filter(WorkflowRun.workflow_type.in_(sorted(normalized_workflow_types)))
+    return query.order_by(WorkflowRun.created_at.desc()).first()
+
+
+def _running_host_counts(db: Session) -> dict[str, int]:
+    stale_cutoff = utcnow() - STEP_LEASE_TIMEOUT
+    rows = (
+        db.query(WorkflowStep.host_key)
+        .filter(
+            WorkflowStep.status == "running",
+            WorkflowStep.host_key.is_not(None),
+            or_(WorkflowStep.leased_at.is_(None), WorkflowStep.leased_at > stale_cutoff),
+        )
+        .all()
+    )
+    counts: dict[str, int] = {}
+    for (host_key,) in rows:
+        host = str(host_key or "").strip()
+        if not host:
+            continue
+        counts[host] = counts.get(host, 0) + 1
+    return counts
 
 
 def _lock_pending_steps(db: Session, batch_size: int, worker_name: str) -> list[str]:
-    stale_cutoff = utcnow() - timedelta(minutes=10)
+    stale_cutoff = utcnow() - STEP_LEASE_TIMEOUT
     query = (
         db.query(WorkflowStep)
         .filter(
@@ -518,8 +1052,8 @@ def _lock_pending_steps(db: Session, batch_size: int, worker_name: str) -> list[
                 ),
             ),
         )
-        .order_by(WorkflowStep.created_at.asc())
-        .limit(batch_size)
+        .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+        .limit(max(batch_size * 4, batch_size))
     )
     dialect_name = (db.bind.dialect.name if db.bind else "").lower()
     if dialect_name != "sqlite":
@@ -527,15 +1061,80 @@ def _lock_pending_steps(db: Session, batch_size: int, worker_name: str) -> list[
     rows = query.all()
     if not rows:
         return []
-    now = utcnow()
+
+    host_counts = _running_host_counts(db)
+    selected: list[WorkflowStep] = []
     for row in rows:
+        policy = _step_policy(row.step_type)
+        host_key = str(row.host_key or "").strip() or None
+        is_stale_reclaim = row.status == "running"
+        if host_key and not is_stale_reclaim and int(host_counts.get(host_key, 0)) >= int(policy.host_limit):
+            continue
+        selected.append(row)
+        if host_key:
+            host_counts[host_key] = int(host_counts.get(host_key, 0)) + 1
+        if len(selected) >= batch_size:
+            break
+
+    if not selected:
+        return []
+
+    now = utcnow()
+    for row in selected:
+        was_stale_running = row.status == "running"
+        if was_stale_running:
+            result_payload = dict(row.result_payload or {})
+            result_payload["lease_reclaimed_at"] = now.isoformat()
+            row.result_payload = result_payload
         row.status = "running"
         row.attempt_count = int(row.attempt_count or 0) + 1
         row.lease_owner = worker_name
         row.leased_at = now
         row.started_at = row.started_at or now
+        row.finished_at = None
+        if row.run is not None:
+            row.run.status = "running"
+            row.run.started_at = row.run.started_at or now
     db.commit()
-    return [row.id for row in rows]
+    return [row.id for row in selected]
+
+
+def _refresh_run_status(db: Session, run_id: str) -> None:
+    run = db.query(WorkflowRun).filter(WorkflowRun.id == run_id).one()
+    steps = (
+        db.query(WorkflowStep)
+        .filter(WorkflowStep.run_id == run_id)
+        .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+        .all()
+    )
+    if not steps:
+        run.status = "done"
+        run.finished_at = utcnow()
+        return
+
+    started_values = [step.started_at for step in steps if step.started_at is not None]
+    finished_values = [step.finished_at for step in steps if step.finished_at is not None]
+    latest_result = next((dict(step.result_payload or {}) for step in reversed(steps) if step.result_payload), {})
+
+    run.started_at = min(started_values) if started_values else run.started_at
+    run.result_payload = latest_result
+
+    if any(step.status == "failed" for step in steps):
+        failed_step = next(step for step in reversed(steps) if step.status == "failed")
+        run.status = "failed"
+        run.error_message = failed_step.error_message
+        run.finished_at = failed_step.finished_at or (max(finished_values) if finished_values else utcnow())
+        return
+
+    if any(step.status in {"pending", "running"} for step in steps):
+        run.status = "running" if any(step.status == "running" for step in steps) or started_values else "pending"
+        run.error_message = None
+        run.finished_at = None
+        return
+
+    run.status = "done"
+    run.error_message = None
+    run.finished_at = max(finished_values) if finished_values else utcnow()
 
 
 def _mark_step_done(db: Session, step: WorkflowStep, result_payload: dict[str, Any]) -> None:
@@ -544,40 +1143,97 @@ def _mark_step_done(db: Session, step: WorkflowStep, result_payload: dict[str, A
     step.finished_at = utcnow()
     step.error_type = None
     step.error_message = None
-    run = db.query(WorkflowRun).filter(WorkflowRun.id == step.run_id).one()
-    run.status = "done"
-    run.result_payload = result_payload
-    run.finished_at = utcnow()
+    step.lease_owner = None
+    step.leased_at = None
+    _refresh_run_status(db, step.run_id)
     db.commit()
 
 
 def _mark_step_failed(db: Session, step: WorkflowStep, exc: Exception) -> None:
+    policy = _step_policy(step.step_type)
     step.error_type = type(exc).__name__
-    step.error_message = str(exc)
+    step.error_message = str(exc)[:2000]
+    step.lease_owner = None
+    step.leased_at = None
     retryable = not isinstance(exc, ValueError)
-    if retryable and step.attempt_count < max(1, int(step.max_attempts or 1)):
+    if retryable and int(step.attempt_count or 0) < int(max(1, step.max_attempts or policy.max_attempts)):
         step.status = "pending"
-        step.available_at = utcnow() + timedelta(seconds=10)
+        step.available_at = utcnow() + timedelta(seconds=max(1, policy.retry_backoff_seconds * int(step.attempt_count or 1)))
+        step.finished_at = None
     else:
         step.status = "failed"
         step.finished_at = utcnow()
-    run = db.query(WorkflowRun).filter(WorkflowRun.id == step.run_id).one()
-    run.status = "failed" if step.status == "failed" else "pending"
-    run.error_message = str(exc)
+    _refresh_run_status(db, step.run_id)
     db.commit()
 
 
+def _process_scope_rebuild_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    payload = ScopeRebuildPayload.model_validate(step.input_payload or {})
+    scope_type = str(payload.scope_type or "").strip()
+    school_name = str(payload.school_name or "").strip()
+    department_name = str(payload.department_name or "").strip() or None
+    homepage_url = str(payload.homepage_url or "").strip()
+    if scope_type not in {"school", "department"}:
+        raise ValueError("scope_type must be school or department")
+    if not school_name or not homepage_url:
+        raise ValueError("scope rebuild requires school_name and homepage_url")
+
+    run = db.query(WorkflowRun).filter(WorkflowRun.id == step.run_id).one()
+    child_step_type = WORKFLOW_TYPE_DEPARTMENT_BOOTSTRAP if scope_type == "department" else WORKFLOW_TYPE_SCHOOL_BOOTSTRAP
+    child_payload = (
+        DepartmentBootstrapPayload(
+            school_name=school_name,
+            department_name=department_name or "",
+            department_type=str(payload.department_type or "college"),
+            homepage_url=homepage_url,
+            seed_urls=[str(url).strip() for url in (payload.seed_urls or []) if str(url).strip()],
+            max_sections=max(1, int(payload.max_sections or 12)),
+            families=sorted(_normalize_bootstrap_families(payload.families)),
+            seed_source=str(payload.seed_source or "").strip() or None,
+        ).model_dump()
+        if scope_type == "department"
+        else SchoolBootstrapPayload(
+            school_name=school_name,
+            homepage_url=homepage_url,
+            seed_urls=[str(url).strip() for url in (payload.seed_urls or []) if str(url).strip()],
+            max_sections=max(1, int(payload.max_sections or 12)),
+            families=sorted(_normalize_bootstrap_families(payload.families)),
+            seed_source=str(payload.seed_source or "").strip() or None,
+        ).model_dump()
+    )
+    child = _create_child_step(
+        db,
+        run=run,
+        parent_step=step,
+        step_type=child_step_type,
+        host_key=_host_from_url(homepage_url),
+        input_payload=child_payload,
+    )
+    db.flush()
+    return {
+        "scope_type": scope_type,
+        "scope_key": step.scope_key,
+        "child_step_id": child.id,
+        "child_step_type": child.step_type,
+        "seed_source": child_payload.get("seed_source"),
+    }
+
+
 def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode: bool) -> dict[str, Any]:
-    payload = dict(step.input_payload or {})
-    school_name = str(payload.get("school_name") or "").strip()
-    department_name = str(payload.get("department_name") or "").strip() or None
-    homepage_url = str(payload.get("homepage_url") or "").strip()
+    payload = (
+        DepartmentBootstrapPayload.model_validate(step.input_payload or {})
+        if department_mode
+        else SchoolBootstrapPayload.model_validate(step.input_payload or {})
+    )
+    school_name = str(payload.school_name or "").strip()
+    department_name = str(getattr(payload, "department_name", None) or "").strip() or None
+    homepage_url = str(payload.homepage_url or "").strip()
     if not school_name or not homepage_url:
         raise ValueError("school_name and homepage_url are required")
 
-    seed_urls = [str(url).strip() for url in (payload.get("seed_urls") or []) if str(url).strip()]
-    max_sections = max(1, int(payload.get("max_sections") or 12))
-    families = _normalize_bootstrap_families(payload.get("families"))
+    seed_urls = [str(url).strip() for url in (payload.seed_urls or []) if str(url).strip()]
+    max_sections = max(1, int(payload.max_sections or 12))
+    families = _normalize_bootstrap_families(payload.families)
     family_key = "adjustment" if families == {"adjustment"} else "announcement"
     portal_scope = "graduate_admissions" if families == set(DEFAULT_BOOTSTRAP_FAMILIES) else None
     result = bootstrap_site_sections(
@@ -585,7 +1241,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
         school_name=school_name,
         homepage_url=homepage_url,
         department_name=department_name if department_mode else None,
-        department_type=str(payload.get("department_type") or "college"),
+        department_type=str(getattr(payload, "department_type", "college") or "college"),
         seed_urls=seed_urls,
         enabled=False,
         queue_discovery=False,
@@ -629,6 +1285,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
             "homepage_url": homepage_url,
             "seed_urls": seed_urls,
             "families": sorted(families),
+            "seed_source": str(payload.seed_source or "").strip() or None,
         },
     )
     homepage_node = _ensure_portal_node(
@@ -756,6 +1413,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
             "recommended_section_ids": [section.id for section in sections],
             "parse_artifact_id": parse_artifact.id,
             "families": sorted(families),
+            "seed_source": str(payload.seed_source or "").strip() or None,
         },
     )
     _record_governance_action(
@@ -776,6 +1434,7 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
             "raw_artifact_id": raw_artifact.id,
             "parse_artifact_id": parse_artifact.id,
             "families": sorted(families),
+            "seed_source": str(payload.seed_source or "").strip() or None,
         },
     )
     return {
@@ -788,12 +1447,115 @@ def _process_bootstrap_step(db: Session, step: WorkflowStep, *, department_mode:
         "raw_artifact_id": raw_artifact.id,
         "parse_artifact_id": parse_artifact.id,
         "families": sorted(families),
+        "seed_source": str(payload.seed_source or "").strip() or None,
+    }
+
+
+def _process_section_discovery_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    payload = SectionDiscoveryPayload.model_validate(step.input_payload or {})
+    section = db.query(SiteSection).filter(SiteSection.id == payload.site_section_id).one_or_none()
+    if section is None:
+        raise ValueError("site section not found")
+    if section.discovery_category != "announcement":
+        raise ValueError("section discovery workflow only supports announcement sections")
+
+    from .crawler import discover_site_section_work_item
+
+    return discover_site_section_work_item(
+        db,
+        section=section,
+        source_url=payload.source_url,
+        work_item_kind="workflow_step",
+        work_item_id=step.id,
+        run_id=step.run_id,
+    )
+
+
+def _process_detail_fetch_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    payload = DetailFetchPayload.model_validate(step.input_payload or {})
+    site_section_link_id = str(payload.site_section_link_id or "").strip()
+    if not site_section_link_id:
+        raise ValueError("site_section_link_id is required")
+
+    from ..models import SiteSectionLink
+    from .crawler import ingest_url_work_item
+
+    link_row = db.query(SiteSectionLink).filter(SiteSectionLink.id == site_section_link_id).one_or_none()
+    if link_row is None:
+        raise ValueError("site section link not found")
+    if not str(payload.source_url or "").strip():
+        raise ValueError("source_url is required")
+
+    content_id, result = ingest_url_work_item(
+        db,
+        category="announcement",
+        query=payload.model_dump(),
+        source_url=str(payload.source_url or "").strip(),
+        work_item_kind="workflow_step",
+        work_item_id=step.id,
+        run_id=step.run_id,
+    )
+    classification = None
+    if content_id:
+        content = db.query(Content).filter(Content.id == content_id).one_or_none()
+        if content is not None and content.category == "announcement":
+            classification = sync_content_classification(db, content)
+    link_row.status = "parsed"
+    link_row.snapshot_meta = {
+        **dict(link_row.snapshot_meta or {}),
+        "detail_workflow_run_id": step.run_id,
+        "detail_workflow_step_id": step.id,
+        **({"content_id": content_id} if content_id else {}),
+    }
+    db.flush()
+    return {
+        "content_id": content_id,
+        "site_section_link_id": link_row.id,
+        "status": link_row.status,
+        "result": result,
+        "classification_state": classification.classification_state if classification is not None else None,
+    }
+
+
+def _process_file_parse_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    payload = FileParsePayload.model_validate(step.input_payload or {})
+    content_file_id = str(payload.content_file_id or "").strip()
+    if not content_file_id:
+        raise ValueError("content_file_id is required")
+    file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one_or_none()
+    if file_record is None:
+        raise ValueError("content file not found")
+
+    from .crawler import ingest_file_work_item
+
+    content_id, result = ingest_file_work_item(
+        db,
+        category="announcement",
+        query=payload.model_dump(),
+        file_record=file_record,
+        work_item_kind="workflow_step",
+        work_item_id=step.id,
+        run_id=step.run_id,
+    )
+    classification = None
+    if content_id:
+        content = db.query(Content).filter(Content.id == content_id).one_or_none()
+        if content is not None and content.category == "announcement":
+            classification = sync_content_classification(db, content)
+    file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one()
+    return {
+        "content_id": content_id,
+        "content_file_id": file_record.id,
+        "parse_status": file_record.parse_status,
+        "ocr_status": file_record.ocr_status,
+        "result": result,
+        "classification_state": classification.classification_state if classification is not None else None,
     }
 
 
 def _process_ocr_enqueue_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
-    payload = dict(step.input_payload or {})
-    content_file_id = str(payload.get("content_file_id") or "").strip()
+    payload = OcrEnqueuePayload.model_validate(step.input_payload or {})
+    content_file_id = str(payload.content_file_id or "").strip()
     file_record = db.query(ContentFile).filter(ContentFile.id == content_file_id).one_or_none()
     if file_record is None:
         raise ValueError("content file not found")
@@ -803,8 +1565,8 @@ def _process_ocr_enqueue_step(db: Session, step: WorkflowStep) -> dict[str, Any]
 
 
 def _process_reclassify_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
-    payload = dict(step.input_payload or {})
-    content_id = str(payload.get("content_id") or "").strip()
+    payload = ContentReclassifyPayload.model_validate(step.input_payload or {})
+    content_id = str(payload.content_id or "").strip()
     content = db.query(Content).filter(Content.id == content_id).one_or_none()
     if content is None:
         raise ValueError("content not found")
@@ -814,6 +1576,15 @@ def _process_reclassify_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
         "classification_state": classification.classification_state,
         "scope_type": classification.scope_type,
         "scope_key": classification.scope_key,
+    }
+
+
+def _process_pollution_cleanup_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    _payload = PollutionCleanupPayload.model_validate(step.input_payload or {})
+    return {
+        "scope_type": step.scope_type,
+        "scope_key": step.scope_key,
+        "message": "pollution cleanup workflow type is reserved for the next phase",
     }
 
 
@@ -835,18 +1606,22 @@ class WorkflowEngine:
                         result = _process_bootstrap_step(db, step, department_mode=False)
                     elif step.step_type == WORKFLOW_TYPE_DEPARTMENT_BOOTSTRAP:
                         result = _process_bootstrap_step(db, step, department_mode=True)
+                    elif step.step_type in {WORKFLOW_TYPE_SCHOOL_SECTION_DISCOVERY, WORKFLOW_TYPE_DEPARTMENT_SECTION_DISCOVERY}:
+                        result = _process_section_discovery_step(db, step)
+                    elif step.step_type == WORKFLOW_TYPE_DETAIL_FETCH:
+                        result = _process_detail_fetch_step(db, step)
                     elif step.step_type == WORKFLOW_TYPE_SCOPE_REBUILD:
-                        result = _process_bootstrap_step(
-                            db,
-                            step,
-                            department_mode=str(step.input_payload.get("scope_type") or "") == "department",
-                        )
+                        result = _process_scope_rebuild_step(db, step)
+                    elif step.step_type == WORKFLOW_TYPE_FILE_PARSE:
+                        result = _process_file_parse_step(db, step)
                     elif step.step_type == STEP_TYPE_OCR_ENQUEUE:
                         result = _process_ocr_enqueue_step(db, step)
                     elif step.step_type == STEP_TYPE_CONTENT_RECLASSIFY:
                         result = _process_reclassify_step(db, step)
+                    elif step.step_type == WORKFLOW_TYPE_POLLUTION_CLEANUP:
+                        result = _process_pollution_cleanup_step(db, step)
                     else:
-                        result = {"message": f"noop step_type={step.step_type}"}
+                        raise ValueError(f"unsupported workflow step type: {step.step_type}")
                     _mark_step_done(db, step, result)
                     processed += 1
                 except Exception as exc:

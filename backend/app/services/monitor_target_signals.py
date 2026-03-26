@@ -6,8 +6,7 @@ from typing import Any
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from ..models import Content, PortalUserMonitorTarget, School, utcnow
-from .announcement_portal import announcement_extra_is_visible
+from ..models import Content, ContentClassification, PortalUserMonitorTarget, School, utcnow
 from .monitor_target_repair import infer_monitor_target_context
 from .nlp import canonicalize_keyword, extract_system_keywords
 
@@ -221,7 +220,12 @@ def build_monitor_target_recent_signals(
     query = (
         db.query(Content)
         .options(joinedload(Content.school))
-        .filter(Content.category == "announcement", effective_at >= window_start)
+        .join(ContentClassification, ContentClassification.content_id == Content.id)
+        .filter(
+            Content.category == "announcement",
+            effective_at >= window_start,
+            ContentClassification.is_visible == 1,
+        )
     )
 
     school_filters = []
@@ -238,8 +242,6 @@ def build_monitor_target_recent_signals(
     for content in query.all():
         extra = dict(content.extra or {})
         if extra.get("content_quality") == "non_detail_page":
-            continue
-        if content.category == "announcement" and not announcement_extra_is_visible(extra):
             continue
 
         matched_target_ids = [

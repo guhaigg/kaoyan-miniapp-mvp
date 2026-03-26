@@ -803,9 +803,163 @@ export type ContentFileListResponse = {
 
 export type ContentFileRetryParseResponse = {
   content_file_id: string;
-  job_id: string;
+  job_id: string | null;
+  workflow_run_id: string | null;
+  step_id: string | null;
   status: "queued" | "existing";
   parse_status: string;
+};
+
+export type AdminWorkflowTriggerResponse = {
+  workflow_run_id: string;
+  step_id: string;
+  workflow_type: string;
+  scope_type: "school" | "department";
+  scope_key: string;
+  status: string;
+};
+
+export type AdminContentExplainResponse = {
+  content_id: string;
+  scope_type: "school" | "department";
+  scope_key: string;
+  classification_state: string;
+  visibility: string;
+  explain_payload: Record<string, unknown>;
+};
+
+export type AdminWorkflowStepItem = {
+  id: string;
+  parent_step_id: string | null;
+  step_type: string;
+  scope_type: "school" | "department";
+  scope_key: string;
+  host_key: string | null;
+  status: string;
+  attempt_count: number;
+  max_attempts: number;
+  timeout_seconds: number;
+  idempotency_key: string | null;
+  lease_owner: string | null;
+  leased_at: string | null;
+  available_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  error_type: string | null;
+  error_message: string | null;
+  input_payload: Record<string, unknown>;
+  result_payload: Record<string, unknown>;
+};
+
+export type AdminWorkflowArtifactItem = {
+  id: string;
+  workflow_step_id: string;
+  artifact_type: string;
+  source_url: string | null;
+  payload: Record<string, unknown>;
+  headers: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AdminWorkflowClassificationItem = {
+  content_id: string;
+  classification_state: string;
+  visibility: string;
+  scope_type: "school" | "department";
+  scope_key: string;
+  explain_payload: Record<string, unknown>;
+  updated_at: string;
+};
+
+export type AdminWorkflowListItem = {
+  workflow_run_id: string;
+  workflow_type: string;
+  scope_type: "school" | "department";
+  scope_key: string;
+  scope_label: string | null;
+  status: string;
+  families: string[];
+  seed_source: string | null;
+  host_keys: string[];
+  latest_step_type: string | null;
+  latest_step_status: string | null;
+  latest_step_error: string | null;
+  terminal_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export type AdminWorkflowListResponse = {
+  total: number;
+  page: number;
+  page_size: number;
+  items: AdminWorkflowListItem[];
+};
+
+export type AdminWorkflowDetailResponse = {
+  workflow_run_id: string;
+  workflow_type: string;
+  scope_type: "school" | "department";
+  scope_key: string;
+  scope_label: string | null;
+  status: string;
+  seed_source: string | null;
+  terminal_reason: string | null;
+  request_payload: Record<string, unknown>;
+  result_payload: Record<string, unknown>;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+  steps: AdminWorkflowStepItem[];
+  raw_artifacts: AdminWorkflowArtifactItem[];
+  parse_artifacts: AdminWorkflowArtifactItem[];
+  content_classifications: AdminWorkflowClassificationItem[];
+  governance_actions: Array<{
+    id: string;
+    entity_type: string;
+    entity_id: string;
+    action_type: string;
+    actor_account_id: string | null;
+    payload: Record<string, unknown>;
+    created_at: string;
+  }>;
+  portal_nodes: Array<{
+    id: string;
+    node_type: string;
+    url: string;
+    host: string | null;
+    title: string | null;
+    status: string;
+    evidence: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+  }>;
+  portal_edges: Array<{
+    id: string;
+    from_node_id: string;
+    to_node_id: string;
+    relation_type: string;
+    evidence: Record<string, unknown>;
+    created_at: string;
+  }>;
+  host_decisions: Array<{
+    id: string;
+    family: string;
+    selected_host: string | null;
+    candidate_hosts: string[];
+    confidence: number;
+    rule_version: string;
+    decision_source: string;
+    manual_override: number;
+    status: string;
+    evidence: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+  }>;
 };
 
 export type SubscriptionType = "school" | "major" | "keyword" | "region" | "radar";

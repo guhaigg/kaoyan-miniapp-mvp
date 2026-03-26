@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as app_models
 from ..models import NotificationOutbox, utcnow
-from .classification import get_effective_content_classification
+from .classification import get_content_classification
 from .nlp import keyword_matches_content, normalize_tag
 
 
@@ -133,8 +133,8 @@ def evaluate_content_for_premium_monitoring(db: Session, content: Any, *, trigge
     content_tags = [normalize_tag(tag) for tag in raw_content_tags]
     content_tags = [tag for tag in content_tags if tag]
     if _as_text(getattr(content, "category", None)) == "announcement":
-        classification = get_effective_content_classification(db, content)
-        if not bool(getattr(classification, "is_visible", 0)):
+        classification = get_content_classification(db, content_id=content_id)
+        if classification is None or not bool(getattr(classification, "is_visible", 0)):
             return
     school_id = _as_id(extra.get("school_id")) or _as_id(getattr(content, "school_id", None))
     department_id = _as_id(extra.get("department_id"))

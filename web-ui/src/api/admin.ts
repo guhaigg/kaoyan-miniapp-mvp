@@ -1,7 +1,11 @@
 import {
   api,
+  type AdminContentExplainResponse,
   type AdminAuditListResponse,
   type AdminContentFingerprintStatsResponse,
+  type AdminWorkflowDetailResponse,
+  type AdminWorkflowListResponse,
+  type AdminWorkflowTriggerResponse,
   type AdjustmentIntelligenceResponse,
   type ContentFileListResponse,
   type ContentFileRetryParseResponse,
@@ -126,6 +130,51 @@ export const fetchContentFiles = (params?: {
 
 export const retryContentFileParse = (contentFileId: string) =>
   api.post<ContentFileRetryParseResponse>(`/site-sections/content-files/${encodeURIComponent(contentFileId)}/retry-parse`).then((response) => response.data);
+
+export const fetchAdminWorkflows = (params?: {
+  family?: string;
+  scope_type?: string;
+  scope_key?: string;
+  status?: string;
+  workflow_type?: string;
+  host_key?: string;
+  page?: number;
+  page_size?: number;
+}) => api.get<AdminWorkflowListResponse>("/admin/workflows", { params }).then((response) => response.data);
+
+export const fetchAdminWorkflowDetail = (workflowRunId: string) =>
+  api.get<AdminWorkflowDetailResponse>(`/admin/workflows/${encodeURIComponent(workflowRunId)}`).then((response) => response.data);
+
+export const bootstrapAdminAnnouncementSchool = (payload: {
+  school_name: string;
+  homepage_url: string;
+  seed_urls?: string[];
+  max_sections?: number;
+}) => api.post<AdminWorkflowTriggerResponse>("/admin/bootstrap/schools", payload).then((response) => response.data);
+
+export const bootstrapAdminAnnouncementDepartment = (payload: {
+  school_name: string;
+  department_name: string;
+  department_type?: string;
+  homepage_url: string;
+  seed_urls?: string[];
+  max_sections?: number;
+}) => api.post<AdminWorkflowTriggerResponse>("/admin/bootstrap/departments", payload).then((response) => response.data);
+
+export const createAdminAnnouncementRebuild = (payload: {
+  scope_type: "school" | "department";
+  school_name: string;
+  department_name?: string | null;
+  homepage_url?: string | null;
+  seed_urls?: string[];
+  max_sections?: number;
+}) => api.post<AdminWorkflowTriggerResponse>("/admin/rebuilds", payload).then((response) => response.data);
+
+export const fetchAdminContentExplain = (contentId: string) =>
+  api.get<AdminContentExplainResponse>(`/admin/contents/${encodeURIComponent(contentId)}/explain`).then((response) => response.data);
+
+export const reclassifyAdminContent = (contentId: string) =>
+  api.post<AdminWorkflowTriggerResponse>(`/admin/contents/${encodeURIComponent(contentId)}/reclassify`).then((response) => response.data);
 
 export const fetchSchoolImportSeedSummaries = () =>
   api.get<SchoolImportSeedSummaryListResponse>("/schools/import/seed-summaries").then((response) => response.data);
