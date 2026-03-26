@@ -1,0 +1,19 @@
+[Unit]
+Description=Kaoyan Crawler V2 Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/code/kaoyan-miniapp-mvp/backend
+EnvironmentFile=/root/code/kaoyan-miniapp-mvp/backend/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/root/code/kaoyan-miniapp-mvp/backend
+ExecStart=/root/code/kaoyan-miniapp-mvp/backend/.venv/bin/python -m app.workers.crawler_v2_worker
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -189,6 +189,7 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - OCR is now an explicit async step. `retry-parse` only reruns file parsing; `retry-ocr` enqueues a V2 `ocr_enqueue` workflow step.
 - Announcement `retry-parse` now enqueues a V2 `file_parse` workflow step. Legacy `crawl_jobs(file_parse)` remains only for non-announcement paths and backward-compatible handoff shells.
 - API process no longer runs the crawl worker loop. V2 steps are consumed by the standalone worker entrypoint `python -m app.workers.crawler_v2_worker`.
+- In production this worker must be supervised separately from `kaoyan-backend`, for example via `kaoyan-crawler-v2.service`. If the worker is absent, workflow-backed operations will enqueue successfully but remain `pending`.
 - Announcement visibility is now persisted in `content_classifications` and reused by search and premium monitoring instead of recomputing separate visibility decisions per surface.
 - Announcement runtime seeds can now be read from versioned offline JSON assets under `docs/data/`, especially `announcement_seed_registry.json`. The runtime still treats this as read-only canonical input.
 - Notification and monitoring announcement consumers now read persisted `content_classifications` only. Rows marked `hidden_scope_conflict`, `hidden_non_admissions`, or other hidden states do not enter school/department announcement surfaces even if `contents.extra` still contains portal-like metadata.

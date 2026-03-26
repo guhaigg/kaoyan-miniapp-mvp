@@ -181,6 +181,7 @@
 
 - 当前生产机 IP：`38.76.215.159`
 - `kaoyan-backend.service`：运行中
+- `kaoyan-crawler-v2.service`：应与后端并行托管 V2 workflow worker；如果该服务未运行，`announcement_catalog_refresh`、bootstrap/rebuild 后续 step 会停在 `pending`
 - `nginx.service`：运行中
 - `gewujl-backup.service`：非长期驻留型服务，通常配合定时器触发
 

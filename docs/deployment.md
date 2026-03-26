@@ -211,6 +211,7 @@ Optional GitHub Variables:
 - `HK_DEPLOY_PATH` (default `/root/code/kaoyan-miniapp-mvp`)
 - `HK_WEB_ROOT` (default `/var/www/html`)
 - `HK_BACKEND_SERVICE` (example: `kaoyan-backend`)
+- `HK_WORKFLOW_SERVICE` (example: `kaoyan-crawler-v2`)
 
 Deploy actions on server:
 
@@ -223,7 +224,8 @@ Deploy actions on server:
 5. Install/enable backup automation (`gewujl-backup.timer`)
 6. Install backend dependencies if `.venv/bin/pip` exists
 7. Restart backend service if `HK_BACKEND_SERVICE` is configured
-8. `nginx -t` and `systemctl reload nginx`
+8. Restart crawler v2 worker service if `HK_WORKFLOW_SERVICE` is configured
+9. `nginx -t` and `systemctl reload nginx`
 
 Recommended static-site Nginx behavior:
 
