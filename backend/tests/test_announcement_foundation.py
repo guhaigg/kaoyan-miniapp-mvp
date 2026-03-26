@@ -118,6 +118,69 @@ def test_refresh_announcement_foundation_builds_snapshots_and_registry(monkeypat
         shutil.rmtree(tmp_path, ignore_errors=True)
 
 
+def test_fetch_chsi_school_catalog_stops_after_requested_school_found_on_first_page(monkeypatch):
+    school_catalog_html = """
+    <html><body>
+      <a href="/sch/schoolInfo--schId-1001.dhtml">Example University</a>
+      <div>Beijing 主管部门：教育部</div>
+      <a href="https://yz.chsi.com.cn/sch/?start=20">2</a>
+      <a href="https://yz.chsi.com.cn/sch/?start=920">47</a>
+    </body></html>
+    """
+    calls: list[str] = []
+
+    def _fake_fetch_text(url: str, timeout: int = 20) -> str:
+        calls.append(url)
+        if url == announcement_foundation.CHSI_SCHOOL_CATALOG_URL:
+            return school_catalog_html
+        return "<html><body></body></html>"
+
+    monkeypatch.setattr(announcement_foundation, "_fetch_text", _fake_fetch_text)
+
+    schools = announcement_foundation.fetch_chsi_school_catalog(school_names=["Example University"])
+
+    assert len(schools) == 1
+    assert schools[0]["school_name"] == "Example University"
+    assert calls == [announcement_foundation.CHSI_SCHOOL_CATALOG_URL]
+
+
+def test_fetch_chsi_school_catalog_continues_until_requested_school_found(monkeypatch):
+    first_page_html = """
+    <html><body>
+      <a href="/sch/schoolInfo--schId-1001.dhtml">First University</a>
+      <div>Beijing 主管部门：教育部</div>
+      <a href="https://yz.chsi.com.cn/sch/?start=20">2</a>
+      <a href="https://yz.chsi.com.cn/sch/?start=920">47</a>
+    </body></html>
+    """
+    second_page_html = """
+    <html><body>
+      <a href="/sch/schoolInfo--schId-2002.dhtml">Target University</a>
+      <div>Shanghai 主管部门：教育部</div>
+    </body></html>
+    """
+    calls: list[str] = []
+
+    def _fake_fetch_text(url: str, timeout: int = 20) -> str:
+        calls.append(url)
+        if url == announcement_foundation.CHSI_SCHOOL_CATALOG_URL:
+            return first_page_html
+        if url == "https://yz.chsi.com.cn/sch/?start=20":
+            return second_page_html
+        return "<html><body></body></html>"
+
+    monkeypatch.setattr(announcement_foundation, "_fetch_text", _fake_fetch_text)
+
+    schools = announcement_foundation.fetch_chsi_school_catalog(school_names=["Target University"])
+
+    assert len(schools) == 1
+    assert schools[0]["school_name"] == "Target University"
+    assert calls == [
+        announcement_foundation.CHSI_SCHOOL_CATALOG_URL,
+        "https://yz.chsi.com.cn/sch/?start=20",
+    ]
+
+
 def test_canonical_scope_seeds_reads_json_registry_and_department_override(monkeypatch):
     tmp_path = _temp_dir()
     try:

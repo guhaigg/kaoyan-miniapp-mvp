@@ -195,18 +195,28 @@ def _parse_school_catalog_page(page_url: str, html_text: str) -> tuple[list[dict
 def fetch_chsi_school_catalog(*, school_names: list[str] | None = None) -> list[dict[str, Any]]:
     requested_names = {normalize_school_name(name) for name in (school_names or []) if normalize_school_name(name)}
     first_page = _fetch_text(CHSI_SCHOOL_CATALOG_URL)
+    deduped: dict[str, dict[str, Any]] = {}
     entries, page_count = _parse_school_catalog_page(CHSI_SCHOOL_CATALOG_URL, first_page)
+
+    def _merge_entries(items: list[dict[str, Any]]) -> None:
+        for entry in items:
+            key = normalize_school_name(entry["school_name"])
+            deduped[key] = entry
+
+    _merge_entries(entries)
+    if requested_names and requested_names.issubset(deduped.keys()):
+        return [entry for key, entry in deduped.items() if key in requested_names]
+
     for page_number in range(2, page_count + 1):
         start = (page_number - 1) * 20
         page_url = f"{CHSI_SCHOOL_CATALOG_URL}?start={start}"
         page_entries, _ = _parse_school_catalog_page(page_url, _fetch_text(page_url))
-        entries.extend(page_entries)
-    deduped: dict[str, dict[str, Any]] = {}
-    for entry in entries:
-        key = normalize_school_name(entry["school_name"])
-        if requested_names and key not in requested_names:
-            continue
-        deduped[key] = entry
+        _merge_entries(page_entries)
+        if requested_names and requested_names.issubset(deduped.keys()):
+            break
+
+    if requested_names:
+        return [entry for key, entry in deduped.items() if key in requested_names]
     return list(deduped.values())
 
 
