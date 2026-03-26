@@ -1324,6 +1324,7 @@ def _queue_family_discovery_job(
     workflow_handoff: str | None = None,
 ) -> CrawlJob:
     normalized_seed_urls = _dedupe_texts([str(url or "").strip() for url in (seed_urls or []) if str(url or "").strip()])
+    queued_candidate_urls = [] if str(workflow_handoff or "").strip().lower() == "v2" else list(candidate_urls)
     job = CrawlJob(
         category=_discovery_category_for_families(families),
         status="pending",
@@ -1334,7 +1335,7 @@ def _queue_family_discovery_job(
             "school_name": school_name.strip(),
             "families": sorted(families),
             "bootstrap_origin": bootstrap_origin,
-            "candidate_urls": list(candidate_urls),
+            "candidate_urls": queued_candidate_urls,
             "homepage_url": str(homepage_url or "").strip() or None,
             "seed_urls": normalized_seed_urls,
             "workflow_handoff": str(workflow_handoff or "").strip() or None,
@@ -1867,7 +1868,7 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
         "state": "queued",
         "school_name": normalized_school_name,
         "message": f"已自动为 {normalized_school_name} 启动陌生院校冷启动，正在发现官网栏目并补抓内容，请稍后自动刷新。",
-        "candidate_urls": local_candidate_hints or v2_seed_urls,
+        "candidate_urls": v2_seed_urls if v2_homepage_url else local_candidate_hints,
         "job_ids": [queued_job.id],
     }
 

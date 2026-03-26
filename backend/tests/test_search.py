@@ -3217,7 +3217,11 @@ def test_ensure_announcement_search_bootstrap_queues_family_discovery_with_shnu_
         assert job.query["job_kind"] == "family_discovery"
         assert job.query["school_name"] == "上海师范大学"
         assert job.query["families"] == ["admissions", "notice"]
-        assert all("web.shnu.edu.cn/yjspyzx" not in url for url in job.query["candidate_urls"])
+        assert job.query["workflow_handoff"] == "v2"
+        assert job.query["homepage_url"] == "https://yjsc.shnu.edu.cn/"
+        assert "https://yjsc.shnu.edu.cn/17204/list.htm" in job.query["seed_urls"]
+        assert "https://yjsc.shnu.edu.cn/17206/list.htm" in job.query["seed_urls"]
+        assert job.query["candidate_urls"] == []
 
 
 def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_sections():
@@ -3263,6 +3267,8 @@ def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_section
         jobs = db.query(CrawlJob).all()
         assert len(jobs) == 1
         assert jobs[0].query["job_kind"] == "family_discovery"
+        assert jobs[0].query["workflow_handoff"] == "v2"
+        assert jobs[0].query["candidate_urls"] == []
 
 
 def test_ensure_announcement_search_bootstrap_uses_hubu_canonical_candidates():
@@ -3277,7 +3283,10 @@ def test_ensure_announcement_search_bootstrap_uses_hubu_canonical_candidates():
         job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
         assert job.query["job_kind"] == "family_discovery"
         assert job.query["school_name"] == "湖北大学"
-        assert job.query["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert job.query["workflow_handoff"] == "v2"
+        assert job.query["homepage_url"] == "https://yz.hubu.edu.cn/"
+        assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert job.query["candidate_urls"] == []
 
 
 def test_ensure_announcement_search_bootstrap_prefers_canonical_site_over_existing_sibling_site_sections():
@@ -3321,7 +3330,9 @@ def test_ensure_announcement_search_bootstrap_prefers_canonical_site_over_existi
         job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
         assert job.query["job_kind"] == "family_discovery"
         assert job.query["school_name"] == "湖北大学"
-        assert job.query["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert job.query["workflow_handoff"] == "v2"
+        assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert job.query["candidate_urls"] == []
 
 
 def test_ensure_announcement_search_bootstrap_does_not_reuse_legacy_unstructured_sections_on_canonical_host():
@@ -3365,7 +3376,9 @@ def test_ensure_announcement_search_bootstrap_does_not_reuse_legacy_unstructured
         job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
         assert job.query["job_kind"] == "family_discovery"
         assert job.query["school_name"] == "湖北大学"
-        assert "https://yz.hubu.edu.cn/" in job.query["candidate_urls"]
+        assert job.query["workflow_handoff"] == "v2"
+        assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert job.query["candidate_urls"] == []
 
 
 def test_ensure_announcement_search_bootstrap_prefers_discovered_two_hop_portal_host_before_reusing_existing_sections(monkeypatch):

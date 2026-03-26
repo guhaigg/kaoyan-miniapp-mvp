@@ -84,3 +84,4 @@ def test_ensure_announcement_search_bootstrap_defaults_to_v2_handoff_when_canoni
         assert job.query["workflow_handoff"] == "v2"
         assert job.query["homepage_url"] == "https://yz.hubu.edu.cn/"
         assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert job.query["candidate_urls"] == []
