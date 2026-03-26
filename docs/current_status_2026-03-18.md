@@ -403,9 +403,9 @@
 - 学校级与院系级 bootstrap 已按 `scope_type + scope_key` 分轨，新的 workflow 路径不再把 `announcement_portal_caches.candidate_urls`、旧详情页 URL 或历史 `content.source_url` 当 discovery seed
 - school / department bootstrap 已开始真实写入 `portal_nodes / portal_edges / portal_host_decisions / raw_artifacts / parse_artifacts`
 - department bootstrap 若产出 school-scoped section，会直接终态失败并回滚本次部分写入，不再把 scope 错误当成可重试故障
-- legacy `family_discovery` job 已新增受控 handoff 路径：带 `workflow_handoff=v2` 时，会直接转成 V2 `scope_rebuild` workflow，并优先使用显式 seed 或维护好的 canonical seed
-- legacy `ensure_*_search_bootstrap` 已开始默认排 V2 handoff job；只有缺少显式维护 seed 的学校才继续 fallback 到旧 discovery queue
-- 对这些 V2 handoff job，真实发现输入已经切到 `homepage_url + seed_urls`，旧 `candidate_urls` 只保留为兼容返回字段
+- 公告侧 legacy `family_discovery` 已收口成 handoff-only compatibility shell：有显式 seed 或 canonical seed 时直接转 V2 `scope_rebuild`，没有 governed seed 时终态写成 `no_candidate`
+- legacy `ensure_announcement_search_bootstrap` 已收口成只读 shim：只返回 approved assets / active workflow / canonical seed readiness，不再创建 `crawl_jobs`
+- 公告侧 handoff 的真实发现输入已经固定为 `homepage_url + seed_urls`；旧 `candidate_urls` 只保留为兼容返回字段，不再驱动 discovery
 - 已新增 `GET /api/v1/admin/workflows/{id}`，可以直接查看某次 bootstrap/rebuild 的 step、portal graph、host decision、artifact 和治理动作；这也是参考 `yanbot` 笔记后优先补的治理能力
 
 当前边界：

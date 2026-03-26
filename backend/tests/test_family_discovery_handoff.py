@@ -40,14 +40,13 @@ def test_family_discovery_job_can_handoff_to_v2_with_explicit_seeds():
         assert step.input_payload["families"] == ["admissions", "notice"]
 
 
-def test_family_discovery_job_v2_handoff_uses_canonical_announcement_seed_override():
+def test_family_discovery_job_announcement_uses_canonical_seed_registry_without_explicit_handoff_flag():
     with SessionLocal() as db:
         job = CrawlJob(
             category="announcement",
             status="pending",
             query={
                 "job_kind": "family_discovery",
-                "workflow_handoff": "v2",
                 "school_name": "湖北大学",
                 "families": ["admissions", "notice"],
             },
@@ -66,22 +65,47 @@ def test_family_discovery_job_v2_handoff_uses_canonical_announcement_seed_overri
 
         assert job.query["homepage_url"] == "https://yz.hubu.edu.cn/"
         assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert job.query["workflow_handoff"] == "v2"
+        assert job.query["result_state"] == "workflow_handoff"
         assert run.request_payload["homepage_url"] == "https://yz.hubu.edu.cn/"
         assert run.request_payload["seed_urls"] == ["https://yz.hubu.edu.cn/"]
 
 
-def test_ensure_announcement_search_bootstrap_defaults_to_v2_handoff_when_canonical_seed_exists():
+def test_family_discovery_job_announcement_without_governed_seed_ends_as_no_candidate():
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "Seedless University",
+                "families": ["admissions", "notice"],
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+
+        _content_id, message = run_family_discovery_job(db, job, dict(job.query or {}))
+        assert "requires governed explicit seeds" in message
+        db.commit()
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "no_candidate"
+        assert job.query["result_candidate_urls"] == []
+        assert job.query["result_job_ids"] == []
+        assert job.query.get("workflow_run_id") is None
+
+
+def test_ensure_announcement_search_bootstrap_is_read_only_when_canonical_seed_exists():
     with SessionLocal() as db:
         result = ensure_announcement_search_bootstrap(db, "湖北大学")
 
     assert result is not None
-    assert result["state"] == "queued"
+    assert result["state"] == "not_ready"
     assert result["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+    assert result["job_ids"] == []
 
     with SessionLocal() as db:
-        job = db.query(CrawlJob).filter(CrawlJob.id == result["job_ids"][0]).one()
-        assert job.query["job_kind"] == "family_discovery"
-        assert job.query["workflow_handoff"] == "v2"
-        assert job.query["homepage_url"] == "https://yz.hubu.edu.cn/"
-        assert job.query["seed_urls"] == ["https://yz.hubu.edu.cn/"]
-        assert job.query["candidate_urls"] == []
+        assert db.query(CrawlJob).count() == 0

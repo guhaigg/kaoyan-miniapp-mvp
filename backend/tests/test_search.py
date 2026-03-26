@@ -8,6 +8,7 @@ from app.services.historical_intelligence import build_adjustment_opportunities_
 from app.services.content_repair import extract_content_published_at_from_body, infer_non_detail_announcement_reason
 from app.services.crawler import crawl_engine
 from app.services.school_cold_start import _candidate_page_matches_school_name, ensure_adjustment_search_bootstrap, ensure_announcement_search_bootstrap, run_family_discovery_job
+from app.services.workflow_v2 import create_scope_rebuild_run
 from app.routers.search import _build_adjustment_detail_from_opportunity
 from scripts.repair_stale_announcement_content import _repair_row_by_snapshot
 
@@ -3033,7 +3034,143 @@ def test_search_announcements_with_existing_school_assets_stays_ready_without_on
     assert second.json()["cold_start"] is None
 
 
-def test_ensure_announcement_search_bootstrap_queues_existing_site_sections():
+def test_ensure_announcement_search_bootstrap_reports_ready_for_existing_school_assets_without_side_effects():
+    with SessionLocal() as db:
+        school = School(name="范围大学", aliases=[])
+        db.add(school)
+        db.flush()
+        source = Source(
+            school_id=school.id,
+            name="范围大学官网",
+            source_type="official",
+            base_url="https://scope.edu.cn",
+            config={},
+            enabled=1,
+        )
+        db.add(source)
+        db.flush()
+        department = Department(school_id=school.id, name="教育学院", aliases=[], department_type="college", enabled=1)
+        db.add(department)
+        db.flush()
+        db.add_all(
+            [
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="通知公告",
+                    section_type="notice",
+                    section_url="https://scope.edu.cn/yjs/notices/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="硕士研究生招生信息",
+                    section_type="admissions",
+                    section_url="https://scope.edu.cn/yjs/masters/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "admissions", "probe_role": "leaf", "probe_scope": "masters"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    source_id=source.id,
+                    name="博士研究生招生信息",
+                    section_type="admissions",
+                    section_url="https://scope.edu.cn/yjs/doctoral/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "admissions", "probe_role": "leaf", "probe_scope": "doctoral"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+                SiteSection(
+                    school_id=school.id,
+                    department_id=department.id,
+                    source_id=source.id,
+                    name="教育学院通知公告",
+                    section_type="notice",
+                    section_url="https://scope.edu.cn/education/notices/",
+                    discovery_category="announcement",
+                    list_selector_config={"probe_family": "notice", "probe_role": "leaf", "probe_scope": "general"},
+                    detail_selector_config={},
+                    enabled=1,
+                ),
+            ]
+        )
+        db.commit()
+
+        result = ensure_announcement_search_bootstrap(db, "范围大学")
+
+    assert result is not None
+    assert result["state"] == "ready"
+    assert result["candidate_urls"] == [
+        "https://scope.edu.cn/yjs/notices/",
+        "https://scope.edu.cn/yjs/masters/",
+    ]
+    assert result["job_ids"] == []
+
+    with SessionLocal() as db:
+        assert db.query(CrawlJob).count() == 0
+
+
+def test_ensure_announcement_search_bootstrap_reports_not_ready_from_canonical_seed_without_side_effects():
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "湖北大学")
+
+    assert result is not None
+    assert result["state"] == "not_ready"
+    assert result["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+    assert result["job_ids"] == []
+
+    with SessionLocal() as db:
+        assert db.query(CrawlJob).count() == 0
+
+
+def test_ensure_announcement_search_bootstrap_reports_in_progress_from_active_v2_workflow():
+    with SessionLocal() as db:
+        run, step = create_scope_rebuild_run(
+            db,
+            scope_type="school",
+            school_name="湖北大学",
+            homepage_url="https://yz.hubu.edu.cn/",
+            seed_urls=["https://yz.hubu.edu.cn/"],
+            actor_username=None,
+            max_sections=8,
+        )
+        run.status = "running"
+        step.status = "running"
+        db.commit()
+        workflow_run_id = run.id
+
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "湖北大学")
+
+    assert result is not None
+    assert result["state"] == "in_progress"
+    assert result["candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+    assert result["workflow_run_id"] == workflow_run_id
+    assert result["job_ids"] == []
+
+
+def test_ensure_announcement_search_bootstrap_reports_no_candidate_without_governed_seed():
+    with SessionLocal() as db:
+        result = ensure_announcement_search_bootstrap(db, "Seedless University")
+
+    assert result is not None
+    assert result["state"] == "no_candidate"
+    assert result["candidate_urls"] == []
+    assert result["job_ids"] == []
+    assert result["required_action"] == "admin.bootstrap.school"
+
+    with SessionLocal() as db:
+        assert db.query(CrawlJob).count() == 0
+
+
+def _obsolete_test_ensure_announcement_search_bootstrap_queues_existing_site_sections():
     with SessionLocal() as db:
         school = School(name="已建资产大学", aliases=[])
         db.add(school)
@@ -3077,7 +3214,7 @@ def test_ensure_announcement_search_bootstrap_queues_existing_site_sections():
         assert job.query["school_name"] == "已建资产大学"
 
 
-def test_ensure_announcement_search_bootstrap_filters_doctoral_leaf_sections():
+def _obsolete_test_ensure_announcement_search_bootstrap_filters_doctoral_leaf_sections():
     with SessionLocal() as db:
         school = School(name="范围大学", aliases=[])
         db.add(school)
@@ -3148,7 +3285,7 @@ def test_ensure_announcement_search_bootstrap_filters_doctoral_leaf_sections():
     ]
 
 
-def test_ensure_announcement_search_bootstrap_excludes_department_sections_from_reuse():
+def _obsolete_test_ensure_announcement_search_bootstrap_excludes_department_sections_from_reuse():
     with SessionLocal() as db:
         school = School(name="复用范围大学", aliases=[])
         db.add(school)
@@ -3202,7 +3339,7 @@ def test_ensure_announcement_search_bootstrap_excludes_department_sections_from_
     assert result["candidate_urls"] == ["https://scope.edu.cn/yjs/notices/"]
 
 
-def test_ensure_announcement_search_bootstrap_queues_family_discovery_with_shnu_canonical_candidates():
+def _obsolete_test_ensure_announcement_search_bootstrap_queues_family_discovery_with_shnu_canonical_candidates():
     with SessionLocal() as db:
         result = ensure_announcement_search_bootstrap(db, "上海师范大学")
 
@@ -3224,7 +3361,7 @@ def test_ensure_announcement_search_bootstrap_queues_family_discovery_with_shnu_
         assert job.query["candidate_urls"] == []
 
 
-def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_sections():
+def _obsolete_test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_sections():
     
     with SessionLocal() as db:
         school = School(name="上海师范大学", aliases=[])
@@ -3271,7 +3408,7 @@ def test_ensure_announcement_search_bootstrap_does_not_reuse_shnu_legacy_section
         assert jobs[0].query["candidate_urls"] == []
 
 
-def test_ensure_announcement_search_bootstrap_uses_hubu_canonical_candidates():
+def _obsolete_test_ensure_announcement_search_bootstrap_uses_hubu_canonical_candidates():
     with SessionLocal() as db:
         result = ensure_announcement_search_bootstrap(db, "湖北大学")
 
@@ -3289,7 +3426,7 @@ def test_ensure_announcement_search_bootstrap_uses_hubu_canonical_candidates():
         assert job.query["candidate_urls"] == []
 
 
-def test_ensure_announcement_search_bootstrap_prefers_canonical_site_over_existing_sibling_site_sections():
+def _obsolete_test_ensure_announcement_search_bootstrap_prefers_canonical_site_over_existing_sibling_site_sections():
     with SessionLocal() as db:
         school = School(name="湖北大学", aliases=[])
         db.add(school)
@@ -3335,7 +3472,7 @@ def test_ensure_announcement_search_bootstrap_prefers_canonical_site_over_existi
         assert job.query["candidate_urls"] == []
 
 
-def test_ensure_announcement_search_bootstrap_does_not_reuse_legacy_unstructured_sections_on_canonical_host():
+def _obsolete_test_ensure_announcement_search_bootstrap_does_not_reuse_legacy_unstructured_sections_on_canonical_host():
     with SessionLocal() as db:
         school = School(name="湖北大学", aliases=[])
         db.add(school)
@@ -3381,7 +3518,7 @@ def test_ensure_announcement_search_bootstrap_does_not_reuse_legacy_unstructured
         assert job.query["candidate_urls"] == []
 
 
-def test_ensure_announcement_search_bootstrap_prefers_discovered_two_hop_portal_host_before_reusing_existing_sections(monkeypatch):
+def _obsolete_test_ensure_announcement_search_bootstrap_prefers_discovered_two_hop_portal_host_before_reusing_existing_sections(monkeypatch):
     class _DummyResponse:
         def __init__(self, text: str):
             self.text = text
@@ -3476,7 +3613,7 @@ def test_ensure_announcement_search_bootstrap_prefers_discovered_two_hop_portal_
         assert job.query["candidate_urls"][0] == "https://yz.chain.edu.cn/"
 
 
-def test_ensure_announcement_search_bootstrap_uses_fresh_cached_portal_candidates_before_live_discovery(monkeypatch):
+def _obsolete_test_ensure_announcement_search_bootstrap_uses_fresh_cached_portal_candidates_before_live_discovery(monkeypatch):
     monkeypatch.setattr(
         "app.services.school_cold_start._discover_seed_urls_from_docs",
         lambda school_name: (_ for _ in ()).throw(AssertionError("docs discovery should not run")),
@@ -3543,7 +3680,7 @@ def test_ensure_announcement_search_bootstrap_uses_fresh_cached_portal_candidate
         assert all(url.startswith("https://yz.cache.edu.cn/") for url in job.query["candidate_urls"])
 
 
-def test_ensure_announcement_search_bootstrap_keeps_reusing_existing_sections_without_strong_preferred_host(monkeypatch):
+def _obsolete_test_ensure_announcement_search_bootstrap_keeps_reusing_existing_sections_without_strong_preferred_host(monkeypatch):
     class _DummyResponse:
         def __init__(self, text: str):
             self.text = text
@@ -3597,7 +3734,7 @@ def test_ensure_announcement_search_bootstrap_keeps_reusing_existing_sections_wi
         assert job.query["source_url"] == "https://grad.balance.edu.cn/notices/"
 
 
-def test_ensure_announcement_search_bootstrap_ignores_stale_cached_portal_candidates(monkeypatch):
+def _obsolete_test_ensure_announcement_search_bootstrap_ignores_stale_cached_portal_candidates(monkeypatch):
     calls: list[str] = []
 
     class _DummyResponse:
@@ -3753,7 +3890,68 @@ def test_ensure_adjustment_search_bootstrap_reuses_active_family_discovery_job()
     assert result["candidate_urls"] == ["https://adjust.edu.cn/cs/tiaoji/"]
 
 
-def test_ensure_announcement_search_bootstrap_uses_recent_no_candidate_cooldown():
+def test_run_family_discovery_job_announcement_uses_canonical_seed_registry_and_skips_portal_cache():
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "湖北大学",
+                "families": ["admissions", "notice"],
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+
+        _content_id, message = run_family_discovery_job(db, job, dict(job.query or {}))
+        assert "crawler v2 workflow" in message
+        db.commit()
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "workflow_handoff"
+        assert job.query["result_candidate_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert job.query["workflow_handoff"] == "v2"
+        assert job.query.get("workflow_run_id")
+        assert db.query(AnnouncementPortalCache).count() == 0
+        assert db.query(SiteSection).count() == 0
+        assert db.query(CrawlJob).count() == 1
+
+
+def test_run_family_discovery_job_announcement_ignores_legacy_candidate_urls_without_governed_seed():
+    with SessionLocal() as db:
+        job = CrawlJob(
+            category="announcement",
+            status="pending",
+            query={
+                "job_kind": "family_discovery",
+                "school_name": "Legacy Only University",
+                "families": ["admissions", "notice"],
+                "candidate_urls": ["https://legacy.example.edu.cn/notice/"],
+            },
+        )
+        db.add(job)
+        db.flush()
+        job_id = job.id
+
+        _content_id, message = run_family_discovery_job(db, job, dict(job.query or {}))
+        assert "requires governed explicit seeds" in message
+        db.commit()
+
+    with SessionLocal() as db:
+        job = db.query(CrawlJob).filter(CrawlJob.id == job_id).one()
+        assert job.query["result_state"] == "no_candidate"
+        assert job.query["result_candidate_urls"] == []
+        assert job.query["result_job_ids"] == []
+        assert job.query.get("workflow_run_id") is None
+        assert db.query(AnnouncementPortalCache).count() == 0
+        assert db.query(SiteSection).count() == 0
+        assert db.query(CrawlJob).count() == 1
+
+
+def _obsolete_test_ensure_announcement_search_bootstrap_uses_recent_no_candidate_cooldown():
     with SessionLocal() as db:
         job = CrawlJob(
             category="announcement",
@@ -3783,7 +3981,7 @@ def test_ensure_announcement_search_bootstrap_uses_recent_no_candidate_cooldown(
         assert len(jobs) == 1
 
 
-def test_run_family_discovery_job_persists_verified_announcement_portal_cache(monkeypatch):
+def _obsolete_test_run_family_discovery_job_persists_verified_announcement_portal_cache(monkeypatch):
     captured: dict[str, object] = {}
 
     class _DummyResponse:
@@ -3841,7 +4039,7 @@ def test_run_family_discovery_job_persists_verified_announcement_portal_cache(mo
         assert cache.last_verified_at is not None
 
 
-def test_run_family_discovery_job_persists_only_preferred_host_candidates_in_portal_cache(monkeypatch):
+def _obsolete_test_run_family_discovery_job_persists_only_preferred_host_candidates_in_portal_cache(monkeypatch):
     monkeypatch.setattr(
         "app.services.school_cold_start._discover_seed_urls_from_docs",
         lambda school_name: [
@@ -3956,7 +4154,7 @@ def test_run_family_discovery_job_expands_adjustment_department_seed_urls(monkey
         assert job.query["result_candidate_urls"] == ["https://seed.edu.cn/cs/adjustment/"]
 
 
-def test_run_family_discovery_job_rebuilds_when_existing_sections_are_detail_pages(monkeypatch):
+def _obsolete_test_run_family_discovery_job_rebuilds_when_existing_sections_are_detail_pages(monkeypatch):
     captured: dict[str, object] = {}
 
     class _DummyResponse:
@@ -4036,7 +4234,7 @@ def test_run_family_discovery_job_rebuilds_when_existing_sections_are_detail_pag
         assert job.query["result_state"] == "queued"
 
 
-def test_run_family_discovery_job_uses_list_seed_as_homepage(monkeypatch):
+def _obsolete_test_run_family_discovery_job_uses_list_seed_as_homepage(monkeypatch):
     captured: dict[str, object] = {}
 
     class _DummyResponse:
@@ -4086,7 +4284,7 @@ def test_run_family_discovery_job_uses_list_seed_as_homepage(monkeypatch):
         assert job.query["result_state"] == "queued"
 
 
-def test_run_family_discovery_job_rejects_unmatched_search_candidates(monkeypatch):
+def _obsolete_test_run_family_discovery_job_rejects_unmatched_search_candidates(monkeypatch):
     class _DummyResponse:
         def __init__(self, text: str):
             self.text = text
@@ -4125,7 +4323,7 @@ def test_run_family_discovery_job_rejects_unmatched_search_candidates(monkeypatc
         assert job.query["result_candidate_urls"] == []
 
 
-def test_run_family_discovery_job_accepts_matching_search_candidates(monkeypatch):
+def _obsolete_test_run_family_discovery_job_accepts_matching_search_candidates(monkeypatch):
     class _DummyResponse:
         def __init__(self, text: str):
             self.text = text
@@ -4172,7 +4370,7 @@ def test_run_family_discovery_job_accepts_matching_search_candidates(monkeypatch
         assert job.query["result_state"] == "queued"
 
 
-def test_run_family_discovery_job_prefers_jxau_navigation_seeds(monkeypatch):
+def _obsolete_test_run_family_discovery_job_prefers_jxau_navigation_seeds(monkeypatch):
     captured: dict[str, object] = {}
 
     class _DummyResponse:
@@ -4281,7 +4479,7 @@ def test_family_discovery_job_runs_in_worker_and_persists_results(monkeypatch):
         assert job.query["result_candidate_urls"] == ["https://yzb.jxau.edu.cn/sszs.htm"]
 
 
-def test_run_family_discovery_job_follows_two_hop_announcement_navigation_to_sibling_portal(monkeypatch):
+def _obsolete_test_run_family_discovery_job_follows_two_hop_announcement_navigation_to_sibling_portal(monkeypatch):
     captured: dict[str, object] = {}
 
     class _DummyResponse:

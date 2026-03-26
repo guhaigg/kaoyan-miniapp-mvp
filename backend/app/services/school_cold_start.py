@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import json
 import re
 from datetime import timedelta, timezone
-from functools import lru_cache
-from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse, quote
 
@@ -23,9 +20,17 @@ from .announcement_portal import (
     portal_candidate_hosts,
     score_announcement_portal_candidate,
 )
+from .canonical_scope_seeds import (
+    CanonicalScopeSeed,
+    get_announcement_school_seed,
+    get_doc_school_seed_urls,
+    list_announcement_school_seeds,
+    list_doc_school_seed_map,
+    resolve_announcement_school_seed,
+)
 from .crawler import _extract_links, _extract_title, _fetch_with_retry
 from .site_section_bootstrap import _host_scope, bootstrap_site_sections
-from .workflow_v2 import create_scope_rebuild_run
+from .workflow_v2 import create_scope_rebuild_run, latest_scope_run
 
 _SEARCH_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -46,12 +51,6 @@ _DENY_HOST_KEYWORDS = (
     "163.com",
     "sina.com",
     "chsi.com.cn",
-)
-_DOC_SEED_FILES = (
-    "adjustment_announcement_2025_summary.json",
-    "adjustment_opportunity_2025_snapshot_summary.json",
-    "adjustment_supplemental_priority_targets_2024_2025.json",
-    "adjustment_expanded_priority_targets_2024_2026.json",
 )
 _DEPARTMENT_ENTRY_RE = re.compile(r"(学院|学部|系|研究院)")
 _KNOWN_FAMILIES = {"notice", "admissions", "adjustment"}
@@ -95,42 +94,20 @@ _HOMEPAGE_LIKE_SECTION_PATHS = {
 }
 _FAMILY_DISCOVERY_COOLDOWN = timedelta(minutes=10)
 _ANNOUNCEMENT_PORTAL_CACHE_TTL = timedelta(days=30)
-_ANNOUNCEMENT_CANONICAL_SEEDS: dict[str, dict[str, Any]] = {
-    "湖北大学": {
-        "homepage_url": "https://yz.hubu.edu.cn/",
-        "seed_urls": [
-            "https://yz.hubu.edu.cn/",
-        ],
-        "deny_prefixes": [
-            "http://yjs.hbut.edu.cn/",
-            "https://yjs.hbut.edu.cn/",
-            "https://kjcy.hbut.edu.cn/",
-            "https://ce.hbut.edu.cn/",
-            "https://zs.hbut.edu.cn/",
-            "https://yjsy.hbu.edu.cn/",
-        ],
-    },
-    "江西农业大学": {
-        "homepage_url": "https://yzb.jxau.edu.cn/",
-        "seed_urls": [
-            "https://yzb.jxau.edu.cn/sszs.htm",
-            "https://yzb.jxau.edu.cn/bszs.htm",
-            "https://yzb.jxau.edu.cn/zsjz/sszsjz.htm",
-            "https://yzb.jxau.edu.cn/zsjz/bszsjz.htm",
-        ],
-    },
-    "上海师范大学": {
-        "homepage_url": "https://yjsc.shnu.edu.cn/",
-        "seed_urls": [
-            "https://yjsc.shnu.edu.cn/17204/list.htm",
-            "https://yjsc.shnu.edu.cn/17205/list.htm",
-            "https://yjsc.shnu.edu.cn/17206/list.htm",
-        ],
-        "deny_prefixes": [
-            "http://web.shnu.edu.cn/yjspyzx/",
-            "https://web.shnu.edu.cn/yjspyzx/",
-        ],
+
+
+def _seed_to_legacy_payload(seed: CanonicalScopeSeed) -> dict[str, Any]:
+    return {
+        "homepage_url": seed.homepage_url,
+        "seed_urls": list(seed.seed_urls),
+        "deny_prefixes": list(seed.deny_prefixes),
+        "notes": seed.notes,
     }
+
+
+_ANNOUNCEMENT_CANONICAL_SEEDS: dict[str, dict[str, Any]] = {
+    school_name: _seed_to_legacy_payload(seed)
+    for school_name, seed in list_announcement_school_seeds().items()
 }
 
 
@@ -140,10 +117,6 @@ def _coerce_utc(value):
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
-
-
-def _docs_data_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "docs" / "data"
 
 
 def _normalize_url(url: str) -> str:
@@ -191,35 +164,15 @@ def _derive_recovery_seed_urls_from_section_url(url: str) -> list[str]:
     return _dedupe_texts(seeds)
 
 
-@lru_cache(maxsize=1)
-def _load_school_seed_map() -> dict[str, list[str]]:
-    seeds: dict[str, list[str]] = {}
-    for filename in _DOC_SEED_FILES:
-        path = _docs_data_dir() / filename
-        if not path.exists():
-            continue
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        rows: list[dict[str, Any]]
-        if isinstance(payload, dict):
-            rows = [row for row in (payload.get("top_schools") or payload.get("schools") or payload.get("items") or []) if isinstance(row, dict)]
-        elif isinstance(payload, list):
-            rows = [row for row in payload if isinstance(row, dict)]
-        else:
-            rows = []
-
-        for row in rows:
-            school_name = str(row.get("school_name") or "").strip()
-            top_url = _normalize_url(str(row.get("top_url") or ""))
-            if not school_name or not top_url:
-                continue
-            bucket = seeds.setdefault(school_name, [])
-            if top_url not in bucket:
-                bucket.append(top_url)
-    return seeds
-
-
 def _discover_seed_urls_from_docs(school_name: str) -> list[str]:
-    return list(_load_school_seed_map().get(school_name.strip(), []))
+    return list(get_doc_school_seed_urls(school_name))
+
+
+def _load_school_seed_map() -> dict[str, list[str]]:
+    return {
+        school_name: list(seed_urls)
+        for school_name, seed_urls in list_doc_school_seed_map().items()
+    }
 
 
 def _dedupe_texts(values: list[str]) -> list[str]:
@@ -312,7 +265,10 @@ def _section_looks_department_scoped(section: SiteSection) -> bool:
 
 
 def _resolve_announcement_seed_override(school_name: str) -> dict[str, Any] | None:
-    return _ANNOUNCEMENT_CANONICAL_SEEDS.get(str(school_name or "").strip())
+    seed = get_announcement_school_seed(school_name)
+    if seed is None:
+        return None
+    return _seed_to_legacy_payload(seed)
 
 
 def _announcement_override_hosts(announcement_override: dict[str, Any] | None) -> set[str]:
@@ -323,6 +279,27 @@ def _announcement_override_hosts(announcement_override: dict[str, Any] | None) -
             announcement_override.get("homepage_url"),
             *(announcement_override.get("seed_urls") or []),
         ]
+    )
+
+
+def _is_announcement_family_set(families: set[str]) -> bool:
+    return families == {"notice", "admissions"}
+
+
+def _resolve_explicit_or_canonical_announcement_seed(
+    school_name: str,
+    *,
+    query: dict[str, Any],
+) -> CanonicalScopeSeed | None:
+    explicit_seed_urls = [
+        _normalize_url(str(url or ""))
+        for url in (query.get("seed_urls") or [])
+        if _normalize_url(str(url or ""))
+    ]
+    return resolve_announcement_school_seed(
+        school_name,
+        homepage_url=_normalize_url(str(query.get("homepage_url") or "")),
+        seed_urls=explicit_seed_urls,
     )
 
 
@@ -1416,6 +1393,12 @@ def _resolve_v2_family_handoff_inputs(
     families: set[str],
     query: dict[str, Any],
 ) -> tuple[str | None, list[str]]:
+    if _is_announcement_family_set(families):
+        seed = _resolve_explicit_or_canonical_announcement_seed(school_name, query=query)
+        if seed is None:
+            return None, []
+        return seed.homepage_url, list(seed.seed_urls)
+
     homepage_url = _normalize_url(str(query.get("homepage_url") or ""))
     seed_urls = _dedupe_texts(
         [
@@ -1442,7 +1425,7 @@ def _resolve_v2_family_handoff_inputs(
         if override_seed_urls:
             seed_urls = _dedupe_texts([*seed_urls, *override_seed_urls])
 
-    doc_seed_urls = _dedupe_texts(_load_school_seed_map().get(school_name, []))
+    doc_seed_urls = _dedupe_texts(get_doc_school_seed_urls(school_name))
     if doc_seed_urls:
         seed_urls = _dedupe_texts([*seed_urls, *doc_seed_urls])
         if not homepage_url:
@@ -1476,7 +1459,7 @@ def _handoff_family_discovery_job_to_v2(
         next_query["result_candidate_urls"] = []
         next_query["result_job_ids"] = []
         job.query = next_query
-        return None, f"family discovery handoff skipped: explicit seeds missing for {school_name}"
+        return None, f"family discovery requires governed explicit seeds for {school_name}"
 
     run, step = create_scope_rebuild_run(
         db,
@@ -1497,6 +1480,85 @@ def _handoff_family_discovery_job_to_v2(
     next_query["workflow_step_id"] = step.id
     job.query = next_query
     return None, f"family discovery handed off to crawler v2 workflow {run.id}"
+
+
+def _readonly_announcement_bootstrap_status(db: Session, school_name: str) -> dict[str, Any]:
+    normalized_school_name = str(school_name or "").strip()
+    if not normalized_school_name:
+        return _build_no_candidate_response(
+            school_name,
+            message="school_name is required",
+            candidate_urls=[],
+        )
+
+    school = db.query(School).filter(School.name == normalized_school_name).one_or_none()
+    if school is not None:
+        existing_sections = (
+            db.query(SiteSection)
+            .filter(
+                SiteSection.school_id == school.id,
+                SiteSection.department_id.is_(None),
+                SiteSection.enabled == 1,
+                SiteSection.discovery_category == "announcement",
+            )
+            .order_by(SiteSection.created_at.asc())
+            .all()
+        )
+        reusable_sections = _select_reusable_sections_for_families(
+            _collect_reusable_sections(
+                db,
+                existing_sections=existing_sections,
+                families={"notice", "admissions"},
+            ),
+            families={"notice", "admissions"},
+        )
+        if reusable_sections:
+            return {
+                "state": "ready",
+                "school_name": normalized_school_name,
+                "message": f"{normalized_school_name} 已存在已批准的学校级公告资产，无需兼容冷启动。",
+                "candidate_urls": _dedupe_texts([section.section_url for section in reusable_sections[:5]]),
+                "job_ids": [],
+            }
+
+    latest_run = latest_scope_run(db, scope_type="school", school_name=normalized_school_name)
+    if latest_run is not None and str(latest_run.status or "").strip() in {"pending", "running"}:
+        payload = dict(latest_run.request_payload or {})
+        candidate_urls = _dedupe_texts(
+            [
+                str(payload.get("homepage_url") or "").strip(),
+                *[str(url or "").strip() for url in (payload.get("seed_urls") or [])],
+            ]
+        )
+        return {
+            "state": "in_progress",
+            "school_name": normalized_school_name,
+            "message": f"{normalized_school_name} 的公告资产正在通过 crawler v2 workflow 重建。",
+            "candidate_urls": candidate_urls,
+            "job_ids": [],
+            "workflow_run_id": latest_run.id,
+            "required_action": None,
+        }
+
+    seed = get_announcement_school_seed(normalized_school_name)
+    if seed is not None:
+        return {
+            "state": "not_ready",
+            "school_name": normalized_school_name,
+            "message": f"{normalized_school_name} 已有 canonical seed，但尚未建立公告资产；请通过 admin bootstrap/rebuild 进入 V2。",
+            "candidate_urls": list(seed.seed_urls),
+            "job_ids": [],
+            "required_action": "admin.bootstrap.school",
+        }
+
+    return {
+        "state": "no_candidate",
+        "school_name": normalized_school_name,
+        "message": f"{normalized_school_name} 目前缺少受治理的公告 seed，需先补录 canonical seed 后再执行 bootstrap。",
+        "candidate_urls": [],
+        "job_ids": [],
+        "required_action": "admin.bootstrap.school",
+    }
 
 
 def _bootstrap_family_sections(
@@ -1706,6 +1768,15 @@ def run_family_discovery_job(db: Session, job: CrawlJob, query: dict[str, Any]) 
     if not school_name or not families:
         raise ValueError("family discovery job requires school_name and families")
 
+    if _is_announcement_family_set(families):
+        return _handoff_family_discovery_job_to_v2(
+            db,
+            job=job,
+            school_name=school_name,
+            families=families,
+            query=query,
+        )
+
     if str(query.get("workflow_handoff") or "").strip().lower() == "v2":
         return _handoff_family_discovery_job_to_v2(
             db,
@@ -1739,6 +1810,8 @@ def ensure_family_search_bootstrap(db: Session, school_name: str, families: set[
     normalized_families = {family for family in families if family in _KNOWN_FAMILIES}
     if not normalized_families:
         return None
+    if _is_announcement_family_set(normalized_families):
+        return _readonly_announcement_bootstrap_status(db, normalized_school_name)
     announcement_override = (
         _resolve_announcement_seed_override(normalized_school_name)
         if normalized_families == {"notice", "admissions"}

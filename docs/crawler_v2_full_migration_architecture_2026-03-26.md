@@ -366,9 +366,9 @@ V2 需要新增或强烈建议新增：
 - 已新增学校/院系 bootstrap、scope rebuild、OCR retry、content reclassify 的 V2 workflow 主路径
 - bootstrap 已开始真实写入 `portal_nodes / portal_edges / portal_host_decisions`，而不是只建空表
 - school / department scope 错误会在 workflow 层直接失败并回滚，不再作为可重试任务继续漂移
-- legacy `family_discovery` job 已有受控 handoff 入口，可在显式 seed 场景下转发到 V2 `scope_rebuild`
-- legacy `ensure_*_search_bootstrap` 兼容入口已开始默认排 V2 handoff job，但未维护显式 seed 的学校仍保留 fallback
-- handoff 后 discovery input 已切到 `homepage_url + seed_urls`；旧 `candidate_urls` 只保留兼容观测语义
+- 公告侧 legacy `family_discovery` 已收口成 handoff-only 兼容壳：有显式 seed 或 canonical seed 时转发到 V2 `scope_rebuild`，无 seed 时直接终态结束
+- legacy `ensure_announcement_search_bootstrap` 已改成只读 shim，不再排 job，也不再承担 discovery fallback
+- 公告侧 handoff 的 discovery input 已固定为 `homepage_url + seed_urls`；旧 `candidate_urls` 只保留兼容观测语义
 - 已有最小治理读接口 `GET /api/v1/admin/workflows/{id}`，能把 run/step/portal graph/host decision/artifact 串起来看
 - 搜索已改为只读，不再在线触发冷启动或 family discovery
 - `content_classifications` 已被搜索与高级监控复用，但通知与其余兼容路径仍未完全切干净

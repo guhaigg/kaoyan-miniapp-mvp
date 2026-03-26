@@ -96,6 +96,7 @@ from ..services.account_access import (
     set_password_hash,
     upsert_premium_entitlement,
 )
+from ..services.canonical_scope_seeds import resolve_announcement_school_seed
 from ..services.content import _build_content_fingerprint, upsert_content
 from ..services.workflow_v2 import (
     create_department_bootstrap_run,
@@ -1081,13 +1082,28 @@ def create_scope_rebuild(
 ) -> AdminWorkflowTriggerResponse:
     require_admin_request(request)
     actor = get_admin_identity(request)
+    resolved_homepage_url = str(payload.homepage_url or "").strip() or None
+    resolved_seed_urls = [str(url).strip() for url in payload.seed_urls if str(url).strip()]
+    if payload.scope_type == "school" and not str(payload.department_name or "").strip():
+        resolved_seed = resolve_announcement_school_seed(
+            payload.school_name,
+            homepage_url=resolved_homepage_url,
+            seed_urls=resolved_seed_urls,
+        )
+        if resolved_seed is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="announcement school rebuild requires explicit seeds or a canonical seed registry entry",
+            )
+        resolved_homepage_url = resolved_seed.homepage_url
+        resolved_seed_urls = list(resolved_seed.seed_urls)
     run, step = create_scope_rebuild_run(
         db,
         scope_type=payload.scope_type,
         school_name=payload.school_name,
         department_name=payload.department_name,
-        homepage_url=payload.homepage_url,
-        seed_urls=payload.seed_urls,
+        homepage_url=resolved_homepage_url,
+        seed_urls=resolved_seed_urls,
         actor_username=actor,
         max_sections=payload.max_sections,
     )

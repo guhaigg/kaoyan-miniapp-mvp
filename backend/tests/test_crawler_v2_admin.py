@@ -185,6 +185,46 @@ def test_department_bootstrap_rejects_school_scoped_sections_and_rolls_back_part
         assert db.query(GovernanceAction).filter(GovernanceAction.entity_id == run.id).count() == 0
 
 
+def test_admin_scope_rebuild_uses_canonical_announcement_seed_when_payload_seed_missing(client):
+    response = client.post(
+        "/api/v1/admin/rebuilds",
+        json={
+            "scope_type": "school",
+            "school_name": "湖北大学",
+            "max_sections": 8,
+        },
+        headers=_admin_headers(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    with SessionLocal() as db:
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == payload["workflow_run_id"]).one()
+        step = db.query(WorkflowStep).filter(WorkflowStep.id == payload["step_id"]).one()
+        assert run.request_payload["homepage_url"] == "https://yz.hubu.edu.cn/"
+        assert run.request_payload["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+        assert step.input_payload["homepage_url"] == "https://yz.hubu.edu.cn/"
+        assert step.input_payload["seed_urls"] == ["https://yz.hubu.edu.cn/"]
+
+
+def test_admin_scope_rebuild_requires_governed_seed_for_school_announcement_scope(client):
+    response = client.post(
+        "/api/v1/admin/rebuilds",
+        json={
+            "scope_type": "school",
+            "school_name": "Seedless University",
+            "max_sections": 8,
+        },
+        headers=_admin_headers(),
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "announcement school rebuild requires explicit seeds or a canonical seed registry entry"
+
+    with SessionLocal() as db:
+        assert db.query(WorkflowRun).count() == 0
+        assert db.query(WorkflowStep).count() == 0
+
+
 def test_admin_content_explain_returns_persisted_classification(client):
     create_response = client.post(
         "/api/v1/content",
