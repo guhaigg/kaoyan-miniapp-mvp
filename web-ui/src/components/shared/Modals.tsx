@@ -22,7 +22,7 @@ export default function Modals() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+            className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-4 md:items-center md:p-6"
           >
             <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setAuthOpen(false)} />
             <motion.div
@@ -30,7 +30,7 @@ export default function Modals() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 20 }}
               transition={{ type: "spring", bounce: 0.3 }}
-              className="relative z-10 w-full max-w-[1024px]"
+              className="relative z-10 my-auto w-full max-w-[1024px]"
             >
               <BiliAuthModal
                 initialMode={authMode}

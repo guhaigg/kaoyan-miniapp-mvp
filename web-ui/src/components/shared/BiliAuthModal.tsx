@@ -38,16 +38,18 @@ type NoticeState = {
 
 export default function BiliAuthModal({
   initialMode,
+  initialPane,
   presentation,
   onClose,
 }: {
   initialMode: AuthMode;
+  initialPane?: AuthPane;
   presentation: "page" | "dialog";
   onClose?: () => void;
 }) {
   const router = useRouter();
   const { portalAuth, setPortalAuthFromToken, setPortalProfile, clearPortalAuth, showToast } = useAppStore();
-  const [pane, setPane] = useState<AuthPane>(initialMode === "register" ? "register" : "password");
+  const [pane, setPane] = useState<AuthPane>(initialPane ?? (initialMode === "register" ? "register" : "password"));
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
@@ -55,9 +57,9 @@ export default function BiliAuthModal({
   const [notice, setNotice] = useState<NoticeState | null>(null);
 
   useEffect(() => {
-    setPane(initialMode === "register" ? "register" : "password");
+    setPane(initialPane ?? (initialMode === "register" ? "register" : "password"));
     setNotice(null);
-  }, [initialMode]);
+  }, [initialMode, initialPane]);
 
   const isPage = presentation === "page";
   const showUpgradePanel = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
@@ -77,7 +79,9 @@ export default function BiliAuthModal({
 
   const modalClassName = [
     "relative overflow-hidden rounded-[36px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(249,251,255,0.96))] shadow-[0_44px_140px_rgba(73,110,170,0.22)]",
-    isPage ? "w-full max-w-[1040px]" : "w-full max-w-[1024px]",
+    isPage
+      ? "w-full max-w-[1040px]"
+      : "flex max-h-[calc(100vh-2rem)] w-full max-w-[1024px] flex-col md:max-h-[calc(100vh-3rem)]",
   ].join(" ");
 
   const tabItems: Array<{ key: AuthPane; icon: typeof KeyRound }> = [
@@ -98,6 +102,32 @@ export default function BiliAuthModal({
 
   function setInfoNotice(text: string, tone: NoticeTone = "info") {
     setNotice({ text, tone });
+  }
+
+  function syncRouteForPane(nextPane: AuthPane) {
+    if (!isPage) return false;
+
+    if (nextPane === "register") {
+      router.push("/register");
+      return true;
+    }
+    if (nextPane === "password") {
+      router.push("/login");
+      return true;
+    }
+    router.push("/login?tab=sms");
+    return true;
+  }
+
+  function handlePaneChange(nextPane: AuthPane) {
+    setNotice(null);
+    if (syncRouteForPane(nextPane)) {
+      return;
+    }
+    setPane(nextPane);
+    if (nextPane === "sms") {
+      handleUnavailable("sms");
+    }
   }
 
   function handleUnavailable(key: keyof typeof AUTH_LOCKED_COPY) {
@@ -270,7 +300,7 @@ export default function BiliAuthModal({
               type="button"
               onClick={() => {
                 handleUnavailable("sms");
-                setPane("password");
+                handlePaneChange("password");
               }}
               className="mt-5 inline-flex items-center gap-2 rounded-full bg-[linear-gradient(90deg,#60a5fa,#38bdf8)] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(56,189,248,0.24)]"
             >
@@ -354,7 +384,11 @@ export default function BiliAuthModal({
 
       <section className={modalClassName}>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.95),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(191,219,254,0.34),transparent_24%)]" />
-        <div className="relative grid lg:grid-cols-[0.95fr_1.05fr]">
+        <div
+          className={`relative ${
+            isPage ? "grid lg:grid-cols-[0.95fr_1.05fr]" : "overflow-y-auto overscroll-contain"
+          } lg:grid lg:grid-cols-[0.95fr_1.05fr]`}
+        >
           <div className="relative overflow-hidden bg-[linear-gradient(180deg,#fef9fb_0%,#eef6ff_55%,#f9fbff_100%)] p-7 md:p-9">
             <div className="absolute inset-x-10 top-0 h-32 rounded-b-[32px] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(255,255,255,0))]" />
             <div className="relative">
@@ -439,13 +473,7 @@ export default function BiliAuthModal({
                     <button
                       key={item.key}
                       type="button"
-                      onClick={() => {
-                        setPane(item.key);
-                        setNotice(null);
-                        if (item.key === "sms") {
-                          handleUnavailable("sms");
-                        }
-                      }}
+                      onClick={() => handlePaneChange(item.key)}
                       className={`inline-flex flex-1 items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-semibold transition-colors ${
                         active
                           ? "bg-white text-slate-900 shadow-[0_12px_24px_rgba(148,163,184,0.16)]"
