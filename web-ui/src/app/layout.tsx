@@ -27,7 +27,9 @@ export default function RootLayout({
           <SSEClient />
           <Background />
           <Header />
-          <main className="relative z-10 pb-20 pt-24">{children}</main>
+          <main className="relative z-10 min-h-screen pb-20 pt-16 md:pt-[4.5rem]">
+            {children}
+          </main>
           <Modals />
           <Toast />
         </Providers>

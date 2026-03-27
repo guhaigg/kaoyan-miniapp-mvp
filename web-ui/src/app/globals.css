@@ -3,12 +3,17 @@
 @tailwind utilities;
 
 :root {
-  --bg-deep: #050b14;
+  --bili-bg: #f6f7fb;
+  --bili-surface: rgba(255, 255, 255, 0.92);
+  --bili-text: #18191c;
+  --bili-muted: #61666d;
+  --bili-pink: #fb7299;
+  --bili-blue: #00aeec;
 }
 
 body {
-  background-color: var(--bg-deep);
-  color: #f8fafc;
+  background: var(--bili-bg);
+  color: var(--bili-text);
   overflow-x: hidden;
   overscroll-behavior-y: none;
 }
@@ -19,33 +24,20 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(6, 182, 212, 0.2);
+  background: rgba(251, 114, 153, 0.22);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(6, 182, 212, 0.5);
+  background: rgba(0, 174, 236, 0.42);
 }
 
 @layer utilities {
-  .glass-panel {
-    @apply border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl;
+  .bili-surface {
+    @apply rounded-2xl border border-black/5 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl;
   }
-}
 
-@keyframes scanline {
-  0% {
-    top: -10%;
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    top: 110%;
-    opacity: 0;
+  .glass-panel {
+    @apply rounded-2xl border border-black/5 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl;
   }
 }
