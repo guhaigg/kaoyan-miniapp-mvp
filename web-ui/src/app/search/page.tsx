@@ -34,7 +34,11 @@ import {
 import { fetchAdjustmentDetail } from "@/api/search";
 import { useAdjustmentSearchMutation, useAnnouncementSearchMutation } from "@/hooks/useSearch";
 import { useAddSubscriptionMutation, useDeleteSubscriptionMutation, useSubscriptionsQuery } from "@/hooks/useSubscriptions";
-import { resolveSearchQueryTypeFromParams } from "@/lib/search-route-state";
+import {
+  buildSearchRouteParams,
+  resolveSearchQueryTypeFromParams,
+  type SearchRouteQueryType,
+} from "@/lib/search-route-state";
 import { useAppStore } from "@/lib/store";
 import { watchlistNoticeQueryKey } from "@/lib/notice-cache";
 
@@ -84,7 +88,10 @@ function SearchPageContent() {
   const queryClient = useQueryClient();
   const { portalAuth, showToast } = useAppStore();
   const isAnonymous = !portalAuth;
-  const [queryType, setQueryType] = useState<"announcements" | "adjustments">(portalAuth ? "adjustments" : "announcements");
+  const fallbackQueryType: SearchRouteQueryType = portalAuth ? "adjustments" : "announcements";
+  const [queryType, setQueryType] = useState<SearchRouteQueryType>(() =>
+    resolveSearchQueryTypeFromParams(searchParams, fallbackQueryType),
+  );
   const [keywords, setKeywords] = useState("");
   const [filters, setFilters] = useState<SearchCommandCenterFilters>(DEFAULT_SEARCH_FILTERS);
   const [message, setMessage] = useState("");
@@ -194,11 +201,35 @@ function SearchPageContent() {
     return map;
   }, [subscriptionsQuery.data?.items]);
 
+  function syncSearchRoute(nextState: {
+    queryType: SearchRouteQueryType;
+    keywords: string;
+    filters: SearchCommandCenterFilters;
+  }) {
+    const nextParams = buildSearchRouteParams(nextState);
+    const serialized = nextParams.toString();
+    if (serialized === searchParams.toString()) {
+      hydratedSearchParamsRef.current = serialized;
+      return;
+    }
+    hydratedSearchParamsRef.current = serialized;
+    router.replace(`/search?${serialized}`);
+  }
+
   function resetAllFilters() {
+    const nextFilters: SearchCommandCenterFilters = {
+      ...DEFAULT_SEARCH_FILTERS,
+      announcementSystemTags: [],
+    };
     setKeywords("");
-    setFilters(DEFAULT_SEARCH_FILTERS);
+    setFilters(nextFilters);
     setSearchResult(null);
     setMessage("");
+    syncSearchRoute({
+      queryType,
+      keywords: "",
+      filters: nextFilters,
+    });
   }
 
   function buildAdjustmentQuickFilterPayload(
@@ -386,7 +417,7 @@ function SearchPageContent() {
     if (!serialized || hydratedSearchParamsRef.current === serialized) {
       return;
     }
-    const parsed = parseSearchStateFromParams(searchParams);
+    const parsed = parseSearchStateFromParams(searchParams, fallbackQueryType);
     if (!parsed) {
       return;
     }
@@ -408,7 +439,7 @@ function SearchPageContent() {
     }
     // triggerSearch intentionally stays outside deps so URL hydration runs once per param snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [fallbackQueryType, searchParams]);
 
   async function handleRadarBookmark(payload: RadarBookmarkPayload) {
     if (!portalAuth) {
@@ -547,13 +578,30 @@ function SearchPageContent() {
             setQueryType(nextTab);
             setMessage("");
             setSearchResult(null);
+            syncSearchRoute({
+              queryType: nextTab,
+              keywords,
+              filters,
+            });
           }}
           keyword={keywords}
           setKeyword={setKeywords}
           filters={filters}
           setFilters={setFilters}
           announcementTagOptions={announcementTagOptions}
-          onSearch={(filterPatch) => void triggerSearch(1, undefined, filterPatch)}
+          onSearch={(filterPatch) => {
+            const nextFilters = { ...filters, ...filterPatch };
+            syncSearchRoute({
+              queryType,
+              keywords,
+              filters: nextFilters,
+            });
+            void triggerSearch(1, undefined, filterPatch, {
+              queryType,
+              keywords,
+              filters: nextFilters,
+            });
+          }}
         />
       </div>
 
@@ -1927,8 +1975,9 @@ function schoolConfidenceRank(label: string | null | undefined) {
 
 function parseSearchStateFromParams(
   searchParams: Pick<URLSearchParams, "get">,
+  fallbackQueryType: SearchRouteQueryType,
 ): {
-  queryType: "announcements" | "adjustments";
+  queryType: SearchRouteQueryType;
   keywords: string;
   filters: SearchCommandCenterFilters;
   shouldSearch: boolean;
@@ -1992,7 +2041,7 @@ function parseSearchStateFromParams(
     hideMentorWarnings: parseBooleanParam(readSearchParam(searchParams, ["safe", "hideMentorWarnings", "exclude_mentor_warnings"])),
   };
   const keywords = readSearchParam(searchParams, ["q", "keyword", "keywords"]);
-  const queryType = resolveSearchQueryTypeFromParams(searchParams);
+  const queryType = resolveSearchQueryTypeFromParams(searchParams, fallbackQueryType);
   const shouldSearch = hasSearchIntent(keywords, filters);
 
   return {

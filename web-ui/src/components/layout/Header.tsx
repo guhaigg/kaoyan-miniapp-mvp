@@ -9,7 +9,12 @@ import { ApiError, logoutUser } from "@/lib/api";
 import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
 import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
-import { readSearchKeywordsFromParams, resolveSearchQueryTypeFromParams } from "@/lib/search-route-state";
+import {
+  readSearchKeywordsFromParams,
+  resolveSearchQueryTypeFromParams,
+  type SearchRouteQueryType,
+  updateSearchRouteParams,
+} from "@/lib/search-route-state";
 import { useAppStore } from "@/lib/store";
 import BiliHeaderUserCard from "./BiliHeaderUserCard";
 import { type BiliHeaderCounterState, buildBiliHeaderSummary } from "./bili-header-data";
@@ -37,9 +42,10 @@ export default function Header() {
 
 function HeaderSearchAware() {
   const searchParams = useSearchParams();
+  const { portalAuth } = useAppStore();
   return (
     <HeaderFrame
-      currentSearchTab={resolveSearchQueryTypeFromParams(searchParams)}
+      currentSearchTab={resolveSearchQueryTypeFromParams(searchParams, portalAuth ? "adjustments" : "announcements")}
       searchParamValue={readSearchKeywordsFromParams(searchParams)}
       searchParamKey={searchParams.toString()}
     />
@@ -51,7 +57,7 @@ function HeaderFrame({
   searchParamValue,
   searchParamKey,
 }: {
-  currentSearchTab: string | null;
+  currentSearchTab: SearchRouteQueryType | null;
   searchParamValue: string;
   searchParamKey: string;
 }) {
@@ -175,11 +181,16 @@ function HeaderFrame({
 
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const params = new URLSearchParams();
-    params.set("tab", pathname === "/search" ? currentSearchTab || "announcements" : "announcements");
-    if (searchValue.trim()) {
-      params.set("q", searchValue.trim());
-    }
+    const params =
+      pathname === "/search"
+        ? updateSearchRouteParams(searchParamKey, {
+            queryType: currentSearchTab || "announcements",
+            keywords: searchValue,
+          })
+        : updateSearchRouteParams("", {
+            queryType: "announcements",
+            keywords: searchValue,
+          });
     router.push(`/search?${params.toString()}`);
   }
 
