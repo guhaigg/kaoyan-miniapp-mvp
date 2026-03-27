@@ -1,6 +1,14 @@
 # 格物简录当前进度（2026-03-18）
 
-最近更新：`2026-03-26`
+最近更新：`2026-03-27`
+
+## 2026-03-27 Account Space Page Follow-up
+
+- `/account` 现在是新的个人空间首页，默认落在 `activity` 视图，而不是旧的设置面板。
+- 顶部信息架构已经改成空间页：封面、头像、摘要统计、四个主 tab。
+- `activity / following / radar / account` 四个 tab 已接到现有账号、订阅、雷达和通知数据。
+- `/account/security`、`/account/billing`、`/account/notifications` 现在都会 redirect 到 `/account` 的 query-state 视图。
+- 旧的 `AccountDashboard.tsx` 已移除，会员、微信绑定、密码修改和退出登录已经收敛到新的 `account` tab。
 
 本文档是当前现状主文档，用于记录真实开发状态，帮助后续继续开发、排障、部署与任务拆解。
 
