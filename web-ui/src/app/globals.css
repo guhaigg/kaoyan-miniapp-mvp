@@ -3,17 +3,21 @@
 @tailwind utilities;
 
 :root {
+  --bg-deep: #050b14;
   --bili-bg: #f6f7fb;
   --bili-surface: rgba(255, 255, 255, 0.92);
   --bili-text: #18191c;
   --bili-muted: #61666d;
   --bili-pink: #fb7299;
   --bili-blue: #00aeec;
+  --shell-header-offset-mobile: 4rem;
+  --shell-header-offset-desktop: 4.5rem;
+  --shell-banner-glow-height: 26.25rem;
 }
 
 body {
-  background: var(--bili-bg);
-  color: var(--bili-text);
+  background: var(--bg-deep);
+  color: #f8fafc;
   overflow-x: hidden;
   overscroll-behavior-y: none;
 }
@@ -24,12 +28,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(251, 114, 153, 0.22);
+  background: rgba(6, 182, 212, 0.2);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 174, 236, 0.42);
+  background: rgba(6, 182, 212, 0.5);
 }
 
 @layer utilities {
@@ -38,6 +42,7 @@ body {
   }
 
   .glass-panel {
-    @apply rounded-2xl border border-black/5 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl;
+    @apply border border-white/10 shadow-2xl backdrop-blur-xl;
+    background: rgba(2, 6, 23, 0.72);
   }
 }

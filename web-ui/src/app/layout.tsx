@@ -27,7 +27,7 @@ export default function RootLayout({
           <SSEClient />
           <Background />
           <Header />
-          <main className="relative z-10 min-h-screen pb-20 pt-16 md:pt-[4.5rem]">
+          <main className="relative z-10 min-h-screen pb-20 pt-[var(--shell-header-offset-mobile)] md:pt-[var(--shell-header-offset-desktop)]">
             {children}
           </main>
           <Modals />
