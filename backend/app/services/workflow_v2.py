@@ -50,6 +50,11 @@ STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS = "fetch_official_seed_rosters"
 STEP_TYPE_FETCH_SCHOOL_HOMEPAGES = "fetch_school_homepages"
 STEP_TYPE_BUILD_DEPARTMENT_CANDIDATES = "build_department_candidates"
 STEP_TYPE_MERGE_ANNOUNCEMENT_SEED_REGISTRY = "merge_announcement_seed_registry"
+STEP_TYPE_ENQUEUE_CHSI_SCHOOL_ENRICH = "enqueue_chsi_school_enrich"
+STEP_TYPE_ENRICH_CHSI_SCHOOL_SNAPSHOT = "enrich_chsi_school_snapshot"
+STEP_TYPE_AWAIT_CHSI_SCHOOL_ENRICH = "await_chsi_school_enrich"
+PARSE_ARTIFACT_TYPE_CHSI_SCHOOL_CATALOG_BASE = "chsi_school_catalog_base"
+PARSE_ARTIFACT_TYPE_CHSI_SCHOOL_ENRICH = "chsi_school_enrich"
 RULE_VERSION = "crawler_v2_explicit_seed_v2"
 DEFAULT_BOOTSTRAP_FAMILIES = frozenset({"admissions", "notice"})
 SUPPORTED_BOOTSTRAP_FAMILIES = frozenset({"admissions", "notice", "adjustment"})
@@ -150,6 +155,25 @@ class AnnouncementCatalogRefreshPayload(WorkflowPayloadModel):
     school_names: list[str] = Field(default_factory=list)
     dry_run: bool = False
     sources: list[str] = Field(default_factory=list)
+
+
+class ChsiSchoolEnrichPayload(WorkflowPayloadModel):
+    school_code: str
+    school_name: str
+    chsi_school_url: str
+
+
+class DeferredStep(RuntimeError):
+    def __init__(self, *, result_payload: dict[str, Any], delay_seconds: int = 15):
+        super().__init__("workflow step deferred")
+        self.result_payload = result_payload
+        self.delay_seconds = delay_seconds
+
+
+class TerminalStepFailure(RuntimeError):
+    def __init__(self, *, message: str, result_payload: dict[str, Any]):
+        super().__init__(message)
+        self.result_payload = result_payload
 
 
 @dataclass(frozen=True)
@@ -265,6 +289,27 @@ STEP_POLICIES: dict[str, StepPolicy] = {
         timeout_seconds=180,
         max_attempts=2,
         retry_backoff_seconds=15,
+        host_limit=1,
+    ),
+    STEP_TYPE_ENQUEUE_CHSI_SCHOOL_ENRICH: StepPolicy(
+        step_type=STEP_TYPE_ENQUEUE_CHSI_SCHOOL_ENRICH,
+        timeout_seconds=120,
+        max_attempts=2,
+        retry_backoff_seconds=10,
+        host_limit=1,
+    ),
+    STEP_TYPE_ENRICH_CHSI_SCHOOL_SNAPSHOT: StepPolicy(
+        step_type=STEP_TYPE_ENRICH_CHSI_SCHOOL_SNAPSHOT,
+        timeout_seconds=300,
+        max_attempts=2,
+        retry_backoff_seconds=15,
+        host_limit=2,
+    ),
+    STEP_TYPE_AWAIT_CHSI_SCHOOL_ENRICH: StepPolicy(
+        step_type=STEP_TYPE_AWAIT_CHSI_SCHOOL_ENRICH,
+        timeout_seconds=120,
+        max_attempts=2,
+        retry_backoff_seconds=10,
         host_limit=1,
     ),
     STEP_TYPE_OCR_ENQUEUE: StepPolicy(
@@ -720,6 +765,56 @@ def _create_child_step(
             host_key=host_key,
             input_payload=input_payload,
         ),
+    )
+    db.add(child)
+    db.flush()
+    return child
+
+
+def _create_idempotent_child_step(
+    db: Session,
+    *,
+    run: WorkflowRun,
+    parent_step: WorkflowStep,
+    step_type: str,
+    host_key: str | None,
+    input_payload: dict[str, Any],
+) -> WorkflowStep:
+    idempotency_key = _step_idempotency_key(
+        step_type=step_type,
+        scope_key=parent_step.scope_key,
+        host_key=host_key,
+        input_payload=input_payload,
+    )
+    existing = (
+        db.query(WorkflowStep)
+        .filter(
+            WorkflowStep.run_id == run.id,
+            WorkflowStep.parent_step_id == parent_step.id,
+            WorkflowStep.step_type == step_type,
+            WorkflowStep.idempotency_key == idempotency_key,
+        )
+        .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+        .first()
+    )
+    if existing is not None:
+        return existing
+
+    policy = _step_policy(step_type)
+    child = WorkflowStep(
+        run_id=run.id,
+        parent_step_id=parent_step.id,
+        step_type=step_type,
+        scope_type=parent_step.scope_type,
+        scope_key=parent_step.scope_key,
+        host_key=host_key,
+        status="pending",
+        max_attempts=policy.max_attempts,
+        timeout_seconds=policy.timeout_seconds,
+        available_at=utcnow(),
+        input_payload=input_payload,
+        result_payload={},
+        idempotency_key=idempotency_key,
     )
     db.add(child)
     db.flush()
@@ -1248,13 +1343,40 @@ def _mark_step_done(db: Session, step: WorkflowStep, result_payload: dict[str, A
     db.commit()
 
 
-def _mark_step_failed(db: Session, step: WorkflowStep, exc: Exception) -> None:
+def _mark_step_deferred(
+    db: Session,
+    step: WorkflowStep,
+    *,
+    result_payload: dict[str, Any],
+    delay_seconds: int,
+) -> None:
+    step.status = "pending"
+    step.result_payload = result_payload
+    step.available_at = utcnow() + timedelta(seconds=max(1, delay_seconds))
+    step.finished_at = None
+    step.error_type = None
+    step.error_message = None
+    step.lease_owner = None
+    step.leased_at = None
+    _refresh_run_status(db, step.run_id)
+    db.commit()
+
+
+def _mark_step_failed(
+    db: Session,
+    step: WorkflowStep,
+    exc: Exception,
+    *,
+    result_payload: dict[str, Any] | None = None,
+) -> None:
     policy = _step_policy(step.step_type)
     step.error_type = type(exc).__name__
     step.error_message = str(exc)[:2000]
+    if result_payload is not None:
+        step.result_payload = result_payload
     step.lease_owner = None
     step.leased_at = None
-    retryable = not isinstance(exc, ValueError)
+    retryable = not isinstance(exc, (ValueError, TerminalStepFailure))
     if retryable and int(step.attempt_count or 0) < int(max(1, step.max_attempts or policy.max_attempts)):
         step.status = "pending"
         step.available_at = utcnow() + timedelta(seconds=max(1, policy.retry_backoff_seconds * int(step.attempt_count or 1)))
@@ -1880,6 +2002,27 @@ class WorkflowEngine:
                     else:
                         raise ValueError(f"unsupported workflow step type: {step.step_type}")
                     _mark_step_done(db, step, result)
+                    processed += 1
+                except DeferredStep as exc:
+                    db.rollback()
+                    step = db.query(WorkflowStep).filter(WorkflowStep.id == step_id).one_or_none()
+                    if step is None:
+                        processed += 1
+                        continue
+                    _mark_step_deferred(
+                        db,
+                        step,
+                        result_payload=exc.result_payload,
+                        delay_seconds=exc.delay_seconds,
+                    )
+                    processed += 1
+                except TerminalStepFailure as exc:
+                    db.rollback()
+                    step = db.query(WorkflowStep).filter(WorkflowStep.id == step_id).one_or_none()
+                    if step is None:
+                        processed += 1
+                        continue
+                    _mark_step_failed(db, step, exc, result_payload=exc.result_payload)
                     processed += 1
                 except Exception as exc:
                     db.rollback()
