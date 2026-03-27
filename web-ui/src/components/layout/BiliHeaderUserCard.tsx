@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Crown, LayoutGrid, LogOut, Palette, Sparkles, Star, UserRound } from "lucide-react";
 import { motion } from "framer-motion";
-import type { BiliHeaderSummary } from "./bili-header-data";
+import type { BiliHeaderCounter, BiliHeaderSummary, BiliHeaderTier } from "./bili-header-data";
 
 type BiliHeaderUserCardProps = {
   summary: BiliHeaderSummary;
@@ -15,6 +15,24 @@ type BiliHeaderUserCardProps = {
 
 const numberFormatter = new Intl.NumberFormat("zh-CN");
 
+const tierStyles: Record<BiliHeaderTier, { badgeClass: string; avatarClass: string; statusCopy: string }> = {
+  admin: {
+    badgeClass: "bg-slate-900 text-white",
+    avatarClass: "bg-[linear-gradient(135deg,#0f172a,#6366f1)]",
+    statusCopy: "管理权限已启用",
+  },
+  premium: {
+    badgeClass: "bg-amber-400 text-slate-950",
+    avatarClass: "bg-[linear-gradient(135deg,#fb7185,#f59e0b)]",
+    statusCopy: "高级权益已生效",
+  },
+  basic: {
+    badgeClass: "bg-slate-900 text-white",
+    avatarClass: "bg-[linear-gradient(135deg,#fb7185,#60a5fa)]",
+    statusCopy: "当前为基础账户",
+  },
+};
+
 function buildAvatarLabel(name: string) {
   const trimmed = name.trim();
   if (!trimmed) {
@@ -24,6 +42,35 @@ function buildAvatarLabel(name: string) {
   return glyphs.slice(0, glyphs.length > 2 ? 1 : 2).join("").toUpperCase();
 }
 
+function renderCounterValue(counter: BiliHeaderCounter) {
+  if (counter.state === "ready") {
+    return {
+      value: numberFormatter.format(counter.value || 0),
+      tone: "text-slate-900",
+    };
+  }
+  if (counter.state === "loading") {
+    return {
+      value: "加载中",
+      tone: "text-slate-500",
+    };
+  }
+  return {
+    value: "暂不可用",
+    tone: "text-amber-600",
+  };
+}
+
+function buildFooterCopy(summary: BiliHeaderSummary) {
+  if (summary.counterState === "ready") {
+    return "当前统计来自已加载的订阅、雷达和待处理提醒。";
+  }
+  if (summary.counterState === "loading") {
+    return "统计仍在加载，先展示已确认的账号层信息。";
+  }
+  return "部分统计暂时不可用，请稍后重试或进入对应页面查看。";
+}
+
 export default function BiliHeaderUserCard({
   summary,
   username,
@@ -31,6 +78,7 @@ export default function BiliHeaderUserCard({
   onLogout,
   onThemeClick,
 }: BiliHeaderUserCardProps) {
+  const tierStyle = tierStyles[summary.tier];
   const actions = [
     {
       label: "账户中心",
@@ -68,33 +116,38 @@ export default function BiliHeaderUserCard({
     >
       <div className="rounded-[24px] bg-[linear-gradient(135deg,#fdf2f8_0%,#eff6ff_52%,#f8fafc_100%)] p-4">
         <div className="flex items-start gap-3">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] bg-[linear-gradient(135deg,#fb7185,#60a5fa)] text-xl font-black text-white shadow-[0_14px_30px_rgba(96,165,250,0.28)]">
+          <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] text-xl font-black text-white shadow-[0_14px_30px_rgba(96,165,250,0.28)] ${tierStyle.avatarClass}`}>
             {buildAvatarLabel(summary.displayName)}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <div className="truncate text-lg font-black text-slate-900">{summary.displayName}</div>
-              <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${tierStyle.badgeClass}`}>
                 {summary.levelLabel}
               </span>
             </div>
             <div className="mt-1 text-sm text-slate-500">@{username}</div>
             <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_10px_24px_rgba(148,163,184,0.14)]">
               <span
-                className={`h-2.5 w-2.5 rounded-full ${summary.isPremium ? "bg-amber-400" : "bg-slate-300"}`}
+                className={`h-2.5 w-2.5 rounded-full ${
+                  summary.tier === "admin" ? "bg-indigo-500" : summary.isPremium ? "bg-amber-400" : "bg-slate-300"
+                }`}
               />
-              {summary.isPremium ? "高级权益已生效" : "当前为基础账户"}
+              {tierStyle.statusCopy}
             </div>
           </div>
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
-          {summary.counters.map((item) => (
-            <div key={item.label} className="rounded-[20px] bg-white/80 px-3 py-3 shadow-[0_10px_24px_rgba(148,163,184,0.1)]">
-              <div className="text-[11px] font-medium text-slate-500">{item.label}</div>
-              <div className="mt-1 text-lg font-black text-slate-900">{numberFormatter.format(item.value)}</div>
-            </div>
-          ))}
+          {summary.counters.map((item) => {
+            const counterValue = renderCounterValue(item);
+            return (
+              <div key={item.label} className="rounded-[20px] bg-white/80 px-3 py-3 shadow-[0_10px_24px_rgba(148,163,184,0.1)]">
+                <div className="text-[11px] font-medium text-slate-500">{item.label}</div>
+                <div className={`mt-1 text-base font-black ${counterValue.tone}`}>{counterValue.value}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -147,7 +200,7 @@ export default function BiliHeaderUserCard({
 
       <div className="mt-4 flex items-center gap-2 rounded-[18px] bg-slate-950 px-3 py-3 text-xs text-slate-200">
         <LayoutGrid size={15} className="shrink-0" />
-        <span>这个卡片只显示当前账号的真实订阅、雷达和提醒数量，不拼接虚构指标。</span>
+        <span>{buildFooterCopy(summary)}</span>
       </div>
     </motion.div>
   );

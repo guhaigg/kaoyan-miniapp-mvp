@@ -4,28 +4,26 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Bell, Compass, LogIn, Search, Sparkles, Star } from "lucide-react";
+import { Bell, Compass, Search, Star } from "lucide-react";
 import { ApiError, logoutUser } from "@/lib/api";
 import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
 import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
 import BiliHeaderUserCard from "./BiliHeaderUserCard";
-import { buildBiliHeaderSummary } from "./bili-header-data";
+import { type BiliHeaderCounterState, buildBiliHeaderSummary } from "./bili-header-data";
+import {
+  BiliHeaderAvatarTrigger,
+  BiliHeaderCta,
+  BiliHeaderIconActionBar,
+  type BiliHeaderIconAction,
+  BiliHeaderNavLink,
+} from "./bili-header-ui";
 
 type HeaderNavItem = {
   key: "home" | "announcements" | "adjustments" | "radar" | "watchlist" | "admin";
   href: string;
   label: string;
-};
-
-type HeaderIconAction = {
-  href?: string;
-  label: string;
-  icon: typeof Compass;
-  onClick?: () => void;
-  badgeCount?: number;
-  badgeTone?: "accent" | "danger";
 };
 
 export default function Header() {
@@ -71,14 +69,46 @@ function HeaderFrame({
   const subscriptions = subscriptionsQuery.data?.items || [];
   const monitorTargets = monitorTargetsQuery.data?.items || [];
   const pendingNotices = noticesQuery.data || [];
+  const subscriptionsState = resolveCounterState({
+    enabled: Boolean(portalAuth),
+    isError: subscriptionsQuery.isError,
+    isLoading: subscriptionsQuery.isLoading || subscriptionsQuery.isPending,
+    hasData: Boolean(subscriptionsQuery.data),
+  });
+  const monitorTargetsState = resolveCounterState({
+    enabled: canManageScopeTargets,
+    isError: monitorTargetsQuery.isError,
+    isLoading: monitorTargetsQuery.isLoading || monitorTargetsQuery.isPending,
+    hasData: Boolean(monitorTargetsQuery.data),
+  });
+  const noticesState = resolveCounterState({
+    enabled: Boolean(portalAuth),
+    isError: noticesQuery.isError,
+    isLoading: noticesQuery.isLoading || noticesQuery.isPending,
+    hasData: Boolean(noticesQuery.data),
+  });
   const userSummary = portalAuth
     ? buildBiliHeaderSummary({
         portalAuth,
-        subscriptions,
-        monitorTargets,
-        pendingNotices,
+        subscriptions: {
+          items: subscriptions,
+          state: subscriptionsState,
+        },
+        monitorTargets: {
+          items: monitorTargets,
+          state: monitorTargetsState,
+        },
+        pendingNotices: {
+          items: pendingNotices,
+          state: noticesState,
+        },
       })
     : null;
+  const watchlistBadgeCount =
+    subscriptionsState === "ready" && (!canManageScopeTargets || monitorTargetsState === "ready")
+      ? subscriptions.length + (canManageScopeTargets ? monitorTargets.length : 0)
+      : undefined;
+  const noticeBadgeCount = noticesState === "ready" ? pendingNotices.length : undefined;
 
   useEffect(() => {
     setSearchValue(searchParamValue);
@@ -160,7 +190,7 @@ function HeaderFrame({
     ...(portalAuth?.isAdmin ? [{ key: "admin", href: "/admin", label: "管理台" } satisfies HeaderNavItem] : []),
   ];
 
-  const iconActions: HeaderIconAction[] = [
+  const iconActions: BiliHeaderIconAction[] = [
     {
       href: "/query",
       label: "功能导航",
@@ -170,13 +200,13 @@ function HeaderFrame({
       label: "关注抽屉",
       icon: Star,
       onClick: handleOpenWatchlist,
-      badgeCount: portalAuth ? subscriptions.length + monitorTargets.length : 0,
+      badgeCount: portalAuth ? watchlistBadgeCount : undefined,
     },
     {
       href: "/account?tab=activity",
       label: "提醒中心",
       icon: Bell,
-      badgeCount: pendingNotices.length,
+      badgeCount: noticeBadgeCount,
       badgeTone: "danger",
     },
   ];
@@ -200,12 +230,12 @@ function HeaderFrame({
               </Link>
 
               <div className="flex items-center gap-2 lg:hidden">
-                <IconActionBar actions={iconActions} />
+                <BiliHeaderIconActionBar actions={iconActions} />
                 {portalAuth ? (
                   <div ref={mobileUserCardRef} className="relative">
-                    <AvatarTrigger
+                    <BiliHeaderAvatarTrigger
                       displayName={userSummary?.displayName || portalAuth.username}
-                      isPremium={Boolean(userSummary?.isPremium)}
+                      tier={userSummary?.tier || "basic"}
                       onClick={() => setIsUserCardOpen((current) => !current)}
                     />
                     <AnimatePresence>
@@ -224,10 +254,10 @@ function HeaderFrame({
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <HeaderCta href="/login" primary>
+                    <BiliHeaderCta href="/login" primary>
                       接入账号
-                    </HeaderCta>
-                    <HeaderCta href="/register">新建账户</HeaderCta>
+                    </BiliHeaderCta>
+                    <BiliHeaderCta href="/register">新建账户</BiliHeaderCta>
                   </div>
                 )}
               </div>
@@ -235,7 +265,7 @@ function HeaderFrame({
 
             <nav className="hidden items-center gap-1 lg:flex">
               {navItems.map((item) => (
-                <HeaderNavLink
+                <BiliHeaderNavLink
                   key={item.key}
                   href={item.href}
                   label={item.label}
@@ -265,7 +295,7 @@ function HeaderFrame({
             </form>
 
             <div className="hidden items-center gap-3 lg:flex">
-              <IconActionBar actions={iconActions} />
+              <BiliHeaderIconActionBar actions={iconActions} />
 
               {portalAuth ? (
                 <div ref={desktopUserCardRef} className="relative">
@@ -278,9 +308,9 @@ function HeaderFrame({
                         : "border-white/80 bg-white/90 text-slate-900 hover:border-sky-200 hover:bg-sky-50"
                     }`}
                   >
-                    <AvatarTrigger
+                    <BiliHeaderAvatarTrigger
                       displayName={userSummary?.displayName || portalAuth.username}
-                      isPremium={Boolean(userSummary?.isPremium)}
+                      tier={userSummary?.tier || "basic"}
                     />
                     <span className="min-w-0 text-left">
                       <span className="block max-w-[120px] truncate text-sm font-semibold text-slate-900">
@@ -308,10 +338,10 @@ function HeaderFrame({
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <HeaderCta href="/login" primary>
+                  <BiliHeaderCta href="/login" primary>
                     登录主账号
-                  </HeaderCta>
-                  <HeaderCta href="/register">创建新账户</HeaderCta>
+                  </BiliHeaderCta>
+                  <BiliHeaderCta href="/register">创建新账户</BiliHeaderCta>
                 </div>
               )}
             </div>
@@ -320,7 +350,7 @@ function HeaderFrame({
           <div className="border-t border-white/70 px-3 pb-3 pt-2 lg:hidden">
             <div className="flex gap-2 overflow-x-auto pb-1">
               {navItems.map((item) => (
-                <HeaderNavLink
+                <BiliHeaderNavLink
                   key={item.key}
                   href={item.href}
                   label={item.label}
@@ -375,134 +405,23 @@ function isNavItemActive(
   return pathname === "/admin";
 }
 
-function HeaderNavLink({
-  href,
-  label,
-  active,
-  compact = false,
-}: {
-  href: string;
-  label: string;
-  active: boolean;
-  compact?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-        active
-          ? "bg-slate-900 text-white"
-          : compact
-            ? "bg-white text-slate-700"
-            : "text-slate-600 hover:bg-white/80 hover:text-slate-900"
-      }`}
-    >
-      {label}
-    </Link>
-  );
-}
-
-function IconActionBar({ actions }: { actions: HeaderIconAction[] }) {
-  return (
-    <div className="flex items-center gap-2">
-      {actions.map((action) => {
-        const content = (
-          <>
-            <action.icon size={17} />
-            {action.badgeCount && action.badgeCount > 0 ? (
-              <span
-                className={`absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-white px-1 text-[10px] font-bold text-white ${
-                  action.badgeTone === "danger" ? "bg-rose-500" : "bg-sky-500"
-                }`}
-              >
-                {Math.min(action.badgeCount, 99)}
-              </span>
-            ) : null}
-          </>
-        );
-
-        const className =
-          "relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/80 bg-white/90 text-slate-700 transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-slate-900";
-
-        if (action.href) {
-          return (
-            <Link key={action.label} href={action.href} aria-label={action.label} className={className}>
-              {content}
-            </Link>
-          );
-        }
-
-        return (
-          <button
-            key={action.label}
-            type="button"
-            onClick={action.onClick}
-            aria-label={action.label}
-            className={className}
-          >
-            {content}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function HeaderCta({
-  href,
-  children,
-  primary = false,
-}: {
-  href: string;
-  children: string;
-  primary?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-        primary
-          ? "bg-[linear-gradient(90deg,#60a5fa,#f472b6)] text-white shadow-[0_14px_26px_rgba(96,165,250,0.24)]"
-          : "border border-white/80 bg-white/90 text-slate-700 hover:border-sky-200 hover:bg-sky-50"
-      }`}
-    >
-      {primary ? <LogIn size={15} /> : <Sparkles size={15} />}
-      {children}
-    </Link>
-  );
-}
-
-function AvatarTrigger({
-  displayName,
-  isPremium,
-  onClick,
-}: {
-  displayName: string;
-  isPremium: boolean;
-  onClick?: () => void;
-}) {
-  const initials = Array.from(displayName.trim() || "GW")
-    .slice(0, displayName.trim().length > 2 ? 1 : 2)
-    .join("")
-    .toUpperCase();
-
-  const className = `relative inline-flex h-11 w-11 items-center justify-center rounded-full bg-[linear-gradient(135deg,#fb7185,#60a5fa)] text-sm font-black text-white shadow-[0_12px_26px_rgba(96,165,250,0.28)] ${
-    onClick ? "transition-transform hover:scale-[1.03]" : ""
-  }`;
-
-  if (!onClick) {
-    return (
-      <span className={className}>
-        {initials}
-        <span className={`absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-white ${isPremium ? "bg-amber-400" : "bg-emerald-400"}`} />
-      </span>
-    );
+function resolveCounterState(args: {
+  enabled: boolean;
+  isError: boolean;
+  isLoading: boolean;
+  hasData: boolean;
+}): BiliHeaderCounterState {
+  if (!args.enabled) {
+    return "unavailable";
   }
-
-  return (
-    <button type="button" onClick={onClick} className={className}>
-      {initials}
-      <span className={`absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-white ${isPremium ? "bg-amber-400" : "bg-emerald-400"}`} />
-    </button>
-  );
+  if (args.isError) {
+    return "unavailable";
+  }
+  if (args.hasData) {
+    return "ready";
+  }
+  if (args.isLoading) {
+    return "loading";
+  }
+  return "loading";
 }

@@ -64,7 +64,7 @@ export const useAppStore = create<AppState>()(
       setAuthOpen: (open, mode) =>
         set((state) => ({
           isAuthOpen: open,
-          authMode: mode ?? state.authMode,
+          authMode: open ? mode ?? "login" : mode ?? state.authMode,
         })),
       isWatchlistOpen: false,
       setWatchlistOpen: (open) => set({ isWatchlistOpen: open }),
@@ -109,9 +109,6 @@ export const useAppStore = create<AppState>()(
         set({
           portalAuth: null,
           hasServerSessionHint: false,
-          isAuthOpen: false,
-          isWatchlistOpen: false,
-          authMode: "login",
         }),
       logout: () =>
         set({
