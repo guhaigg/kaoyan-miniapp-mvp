@@ -236,3 +236,5 @@ npm run test:backend
 - `await_chsi_school_enrich` is the only step that writes `school_catalog_snapshot.json`.
 - Workflow detail for the barrier now surfaces `total_school_count`, `succeeded_school_count`, `failed_school_count`, `pending_school_count`, and `failed_schools`.
 - If any per-school CHSI enrich child reaches terminal failure, the workflow stops at the barrier and does not continue into major / department / merge.
+- `build_department_candidates` no longer fails the whole refresh on a single CHSI `department_page_url` timeout. Timed-out department listing pages are skipped per school so the run can continue into merge with partial department candidates.
+- Workflow detail for `build_department_candidates` now also surfaces `skipped_school_count` and `skipped_schools` so operators can see exactly which schools were skipped after a department listing timeout.

@@ -5,6 +5,8 @@ import shutil
 import uuid
 from pathlib import Path
 
+import httpx
+
 from app.services import announcement_foundation
 from app.services.canonical_scope_seeds import (
     _announcement_department_seed_registry,
@@ -128,6 +130,59 @@ def test_enrich_school_catalog_snapshot_writes_enriched_snapshot(tmp_path, monke
     assert json.loads(paths.school_catalog.read_text(encoding="utf-8"))[0]["school_code"] == "1001"
 
 
+def test_build_department_candidates_skips_department_page_timeouts(tmp_path, monkeypatch):
+    paths = announcement_foundation.foundation_paths(tmp_path)
+    schools = [
+        {
+            "school_code": "1001",
+            "school_name": "Healthy University",
+            "source_meta": {
+                "department_page_url": "https://healthy.example.edu.cn/departments/",
+            },
+        },
+        {
+            "school_code": "1002",
+            "school_name": "Timeout University",
+            "source_meta": {
+                "department_page_url": "https://timeout.example.edu.cn/departments/",
+            },
+        },
+    ]
+    department_listing_html = """
+    <html><body>
+      <a href="https://healthy.example.edu.cn/cs/">计算机学院</a>
+      <a href="https://healthy.example.edu.cn/math/">数学学院</a>
+    </body></html>
+    """
+
+    def _fake_fetch_text(url: str, timeout: int = 20) -> str:
+        if url == "https://healthy.example.edu.cn/departments/":
+            return department_listing_html
+        if url == "https://timeout.example.edu.cn/departments/":
+            raise httpx.ReadTimeout("The read operation timed out")
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr(announcement_foundation, "_fetch_text", _fake_fetch_text)
+
+    departments, candidates, skipped_schools = announcement_foundation.build_department_candidates(schools, paths=paths)
+
+    assert [item["department_name"] for item in departments] == ["计算机学院", "数学学院"]
+    assert [item["department_name"] for item in candidates] == ["计算机学院", "数学学院"]
+    assert all(item["school_name"] == "Healthy University" for item in departments)
+    assert all(item["school_name"] == "Healthy University" for item in candidates)
+    assert skipped_schools == [
+        {
+            "school_code": "1002",
+            "school_name": "Timeout University",
+            "department_page_url": "https://timeout.example.edu.cn/departments/",
+            "error_type": "ReadTimeout",
+            "error_message": "The read operation timed out",
+        }
+    ]
+    assert json.loads(paths.department_catalog.read_text(encoding="utf-8"))[0]["school_name"] == "Healthy University"
+    assert json.loads(paths.department_candidates.read_text(encoding="utf-8"))[0]["school_name"] == "Healthy University"
+
+
 def test_refresh_announcement_foundation_builds_snapshots_and_registry(monkeypatch):
     tmp_path = _temp_dir()
     school_catalog_html = """
@@ -201,6 +256,7 @@ def test_refresh_announcement_foundation_builds_snapshots_and_registry(monkeypat
         assert result["department_count"] == 2
         assert result["major_count"] == 3
         assert result["official_seed_candidate_count"] == 1
+        assert result["skipped_school_count"] == 0
 
         school_snapshot = json.loads((tmp_path / announcement_foundation.SCHOOL_CATALOG_FILENAME).read_text(encoding="utf-8"))
         assert school_snapshot[0]["school_name"] == "示例大学"

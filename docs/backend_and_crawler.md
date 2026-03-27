@@ -195,6 +195,8 @@ Current MVP endpoints already return typed payloads. When integrating public cli
   - `fetch_chsi_major_catalog`
 - `fetch_chsi_school_catalog` records the base CHSI school list into workflow parse artifacts. Each `enrich_chsi_school_snapshot` child records one enriched school row into parse artifacts. Only `await_chsi_school_enrich` writes the final `school_catalog_snapshot.json`.
 - `await_chsi_school_enrich` is a strict barrier. It will defer while any school enrich child is still pending/running, and if any school enrich child reaches terminal failure it stops the workflow before major/department/merge steps. The barrier result payload exposes `total_school_count`, `succeeded_school_count`, `failed_school_count`, `pending_school_count`, and `failed_schools`.
+- `build_department_candidates` is now best-effort for CHSI `department_page_url` fetches. If one school's department listing page times out, that school is skipped instead of failing the entire foundation refresh.
+- When `build_department_candidates` skips a school, the step result payload now exposes `skipped_school_count` and `skipped_schools` so operators can see which `department_page_url` timed out.
 - OCR is now an explicit async step. `retry-parse` only reruns file parsing; `retry-ocr` enqueues a V2 `ocr_enqueue` workflow step.
 - Announcement `retry-parse` now enqueues a V2 `file_parse` workflow step. Legacy `crawl_jobs(file_parse)` remains only for non-announcement paths and backward-compatible handoff shells.
 - API process no longer runs the crawl worker loop. V2 steps are consumed by the standalone worker entrypoint `python -m app.workers.crawler_v2_worker`.
