@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.db import SessionLocal
 from app.models import WorkflowRun, WorkflowStep
 from app.services import workflow_v2
@@ -121,3 +123,71 @@ def test_mark_step_deferred_keeps_pending_and_progress_payload():
         assert step.error_type is None
         assert step.error_message is None
         assert step.lease_owner is None
+
+
+def test_await_chsi_school_enrich_barrier_reports_failed_school_summary():
+    with SessionLocal() as db:
+        run, fetch_step = workflow_v2.create_announcement_catalog_refresh_run(
+            db,
+            actor_username="tester",
+            school_names=["One", "Two"],
+            dry_run=True,
+            sources=["chsi"],
+        )
+        enqueue_step = workflow_v2._create_idempotent_child_step(
+            db,
+            run=run,
+            parent_step=fetch_step,
+            step_type=workflow_v2.STEP_TYPE_ENQUEUE_CHSI_SCHOOL_ENRICH,
+            host_key=None,
+            input_payload={"school_names": ["One", "Two"], "dry_run": True, "sources": ["chsi"]},
+        )
+        failed_child = workflow_v2._create_idempotent_child_step(
+            db,
+            run=run,
+            parent_step=enqueue_step,
+            step_type=workflow_v2.STEP_TYPE_ENRICH_CHSI_SCHOOL_SNAPSHOT,
+            host_key="yz.chsi.com.cn",
+            input_payload={
+                "school_code": "1002",
+                "school_name": "Two",
+                "chsi_school_url": "https://yz.chsi.com.cn/sch/2",
+            },
+        )
+        barrier = workflow_v2._create_idempotent_child_step(
+            db,
+            run=run,
+            parent_step=enqueue_step,
+            step_type=workflow_v2.STEP_TYPE_AWAIT_CHSI_SCHOOL_ENRICH,
+            host_key=None,
+            input_payload={"school_names": ["One", "Two"], "dry_run": True, "sources": ["chsi"]},
+        )
+        failed_child.status = "failed"
+        failed_child.error_type = "ReadTimeout"
+        failed_child.error_message = "ReadTimeout"
+        failed_child.finished_at = workflow_v2.utcnow()
+        db.flush()
+
+        with pytest.raises(workflow_v2.TerminalStepFailure) as exc_info:
+            workflow_v2._process_await_chsi_school_enrich_step(db, barrier)
+
+        summary = exc_info.value.result_payload
+        assert summary["failed_school_count"] == 1
+        assert summary["pending_school_count"] == 0
+        assert summary["failed_schools"][0]["school_code"] == "1002"
+        assert summary["failed_schools"][0]["school_name"] == "Two"
+        assert summary["terminal_reason"] == "chsi_school_enrich_failed"
+
+        workflow_v2._mark_step_failed(
+            db,
+            barrier,
+            exc_info.value,
+            result_payload=summary,
+        )
+        db.refresh(barrier)
+        db.refresh(run)
+
+        assert barrier.status == "failed"
+        assert run.status == "failed"
+        assert barrier.result_payload["failed_schools"][0]["school_code"] == "1002"
+        assert run.result_payload["failed_schools"][0]["school_code"] == "1002"
