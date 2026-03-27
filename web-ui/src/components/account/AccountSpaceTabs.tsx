@@ -34,7 +34,9 @@ export function AccountSpaceTabs({
           const Icon = item.icon;
           const params = new URLSearchParams(searchParams.toString());
           params.set("tab", item.id);
-          if (item.id === "account" && activePanel) {
+          if (item.id === "account" && (activePanel === "billing" || activePanel === "security")) {
+            params.set("panel", activePanel);
+          } else if (item.id === "activity" && activePanel === "notifications") {
             params.set("panel", activePanel);
           } else {
             params.delete("panel");

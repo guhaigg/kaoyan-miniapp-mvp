@@ -1,24 +1,88 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ApiError,
   getCurrentUserAccountOverview,
+  getCurrentUserNotificationHistory,
   logoutUser,
   type UserAccountOverviewResponse,
+  type UserNotificationHistoryItem,
 } from "@/lib/api";
+import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
+import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
+import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
+import { AccountActivityTab } from "./AccountActivityTab";
+import { AccountFollowingTab } from "./AccountFollowingTab";
+import { AccountRadarTab } from "./AccountRadarTab";
 import { AccountSpaceHero } from "./AccountSpaceHero";
 import { AccountSpaceSidebar } from "./AccountSpaceSidebar";
 import { AccountSpaceTabs } from "./AccountSpaceTabs";
-import { parseAccountSpacePanel, parseAccountSpaceTab, type AccountSpacePanel, type AccountSpaceTab } from "./account-space-query";
+import {
+  buildAccountActivityItems,
+  buildAccountSpaceSummary,
+} from "./account-space-data";
+import {
+  parseAccountSpacePanel,
+  parseAccountSpaceTab,
+  type AccountSpacePanel,
+  type AccountSpaceTab,
+} from "./account-space-query";
 
-const PANEL_COPY: Record<Exclude<AccountSpacePanel, null>, string> = {
-  billing: "旧的会员入口会收敛到新的会员与订单区块。",
-  security: "旧的安全入口会收敛到新的密码、绑定和会话区块。",
+const ACCOUNT_PANEL_COPY: Record<Exclude<AccountSpacePanel, null>, string> = {
+  billing: "旧的会员入口会收敛到新的会员与订单区块里。",
+  security: "旧的安全入口会收敛到新的密码、绑定和会话区块里。",
   notifications: "旧的通知入口会收敛到动态流里的通知视图。",
 };
+
+function AccountTabPlaceholder({
+  panel,
+  membershipLabel,
+  loggedIn,
+}: {
+  panel: AccountSpacePanel;
+  membershipLabel: string;
+  loggedIn: boolean;
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
+        <div className="text-xs uppercase tracking-[0.24em] text-sky-500">Account</div>
+        <h2 className="mt-3 text-2xl font-bold text-slate-900">账号相关操作下一步会集中到这里</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+          会员、微信绑定、密码修改和退出登录都会继续保留，只是从旧的 dashboard 形态收敛成空间页里的二级区块。
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <span className="rounded-full bg-pink-50 px-4 py-2 text-sm font-semibold text-pink-600">{membershipLabel}</span>
+          {loggedIn ? (
+            <Link
+              href="/account?tab=account&panel=billing"
+              className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700"
+            >
+              先看会员入口
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700"
+            >
+              先登录
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {panel ? (
+        <div className="rounded-[1.8rem] border border-pink-100 bg-pink-50/90 px-5 py-4 text-sm leading-7 text-pink-700 shadow-[0_16px_36px_rgba(255,151,201,0.16)]">
+          当前面板：<span className="font-semibold">{panel}</span>。{ACCOUNT_PANEL_COPY[panel]}
+        </div>
+      ) : null}
+    </section>
+  );
+}
 
 export default function AccountSpacePage({
   initialTab = "activity",
@@ -31,26 +95,44 @@ export default function AccountSpacePage({
   const searchParams = useSearchParams();
   const { portalAuth, clearPortalAuth } = useAppStore();
   const [accountOverview, setAccountOverview] = useState<UserAccountOverviewResponse | null>(null);
+  const [notificationHistory, setNotificationHistory] = useState<UserNotificationHistoryItem[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   const currentTab = parseAccountSpaceTab(searchParams.get("tab") || initialTab);
   const currentPanel = parseAccountSpacePanel(searchParams.get("panel") || initialPanel || undefined);
+  const canManageScopeTargets = Boolean(portalAuth?.isPremium || portalAuth?.isAdmin);
+
+  const subscriptionsQuery = useSubscriptionsQuery(Boolean(portalAuth));
+  const monitorTargetsQuery = useMonitorTargetsQuery(Boolean(portalAuth && canManageScopeTargets));
+  const noticesQuery = useWatchlistNoticesQuery(Boolean(portalAuth));
 
   useEffect(() => {
     if (!portalAuth?.accessToken) {
       setAccountOverview(null);
+      setNotificationHistory([]);
+      setActivityLoading(false);
       return;
     }
 
     let cancelled = false;
-    getCurrentUserAccountOverview(portalAuth.accessToken)
-      .then((payload) => {
-        if (!cancelled) {
-          setAccountOverview(payload);
+    setActivityLoading(true);
+
+    Promise.allSettled([
+      getCurrentUserAccountOverview(portalAuth.accessToken),
+      getCurrentUserNotificationHistory(portalAuth.accessToken, 12),
+    ])
+      .then((results) => {
+        if (cancelled) {
+          return;
         }
+
+        const [overviewResult, historyResult] = results;
+        setAccountOverview(overviewResult.status === "fulfilled" ? overviewResult.value : null);
+        setNotificationHistory(historyResult.status === "fulfilled" ? historyResult.value.items : []);
       })
-      .catch(() => {
+      .finally(() => {
         if (!cancelled) {
-          setAccountOverview(null);
+          setActivityLoading(false);
         }
       });
 
@@ -72,69 +154,96 @@ export default function AccountSpacePage({
     }
   }
 
-  const displayName = portalAuth?.nickname || portalAuth?.username || "我的空间";
-  const membershipLabel =
-    accountOverview?.role === "admin" ? "管理员" : accountOverview?.is_premium ? "高级会员" : "普通用户";
-  const signature = portalAuth
-    ? "把最近动态、关注范围和雷达信号聚合到一个更像个人空间的首页。"
-    : "登录后，你关注的学校、栏目和雷达信号都会在这里聚合。";
+  const subscriptions = subscriptionsQuery.data?.items || [];
+  const monitorTargets = monitorTargetsQuery.data?.items || [];
+  const pendingNotices = noticesQuery.data || [];
+  const activityItems = buildAccountActivityItems({
+    history: notificationHistory,
+    pending: pendingNotices,
+    monitorTargets,
+  });
+  const spaceSummary = buildAccountSpaceSummary({
+    displayName: portalAuth?.nickname || portalAuth?.username || "我的空间",
+    username: portalAuth?.username || "guest",
+    overview: accountOverview,
+    subscriptions,
+    monitorTargets,
+    activityCount: activityItems.length,
+    isLoggedIn: Boolean(portalAuth),
+    isAdmin: Boolean(portalAuth?.isAdmin),
+    isPremium: Boolean(portalAuth?.isPremium),
+  });
+
   const stats = [
-    { label: "关注", value: "--", tone: "pink" as const },
-    { label: "雷达", value: "--", tone: "blue" as const },
-    { label: "动态", value: "--", tone: "slate" as const },
+    { label: "关注", value: String(spaceSummary.followCount), tone: "pink" as const },
+    { label: "雷达", value: String(spaceSummary.radarCount), tone: "blue" as const },
+    { label: "动态", value: String(spaceSummary.recentActivityCount), tone: "slate" as const },
   ];
-  const wechatBound = Boolean(
-    accountOverview?.identities.some((item) => item.identity_type === "wechat_miniapp" && item.status === "active"),
-  );
-  const securityHint = wechatBound
-    ? "微信已绑定，后续只需要把密码和会话安全继续维护在账号页。"
-    : "建议尽快补齐微信绑定和密码安全，后续跨端体验会更顺。";
+
+  const followingLoading = Boolean(portalAuth) && subscriptionsQuery.isLoading;
+  const radarLoading = Boolean(portalAuth) && canManageScopeTargets && monitorTargetsQuery.isLoading;
+
+  let content: ReactNode;
+  if (currentTab === "following") {
+    content = (
+      <AccountFollowingTab
+        loggedIn={Boolean(portalAuth)}
+        loading={followingLoading}
+        subscriptions={subscriptions}
+        monitorTargets={monitorTargets}
+        canManageScopeTargets={canManageScopeTargets}
+      />
+    );
+  } else if (currentTab === "radar") {
+    content = (
+      <AccountRadarTab
+        loggedIn={Boolean(portalAuth)}
+        loading={radarLoading}
+        canManageScopeTargets={canManageScopeTargets}
+        targets={monitorTargets}
+        overview={monitorTargetsQuery.data?.recent_signal_overview || null}
+      />
+    );
+  } else if (currentTab === "account") {
+    content = (
+      <AccountTabPlaceholder
+        panel={currentPanel}
+        membershipLabel={spaceSummary.membershipLabel}
+        loggedIn={Boolean(portalAuth)}
+      />
+    );
+  } else {
+    content = (
+      <AccountActivityTab
+        items={activityItems}
+        loggedIn={Boolean(portalAuth)}
+        loading={activityLoading || noticesQuery.isLoading}
+        panel={currentPanel}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f6f8fd_0%,#eef4ff_42%,#fbfdff_100%)] text-slate-900">
       <div className="mx-auto max-w-7xl px-4 pb-20 pt-8 md:px-6">
         <AccountSpaceHero
-          displayName={displayName}
-          username={portalAuth?.username || "guest"}
-          membershipLabel={membershipLabel}
-          signature={signature}
+          displayName={spaceSummary.displayName}
+          username={spaceSummary.username}
+          membershipLabel={spaceSummary.membershipLabel}
+          signature={spaceSummary.signature}
           stats={stats}
         />
 
         <AccountSpaceTabs activeTab={currentTab} activePanel={currentPanel} />
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <main className="min-w-0 space-y-5">
-            <section className="rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-              <div className="text-xs uppercase tracking-[0.24em] text-sky-500">Space Shell</div>
-              <h1 className="mt-3 text-2xl font-bold text-slate-900">当前激活的是 {currentTab} tab</h1>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                这里先落 URL 状态和新版空间壳子。下一步会把动态流、关注墙、雷达总览和账号动作逐个替换成真实区块。
-              </p>
-              {currentPanel ? (
-                <div className="mt-4 rounded-2xl border border-pink-100 bg-pink-50 px-4 py-3 text-sm text-pink-700">
-                  当前 panel: <span className="font-semibold">{currentPanel}</span>。{PANEL_COPY[currentPanel]}
-                </div>
-              ) : null}
-            </section>
-
-            <section className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-400">Main Column</div>
-                <div className="mt-3 text-lg font-bold text-slate-900">动态流、关注墙和雷达卡会放在这里</div>
-              </div>
-              <div className="rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-400">Content Rule</div>
-                <div className="mt-3 text-lg font-bold text-slate-900">这版先把空间页骨架和 tab 语义跑通，不改现有账号业务逻辑。</div>
-              </div>
-            </section>
-          </main>
+          <main className="min-w-0">{content}</main>
 
           <aside className="min-w-0">
             <AccountSpaceSidebar
-              membershipLabel={membershipLabel}
-              wechatBound={wechatBound}
-              securityHint={securityHint}
+              membershipLabel={spaceSummary.membershipLabel}
+              wechatBound={spaceSummary.wechatBound}
+              securityHint={spaceSummary.securityHint}
               onLogout={handleLogout}
               loggedIn={Boolean(portalAuth)}
             />
