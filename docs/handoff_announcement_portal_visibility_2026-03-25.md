@@ -223,3 +223,16 @@ npm run test:backend
 - Remaining work after this handoff is operational rather than architectural:
   - manual smoke on the admin governance workspace
   - deployment / production data backfill when explicitly scheduled
+
+## 10. 2026-03-27 CHSI foundation fanout update
+
+- `announcement_catalog_refresh` no longer keeps CHSI school enrich inside one long `fetch_chsi_school_catalog` step.
+- The CHSI phase now runs as:
+  - `fetch_chsi_school_catalog`
+  - `enqueue_chsi_school_enrich`
+  - `enrich_chsi_school_snapshot` (per school)
+  - `await_chsi_school_enrich`
+  - `fetch_chsi_major_catalog`
+- `await_chsi_school_enrich` is the only step that writes `school_catalog_snapshot.json`.
+- Workflow detail for the barrier now surfaces `total_school_count`, `succeeded_school_count`, `failed_school_count`, `pending_school_count`, and `failed_schools`.
+- If any per-school CHSI enrich child reaches terminal failure, the workflow stops at the barrier and does not continue into major / department / merge.

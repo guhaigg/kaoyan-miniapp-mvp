@@ -187,6 +187,14 @@ Current MVP endpoints already return typed payloads. When integrating public cli
 - Governance now also has a list endpoint: `GET /api/v1/admin/workflows` supports filtering by `family`, `scope_type`, `scope_key`, `status`, `workflow_type`, and `host_key`, so operators can inspect announcement rebuild/discovery state without digging through raw tables.
 - Announcement foundation refresh is now also workflow-backed. `POST /api/v1/admin/catalog-refreshes/announcement-foundation` creates an `announcement_catalog_refresh` run that materializes school/department/major snapshots and refreshes the announcement seed registry.
 - When `POST /api/v1/admin/catalog-refreshes/announcement-foundation` is called with a non-empty `school_names`, the CHSI school-catalog step now short-circuits pagination once all requested schools have been found. This keeps scoped dry-run validation operationally useful instead of always scanning every CHSI catalog page first.
+- The CHSI stage of `announcement_catalog_refresh` now runs as a fanout/barrier chain:
+  - `fetch_chsi_school_catalog`
+  - `enqueue_chsi_school_enrich`
+  - `enrich_chsi_school_snapshot` (one child step per school)
+  - `await_chsi_school_enrich`
+  - `fetch_chsi_major_catalog`
+- `fetch_chsi_school_catalog` records the base CHSI school list into workflow parse artifacts. Each `enrich_chsi_school_snapshot` child records one enriched school row into parse artifacts. Only `await_chsi_school_enrich` writes the final `school_catalog_snapshot.json`.
+- `await_chsi_school_enrich` is a strict barrier. It will defer while any school enrich child is still pending/running, and if any school enrich child reaches terminal failure it stops the workflow before major/department/merge steps. The barrier result payload exposes `total_school_count`, `succeeded_school_count`, `failed_school_count`, `pending_school_count`, and `failed_schools`.
 - OCR is now an explicit async step. `retry-parse` only reruns file parsing; `retry-ocr` enqueues a V2 `ocr_enqueue` workflow step.
 - Announcement `retry-parse` now enqueues a V2 `file_parse` workflow step. Legacy `crawl_jobs(file_parse)` remains only for non-announcement paths and backward-compatible handoff shells.
 - API process no longer runs the crawl worker loop. V2 steps are consumed by the standalone worker entrypoint `python -m app.workers.crawler_v2_worker`.
