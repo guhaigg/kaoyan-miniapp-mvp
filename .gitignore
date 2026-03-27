@@ -9,6 +9,7 @@ __pycache__/
 .env
 *.db
 node_modules/
+.worktrees/
 backend/.env
 backend/.coverage
 backend/htmlcov/
