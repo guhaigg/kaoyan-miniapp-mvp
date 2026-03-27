@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-interface PortalAuthSession {
+export interface PortalAuthSession {
   tokenType: "bearer";
   accessToken: string;
   userId: string;
@@ -23,9 +23,10 @@ interface ToastState {
   type: "info" | "urgent";
 }
 
-interface AppState {
+export interface AppState {
   isAuthOpen: boolean;
-  setAuthOpen: (open: boolean) => void;
+  authMode: "login" | "register";
+  setAuthOpen: (open: boolean, mode?: "login" | "register") => void;
   isWatchlistOpen: boolean;
   setWatchlistOpen: (open: boolean) => void;
   authBootstrapped: boolean;
@@ -59,7 +60,12 @@ export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       isAuthOpen: false,
-      setAuthOpen: (open) => set({ isAuthOpen: open }),
+      authMode: "login",
+      setAuthOpen: (open, mode) =>
+        set((state) => ({
+          isAuthOpen: open,
+          authMode: mode ?? state.authMode,
+        })),
       isWatchlistOpen: false,
       setWatchlistOpen: (open) => set({ isWatchlistOpen: open }),
       authBootstrapped: false,
@@ -99,12 +105,21 @@ export const useAppStore = create<AppState>()(
             },
           };
         }),
-      clearPortalAuth: () => set({ portalAuth: null, hasServerSessionHint: false }),
+      clearPortalAuth: () =>
+        set({
+          portalAuth: null,
+          hasServerSessionHint: false,
+          isAuthOpen: false,
+          isWatchlistOpen: false,
+          authMode: "login",
+        }),
       logout: () =>
         set({
           portalAuth: null,
           hasServerSessionHint: false,
           isAuthOpen: true,
+          authMode: "login",
+          isWatchlistOpen: false,
         }),
       toast: { open: false, title: "", message: "", type: "info" },
       showToast: (title, message, type = "info") => {
