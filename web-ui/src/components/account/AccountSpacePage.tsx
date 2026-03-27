@@ -1,6 +1,4 @@
 "use client";
-
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -15,6 +13,7 @@ import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
 import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
+import { AccountAccountTab } from "./AccountAccountTab";
 import { AccountActivityTab } from "./AccountActivityTab";
 import { AccountFollowingTab } from "./AccountFollowingTab";
 import { AccountRadarTab } from "./AccountRadarTab";
@@ -31,58 +30,6 @@ import {
   type AccountSpacePanel,
   type AccountSpaceTab,
 } from "./account-space-query";
-
-const ACCOUNT_PANEL_COPY: Record<Exclude<AccountSpacePanel, null>, string> = {
-  billing: "旧的会员入口会收敛到新的会员与订单区块里。",
-  security: "旧的安全入口会收敛到新的密码、绑定和会话区块里。",
-  notifications: "旧的通知入口会收敛到动态流里的通知视图。",
-};
-
-function AccountTabPlaceholder({
-  panel,
-  membershipLabel,
-  loggedIn,
-}: {
-  panel: AccountSpacePanel;
-  membershipLabel: string;
-  loggedIn: boolean;
-}) {
-  return (
-    <section className="space-y-4">
-      <div className="rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-        <div className="text-xs uppercase tracking-[0.24em] text-sky-500">Account</div>
-        <h2 className="mt-3 text-2xl font-bold text-slate-900">账号相关操作下一步会集中到这里</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-          会员、微信绑定、密码修改和退出登录都会继续保留，只是从旧的 dashboard 形态收敛成空间页里的二级区块。
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <span className="rounded-full bg-pink-50 px-4 py-2 text-sm font-semibold text-pink-600">{membershipLabel}</span>
-          {loggedIn ? (
-            <Link
-              href="/account?tab=account&panel=billing"
-              className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700"
-            >
-              先看会员入口
-            </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700"
-            >
-              先登录
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {panel ? (
-        <div className="rounded-[1.8rem] border border-pink-100 bg-pink-50/90 px-5 py-4 text-sm leading-7 text-pink-700 shadow-[0_16px_36px_rgba(255,151,201,0.16)]">
-          当前面板：<span className="font-semibold">{panel}</span>。{ACCOUNT_PANEL_COPY[panel]}
-        </div>
-      ) : null}
-    </section>
-  );
-}
 
 export default function AccountSpacePage({
   initialTab = "activity",
@@ -206,10 +153,14 @@ export default function AccountSpacePage({
     );
   } else if (currentTab === "account") {
     content = (
-      <AccountTabPlaceholder
+      <AccountAccountTab
+        accessToken={portalAuth?.accessToken || null}
         panel={currentPanel}
         membershipLabel={spaceSummary.membershipLabel}
         loggedIn={Boolean(portalAuth)}
+        premiumExpiresAt={accountOverview?.premium_expires_at || portalAuth?.premiumExpiresAt || null}
+        wechatBound={spaceSummary.wechatBound}
+        onLoggedOut={handleLogout}
       />
     );
   } else {

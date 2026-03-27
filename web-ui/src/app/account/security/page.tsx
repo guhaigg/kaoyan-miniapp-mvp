@@ -1,5 +1,5 @@
-import AccountDashboard from "@/components/account/AccountDashboard";
+import { redirect } from "next/navigation";
 
 export default function AccountSecurityPage() {
-  return <AccountDashboard section="security" />;
+  redirect("/account?tab=account&panel=security");
 }

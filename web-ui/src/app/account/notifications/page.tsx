@@ -1,5 +1,5 @@
-import AccountDashboard from "@/components/account/AccountDashboard";
+import { redirect } from "next/navigation";
 
 export default function AccountNotificationsPage() {
-  return <AccountDashboard section="notifications" />;
+  redirect("/account?tab=activity&panel=notifications");
 }

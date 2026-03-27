@@ -1,5 +1,5 @@
-import AccountDashboard from "@/components/account/AccountDashboard";
+import { redirect } from "next/navigation";
 
 export default function AccountBillingPage() {
-  return <AccountDashboard section="billing" />;
+  redirect("/account?tab=account&panel=billing");
 }
