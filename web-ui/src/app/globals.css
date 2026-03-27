@@ -1,35 +1,49 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg-deep: #050b14;
+  --bili-bg: #f6f7fb;
+  --bili-surface: rgba(255, 255, 255, 0.92);
+  --bili-text: #18191c;
+  --bili-muted: #61666d;
+  --bili-pink: #fb7299;
+  --bili-blue: #00aeec;
+  --bili-line: rgba(17, 24, 39, 0.08);
 }
 
 body {
-  background-color: var(--bg-deep);
-  color: #f8fafc;
+  background: var(--bili-bg);
+  color: var(--bili-text);
   overflow-x: hidden;
   overscroll-behavior-y: none;
 }
 
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 8px;
   background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(6, 182, 212, 0.2);
-  border-radius: 4px;
+  background: rgba(0, 174, 236, 0.24);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(6, 182, 212, 0.5);
+  background: rgba(0, 174, 236, 0.42);
 }
 
 @layer utilities {
   .glass-panel {
-    @apply border border-white/10 bg-white/5 shadow-2xl backdrop-blur-xl;
+    @apply border border-black/5 bg-white/80 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl;
+  }
+
+  .bili-surface {
+    @apply rounded-2xl border border-black/5 bg-white/90 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl;
+  }
+
+  .bili-chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-black/5 bg-white/80 px-3 py-1 text-xs font-semibold text-[#61666d];
   }
 }
 

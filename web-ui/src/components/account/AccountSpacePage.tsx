@@ -1,4 +1,5 @@
-"use client";
+﻿"use client";
+
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -122,9 +123,14 @@ export default function AccountSpacePage({
   });
 
   const stats = [
-    { label: "关注", value: String(spaceSummary.followCount), tone: "pink" as const },
-    { label: "雷达", value: String(spaceSummary.radarCount), tone: "blue" as const },
-    { label: "动态", value: String(spaceSummary.recentActivityCount), tone: "slate" as const },
+    { label: "关注数", value: String(spaceSummary.followCount), tone: "blue" as const },
+    { label: "雷达数", value: String(spaceSummary.radarCount), tone: "pink" as const },
+    { label: "动态数", value: String(spaceSummary.recentActivityCount), tone: "slate" as const },
+    {
+      label: "会员状态",
+      value: portalAuth?.isPremium || portalAuth?.isAdmin ? "已开通" : "普通",
+      tone: "blue" as const,
+    },
   ];
 
   const followingLoading = Boolean(portalAuth) && subscriptionsQuery.isLoading;
@@ -175,31 +181,29 @@ export default function AccountSpacePage({
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f6f8fd_0%,#eef4ff_42%,#fbfdff_100%)] text-slate-900">
-      <div className="mx-auto max-w-7xl px-4 pb-20 pt-8 md:px-6">
-        <AccountSpaceHero
-          displayName={spaceSummary.displayName}
-          username={spaceSummary.username}
-          membershipLabel={spaceSummary.membershipLabel}
-          signature={spaceSummary.signature}
-          stats={stats}
-        />
+    <div className="pb-20 text-slate-900">
+      <AccountSpaceHero
+        displayName={spaceSummary.displayName}
+        username={spaceSummary.username}
+        membershipLabel={spaceSummary.membershipLabel}
+        signature={spaceSummary.signature}
+        stats={stats}
+      />
 
-        <AccountSpaceTabs activeTab={currentTab} activePanel={currentPanel} />
+      <AccountSpaceTabs activeTab={currentTab} activePanel={currentPanel} />
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <main className="min-w-0">{content}</main>
+      <div className="mx-auto grid max-w-[1440px] gap-6 px-4 py-6 md:px-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <main className="min-w-0">{content}</main>
 
-          <aside className="min-w-0">
-            <AccountSpaceSidebar
-              membershipLabel={spaceSummary.membershipLabel}
-              wechatBound={spaceSummary.wechatBound}
-              securityHint={spaceSummary.securityHint}
-              onLogout={handleLogout}
-              loggedIn={Boolean(portalAuth)}
-            />
-          </aside>
-        </div>
+        <aside className="min-w-0">
+          <AccountSpaceSidebar
+            membershipLabel={spaceSummary.membershipLabel}
+            wechatBound={spaceSummary.wechatBound}
+            securityHint={spaceSummary.securityHint}
+            onLogout={handleLogout}
+            loggedIn={Boolean(portalAuth)}
+          />
+        </aside>
       </div>
     </div>
   );

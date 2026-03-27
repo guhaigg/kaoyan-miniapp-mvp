@@ -1,20 +1,17 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
-import { BellRing, Radar, UserRound, WalletCards } from "lucide-react";
 import type { AccountSpacePanel, AccountSpaceTab } from "./account-space-query";
 
 const TAB_ITEMS: Array<{
   id: AccountSpaceTab;
   label: string;
-  icon: typeof BellRing;
 }> = [
-  { id: "activity", label: "动态", icon: BellRing },
-  { id: "following", label: "关注", icon: UserRound },
-  { id: "radar", label: "雷达", icon: Radar },
-  { id: "account", label: "账号", icon: WalletCards },
+  { id: "activity", label: "动态" },
+  { id: "following", label: "关注" },
+  { id: "radar", label: "雷达" },
+  { id: "account", label: "账号" },
 ];
 
 export function AccountSpaceTabs({
@@ -28,10 +25,9 @@ export function AccountSpaceTabs({
   const searchParams = useSearchParams();
 
   return (
-    <nav className="mt-5 rounded-[1.8rem] border border-white/80 bg-white/85 p-2 shadow-[0_20px_50px_rgba(122,147,192,0.14)] backdrop-blur">
-      <div className="flex gap-2 overflow-x-auto">
+    <nav className="border-b border-black/6 bg-white/92 backdrop-blur">
+      <div className="mx-auto flex max-w-[1440px] items-center gap-1 overflow-x-auto px-4 md:gap-5 md:px-6">
         {TAB_ITEMS.map((item) => {
-          const Icon = item.icon;
           const params = new URLSearchParams(searchParams.toString());
           params.set("tab", item.id);
           if (item.id === "account" && (activePanel === "billing" || activePanel === "security")) {
@@ -46,19 +42,13 @@ export function AccountSpaceTabs({
             <Link
               key={item.id}
               href={`${pathname}?${params.toString()}`}
-              className="relative inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold"
+              className={`relative inline-flex shrink-0 items-center py-4 text-sm font-semibold transition-colors after:absolute after:bottom-0 after:left-0 after:h-[3px] after:w-full after:rounded-full after:transition-opacity ${
+                active
+                  ? "text-[#00aeec] after:opacity-100 after:bg-[#00aeec]"
+                  : "text-slate-600 hover:text-slate-900 after:opacity-0 after:bg-transparent"
+              }`}
             >
-              {active ? (
-                <motion.span
-                  layoutId="account-space-tab-highlight"
-                  transition={{ type: "spring", stiffness: 340, damping: 28 }}
-                  className="absolute inset-0 rounded-full bg-[linear-gradient(90deg,#ff7fb7,#68d2ff)] shadow-[0_12px_28px_rgba(253,146,195,0.3)]"
-                />
-              ) : null}
-              <span className={`relative z-10 inline-flex items-center gap-2 ${active ? "text-white" : "text-slate-600"}`}>
-                <Icon size={16} />
-                {item.label}
-              </span>
+              {item.label}
             </Link>
           );
         })}

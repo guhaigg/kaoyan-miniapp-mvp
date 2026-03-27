@@ -10,6 +10,13 @@
 - `/account/security`、`/account/billing`、`/account/notifications` 现在都会 redirect 到 `/account` 的 query-state 视图。
 - 旧的 `AccountDashboard.tsx` 已移除，会员、微信绑定、密码修改和退出登录已经收敛到新的 `account` tab。
 
+## 2026-03-27 Bilibili Auth Shell Rollout
+
+- Web 认证入口已切到 Bilibili 风格亮色壳：共享首页背景、顶栏和居中模态框。
+- `/login` 与 `/register` 现在共用同一套 `BiliAuthModal` 视觉与交互骨架。
+- 顶栏已支持头像触发的浮层账号卡（显示关注/雷达/动态计数与快捷入口）。
+- `/account` 首屏已经改为 Bilibili-space 风格布局，并保持真实业务数据映射（关注、雷达、动态、会员状态）。
+
 本文档是当前现状主文档，用于记录真实开发状态，帮助后续继续开发、排障、部署与任务拆解。
 
 未来目标、阶段路线和执行顺序请看：

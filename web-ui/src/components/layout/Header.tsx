@@ -1,165 +1,253 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
-import { Activity, BellRing, LogOut, Menu, Search, Star, Target, Terminal, UserCircle } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { Bell, Compass, LogIn, Menu, Search, Sparkles, Star } from "lucide-react";
 import { ApiError, logoutUser } from "@/lib/api";
+import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
+import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
+import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
+import BiliHeaderUserCard from "./BiliHeaderUserCard";
+import { buildHeaderSummary } from "./bili-header-data";
+
+const NAV_ITEMS = [
+  { href: "/", label: "首页" },
+  { href: "/search", label: "公告" },
+  { href: "/radar", label: "雷达" },
+  { href: "/watchlist", label: "关注" },
+];
 
 export default function Header() {
   const router = useRouter();
-  const { setWatchlistOpen, portalAuth, clearPortalAuth, showToast } = useAppStore();
   const pathname = usePathname();
-  const showAdminNav = Boolean(portalAuth?.isAdmin);
-  const showUpgradeCta = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
+  const {
+    setWatchlistOpen,
+    portalAuth,
+    clearPortalAuth,
+    showToast,
+    setAuthOpen,
+  } = useAppStore();
+
+  const canManageScopeTargets = Boolean(portalAuth?.isPremium || portalAuth?.isAdmin);
+  const subscriptionsQuery = useSubscriptionsQuery(Boolean(portalAuth));
+  const monitorTargetsQuery = useMonitorTargetsQuery(Boolean(portalAuth && canManageScopeTargets));
+  const noticesQuery = useWatchlistNoticesQuery(Boolean(portalAuth));
+
+  const [searchInput, setSearchInput] = useState("");
+  const [userCardOpen, setUserCardOpen] = useState(false);
+  const cardAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!cardAnchorRef.current?.contains(event.target as Node)) {
+        setUserCardOpen(false);
+      }
+    }
+
+    function handleEsc(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setUserCardOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEsc);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEsc);
+    };
+  }, []);
+
+  useEffect(() => {
+    setUserCardOpen(false);
+  }, [pathname]);
 
   async function handleLogout() {
     try {
       await logoutUser();
       clearPortalAuth();
+      setUserCardOpen(false);
       showToast("已退出登录", "当前会话已结束", "info");
-      router.push("/login");
+      setAuthOpen(false);
+      router.push("/");
     } catch (error) {
       showToast("退出失败", error instanceof ApiError ? error.message : "请稍后重试", "urgent");
     }
   }
 
+  function openAuth(mode: "login" | "register") {
+    setAuthOpen(true, mode);
+  }
+
   function handleOpenWatchlist() {
     if (!portalAuth) {
       showToast("请先登录", "收藏、关注和调剂等深度功能需要登录后使用", "info");
-      router.push("/login");
+      openAuth("login");
       return;
     }
     setWatchlistOpen(true);
   }
 
-  const navItems = [
-    { href: "/", label: "全网流", icon: Activity },
-    { href: "/search", label: "数据检索", icon: Search },
-    { href: "/radar", label: "胜率测算", icon: Target },
-    ...(portalAuth ? [{ href: "/watchlist", label: "关注库", icon: Star }] : []),
-    ...(showAdminNav ? [{ href: "/admin", label: "监控台", icon: Terminal }] : []),
-  ];
+  function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const keyword = searchInput.trim();
+    if (!keyword) {
+      router.push("/search");
+      return;
+    }
+    router.push(`/search?keywords=${encodeURIComponent(keyword)}`);
+  }
+
+  const summary = portalAuth
+    ? buildHeaderSummary({
+        username: portalAuth.username,
+        nickname: portalAuth.nickname,
+        isPremium: portalAuth.isPremium,
+        followingCount: subscriptionsQuery.data?.items.length || 0,
+        radarCount: canManageScopeTargets ? monitorTargetsQuery.data?.items.length || 0 : 0,
+        activityCount: noticesQuery.data?.length || 0,
+      })
+    : null;
+
+  const membershipLabel = portalAuth?.isAdmin ? "管理员" : portalAuth?.isPremium ? "高级会员" : "普通用户";
+  const showUpgradeCta = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
 
   return (
     <>
-      <header className="glass-panel fixed top-0 z-50 w-full border-x-0 border-t-0 px-6 py-4 transition-all duration-300">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <Link href="/" className="group flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)] transition-transform group-hover:scale-105">
-              <span className="text-2xl font-black tracking-tighter text-[#2c3e50]">GW</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="leading-tight text-lg font-bold tracking-widest text-white">
-                格物简录
-              </span>
-              <span className="font-mono text-[10px] tracking-widest text-cyan-400">
-                GEWUJL.CLOUD
-              </span>
-            </div>
-          </Link>
+      <header className="fixed inset-x-0 top-0 z-50">
+        <div className="mx-auto max-w-[1440px] px-3 py-2 md:px-6">
+          <div className="bili-surface flex h-12 items-center gap-2 rounded-full px-3 text-[#18191c] md:h-14 md:gap-3 md:px-5">
+            <Link href="/" className="shrink-0 text-xl font-black tracking-tight text-[#00aeec] md:text-2xl">
+              GEWU
+            </Link>
 
-          <nav className="hidden items-center gap-10 text-sm font-medium md:flex">
-            {navItems.map((item) => {
-              const active = pathname === item.href;
-              const Icon = item.icon;
-              return (
+            <nav className="hidden items-center gap-1 lg:flex">
+              {NAV_ITEMS.map((item) => {
+                const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`rounded-full px-3 py-2 text-sm font-semibold transition-colors ${
+                      active ? "bg-[#00aeec]/12 text-[#00a0df]" : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <form onSubmit={handleSearchSubmit} className="mx-auto hidden min-w-0 flex-1 lg:block">
+              <div className="flex h-10 items-center rounded-full border border-black/5 bg-white px-3">
+                <Search size={16} className="text-slate-400" />
+                <input
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="搜索公告 / 学校 / 关键词"
+                  className="ml-2 w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                />
+              </div>
+            </form>
+
+            <div className="ml-auto flex items-center gap-1 md:gap-2">
+              {showUpgradeCta ? (
                 <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`relative flex items-center gap-2 transition-colors ${
-                    active ? "text-white" : "text-slate-400 hover:text-white"
-                  }`}
+                  href="/account?tab=account&panel=billing"
+                  className="hidden rounded-full bg-[linear-gradient(90deg,#fb7299,#00aeec)] px-3 py-2 text-xs font-semibold text-white md:inline-flex"
                 >
-                  <Icon size={16} /> {item.label}
-                  {active ? (
-                    <motion.div
-                      layoutId="nav-indicator"
-                      className="absolute -bottom-[22px] left-0 right-0 h-[2px] bg-cyan-400 shadow-[0_0_8px_#06b6d4]"
+                  开通高级会员
+                </Link>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={handleOpenWatchlist}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                title="关注"
+              >
+                <Star size={18} />
+              </button>
+              <Link
+                href="/radar"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                title="雷达"
+              >
+                <Compass size={18} />
+              </Link>
+              <Link
+                href="/account?tab=activity"
+                className="hidden h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 md:inline-flex"
+                title="动态"
+              >
+                <Bell size={18} />
+              </Link>
+
+              {portalAuth && summary ? (
+                <div className="relative" ref={cardAnchorRef}>
+                  <button
+                    type="button"
+                    onClick={() => setUserCardOpen((prev) => !prev)}
+                    className="inline-flex items-center gap-2 rounded-full border border-black/5 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[linear-gradient(135deg,#ffd7e5,#d7f2ff)] text-sm font-black text-slate-700">
+                      {summary.displayName.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="hidden max-w-[108px] truncate md:inline">{summary.displayName}</span>
+                  </button>
+
+                  {userCardOpen ? (
+                    <BiliHeaderUserCard
+                      summary={summary}
+                      membershipLabel={membershipLabel}
+                      onLogout={handleLogout}
+                      onNavigate={() => setUserCardOpen(false)}
                     />
                   ) : null}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="flex items-center gap-3">
-            {showUpgradeCta ? (
-              <Link
-                href="/account/billing"
-                className="hidden rounded-full border border-amber-400/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-100 transition-colors hover:bg-amber-500/20 md:flex"
-              >
-                开通高级会员
-              </Link>
-            ) : null}
-            {portalAuth ? (
-              <div className="hidden items-center gap-3 md:flex">
-                <Link
-                  href="/watchlist"
-                  className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-4 py-2 text-xs font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20"
-                >
-                  关注工作台
-                </Link>
-                <Link
-                  href="/account"
-                  className="group relative overflow-hidden rounded-full border border-white/20 bg-white/5 px-6 py-2 transition-all hover:border-cyan-400"
-                >
-                  <div className="absolute inset-0 translate-y-full bg-cyan-500/20 transition-transform duration-300 ease-out group-hover:translate-y-0" />
-                  <span className="relative flex items-center gap-2 text-sm font-bold text-white drop-shadow-md">
-                    <UserCircle size={18} />
-                    {`账户：${portalAuth.nickname || portalAuth.username}`}
-                  </span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="rounded-full border border-red-400/25 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-50 transition-colors hover:bg-red-500/20"
-                >
-                  <span className="flex items-center gap-2">
-                    <LogOut size={14} />
-                    退出
-                  </span>
-                </button>
-              </div>
-            ) : (
-              <div className="hidden items-center gap-3 md:flex">
-                <Link
-                  href="/login"
-                  className="group relative overflow-hidden rounded-full border border-white/20 bg-white/5 px-6 py-2 transition-all hover:border-cyan-400"
-                >
-                  <div className="absolute inset-0 translate-y-full bg-cyan-500/20 transition-transform duration-300 ease-out group-hover:translate-y-0" />
-                  <span className="relative flex items-center gap-2 text-sm font-bold text-white drop-shadow-md">
-                    <UserCircle size={18} />
+                </div>
+              ) : (
+                <div className="hidden items-center gap-2 md:flex">
+                  <button
+                    type="button"
+                    onClick={() => openAuth("login")}
+                    className="inline-flex items-center gap-1 rounded-full border border-black/5 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    <LogIn size={14} />
                     登录
-                  </span>
-                </Link>
-                <Link
-                  href="/register"
-                  className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-xs font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20"
-                >
-                  注册
-                </Link>
-              </div>
-            )}
-            <button
-              onClick={handleOpenWatchlist}
-              className="rounded-lg bg-white/10 p-2 text-white transition-colors hover:bg-white/20 md:hidden"
-            >
-              <Menu size={20} />
-            </button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAuth("register")}
+                    className="inline-flex items-center gap-1 rounded-full bg-[linear-gradient(90deg,#fb7299,#00aeec)] px-3 py-2 text-xs font-semibold text-white"
+                  >
+                    <Sparkles size={14} />
+                    注册
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleOpenWatchlist}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 lg:hidden"
+                title="菜单"
+              >
+                <Menu size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       <button
+        type="button"
         onClick={handleOpenWatchlist}
         data-watchlist-fab="true"
-        className="group fixed bottom-10 right-6 z-[80] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-cyan-600 to-blue-700 shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform hover:scale-110"
+        className="group fixed bottom-8 right-6 z-[80] flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#fb7299,#00aeec)] shadow-[0_16px_36px_rgba(14,116,144,0.28)] transition-transform hover:scale-105 md:hidden"
       >
-        <BellRing className="text-white group-hover:animate-pulse" size={24} />
-        <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-[#050b14] bg-red-500"></span>
+        <Bell className="text-white" size={18} />
       </button>
     </>
   );
