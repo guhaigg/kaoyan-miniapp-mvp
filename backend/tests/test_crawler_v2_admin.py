@@ -473,7 +473,7 @@ def test_admin_announcement_foundation_refresh_fans_out_school_enrich_and_merges
         ]
         paths.department_catalog.write_text(json.dumps(departments, ensure_ascii=False, indent=2), encoding="utf-8")
         paths.department_candidates.write_text(json.dumps(candidates, ensure_ascii=False, indent=2), encoding="utf-8")
-        return departments, candidates
+        return departments, candidates, []
 
     def _fake_merge(*, paths, dry_run):
         diff_payload = {
@@ -577,5 +577,6 @@ def test_admin_announcement_foundation_refresh_fans_out_school_enrich_and_merges
         assert school_snapshot[0]["school_name"] == "Example University"
         assert school_snapshot[0]["source_meta"]["seed_hint_urls"] == ["https://yz.example.edu.cn/"]
         assert run.result_payload["registry_diff"]["added"] == ["school|ExampleUniversity|"]
+        assert steps[7].result_payload["skipped_school_count"] == 0
 
     shutil.rmtree(tmp_path, ignore_errors=True)

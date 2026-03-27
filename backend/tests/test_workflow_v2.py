@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.db import SessionLocal
 from app.models import WorkflowRun, WorkflowStep
+from app.services import announcement_foundation
 from app.services import workflow_v2
 
 
@@ -191,3 +194,76 @@ def test_await_chsi_school_enrich_barrier_reports_failed_school_summary():
         assert run.status == "failed"
         assert barrier.result_payload["failed_schools"][0]["school_code"] == "1002"
         assert run.result_payload["failed_schools"][0]["school_code"] == "1002"
+
+
+def test_process_build_department_candidates_step_includes_skipped_school_summary(tmp_path, monkeypatch):
+    paths = announcement_foundation.foundation_paths(tmp_path)
+    paths.school_catalog.write_text(
+        json.dumps(
+            [
+                {
+                    "school_code": "1001",
+                    "school_name": "Healthy University",
+                    "source_meta": {
+                        "department_page_url": "https://healthy.example.edu.cn/departments/",
+                    },
+                }
+            ],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ANNOUNCEMENT_FOUNDATION_DATA_DIR", str(tmp_path))
+
+    with SessionLocal() as db:
+        run = WorkflowRun(
+            workflow_type=workflow_v2.WORKFLOW_TYPE_ANNOUNCEMENT_CATALOG_REFRESH,
+            scope_type="announcement",
+            scope_key="announcement-foundation",
+            scope_label="announcement-foundation",
+            status="running",
+            request_payload={},
+            result_payload={},
+        )
+        db.add(run)
+        db.flush()
+        step = WorkflowStep(
+            run_id=run.id,
+            step_type=workflow_v2.STEP_TYPE_BUILD_DEPARTMENT_CANDIDATES,
+            scope_type="announcement",
+            scope_key="announcement-foundation",
+            status="running",
+            max_attempts=2,
+            timeout_seconds=600,
+            available_at=workflow_v2.utcnow(),
+            input_payload={"school_names": [], "dry_run": True, "sources": ["chsi"]},
+            result_payload={},
+        )
+        db.add(step)
+        db.flush()
+
+        monkeypatch.setattr(
+            "app.services.announcement_foundation.build_department_candidates",
+            lambda schools, paths: (
+                [],
+                [],
+                [
+                    {
+                        "school_code": "1002",
+                        "school_name": "Timeout University",
+                        "department_page_url": "https://timeout.example.edu.cn/departments/",
+                        "error_type": "ReadTimeout",
+                        "error_message": "The read operation timed out",
+                    }
+                ],
+            ),
+        )
+
+        result = workflow_v2._process_build_department_candidates_step(db, step)
+
+        assert result["department_count"] == 0
+        assert result["department_candidate_count"] == 0
+        assert result["skipped_school_count"] == 1
+        assert result["skipped_schools"][0]["school_code"] == "1002"
+        assert result["skipped_schools"][0]["error_type"] == "ReadTimeout"

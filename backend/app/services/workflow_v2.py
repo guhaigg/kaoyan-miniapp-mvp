@@ -1733,7 +1733,7 @@ def _process_build_department_candidates_step(db: Session, step: WorkflowStep) -
     payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
     paths = foundation_paths()
     schools = list(json.loads(paths.school_catalog.read_text(encoding="utf-8"))) if paths.school_catalog.exists() else []
-    departments, candidates = build_department_candidates(schools, paths=paths)
+    departments, candidates, skipped_schools = build_department_candidates(schools, paths=paths)
     next_step = _queue_next_announcement_catalog_step(
         db,
         step=step,
@@ -1743,6 +1743,8 @@ def _process_build_department_candidates_step(db: Session, step: WorkflowStep) -
     return {
         "department_count": len(departments),
         "department_candidate_count": len(candidates),
+        "skipped_school_count": len(skipped_schools),
+        "skipped_schools": skipped_schools,
         "base_dir": str(paths.base_dir),
         "child_step_id": next_step.id if next_step is not None else None,
     }

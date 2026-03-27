@@ -486,19 +486,32 @@ def build_department_candidates(
     schools: list[dict[str, Any]],
     *,
     paths: FoundationPaths,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     departments: list[dict[str, Any]] = []
     candidates: list[dict[str, Any]] = []
+    skipped_schools: list[dict[str, Any]] = []
     for school in schools:
         source_meta = dict(school.get("source_meta") or {})
         department_page_url = str(source_meta.get("department_page_url") or "").strip()
         if not department_page_url:
             continue
-        parsed_departments = _parse_department_listing_page(
-            department_page_url,
-            _fetch_text(department_page_url),
-            str(school.get("school_name") or ""),
-        )
+        try:
+            parsed_departments = _parse_department_listing_page(
+                department_page_url,
+                _fetch_text(department_page_url),
+                str(school.get("school_name") or ""),
+            )
+        except httpx.TimeoutException as exc:
+            skipped_schools.append(
+                {
+                    "school_code": school.get("school_code"),
+                    "school_name": school.get("school_name"),
+                    "department_page_url": department_page_url,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                }
+            )
+            continue
         for item in parsed_departments:
             departments.append(
                 {
@@ -526,7 +539,7 @@ def build_department_candidates(
             )
     _write_json(paths.department_catalog, departments)
     _write_json(paths.department_candidates, candidates)
-    return departments, candidates
+    return departments, candidates, skipped_schools
 
 
 def _build_homepage_seed_candidates(homepage_url: str) -> list[str]:
@@ -698,7 +711,7 @@ def refresh_announcement_foundation(
     majors = fetch_chsi_major_catalog(schools, paths=paths) if "chsi" in enabled_sources else []
     official_rows = fetch_official_seed_rosters(paths=paths) if "official_rosters" in enabled_sources else []
     homepage_rows = fetch_school_homepages(paths=paths) if "school_homepages" in enabled_sources else []
-    departments, candidates = build_department_candidates(schools, paths=paths)
+    departments, candidates, skipped_schools = build_department_candidates(schools, paths=paths)
     diff_payload = merge_announcement_seed_registry(paths=paths, dry_run=dry_run)
     return {
         "school_count": len(schools),
@@ -707,6 +720,8 @@ def refresh_announcement_foundation(
         "official_seed_candidate_count": len(official_rows),
         "homepage_count": len(homepage_rows),
         "department_candidate_count": len(candidates),
+        "skipped_school_count": len(skipped_schools),
+        "skipped_schools": skipped_schools,
         "registry_diff": diff_payload,
         "base_dir": str(paths.base_dir),
         "dry_run": dry_run,
