@@ -2,7 +2,7 @@ import type { MonitorTargetItem, NotificationEventItem, SubscriptionItem } from 
 import type { PortalAuthSession } from "@/lib/store";
 
 export type BiliHeaderTier = "basic" | "premium" | "admin";
-export type BiliHeaderCounterState = "ready" | "loading" | "unavailable";
+export type BiliHeaderCounterState = "ready" | "loading" | "unavailable" | "locked";
 
 export interface BiliHeaderCounter {
   label: string;
@@ -59,6 +59,9 @@ function aggregateCounterState(counters: BiliHeaderCounter[]): BiliHeaderCounter
   if (counters.some((item) => item.state === "unavailable")) {
     return "unavailable";
   }
+  if (counters.some((item) => item.state === "locked")) {
+    return "locked";
+  }
   return "ready";
 }
 
@@ -71,7 +74,7 @@ export function buildBiliHeaderSummary(args: {
   const tier = buildTier(args.portalAuth);
   const counters = [
     buildCounter("订阅", args.subscriptions),
-    buildCounter("雷达", args.monitorTargets),
+    buildCounter("监控", args.monitorTargets),
     buildCounter("提醒", args.pendingNotices),
   ];
 

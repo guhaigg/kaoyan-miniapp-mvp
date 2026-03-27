@@ -9,6 +9,7 @@ import { ApiError, logoutUser } from "@/lib/api";
 import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
 import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
+import { readSearchKeywordsFromParams, resolveSearchQueryTypeFromParams } from "@/lib/search-route-state";
 import { useAppStore } from "@/lib/store";
 import BiliHeaderUserCard from "./BiliHeaderUserCard";
 import { type BiliHeaderCounterState, buildBiliHeaderSummary } from "./bili-header-data";
@@ -38,8 +39,8 @@ function HeaderSearchAware() {
   const searchParams = useSearchParams();
   return (
     <HeaderFrame
-      currentSearchTab={searchParams.get("tab")}
-      searchParamValue={searchParams.get("q") || searchParams.get("keyword") || searchParams.get("keywords") || ""}
+      currentSearchTab={resolveSearchQueryTypeFromParams(searchParams)}
+      searchParamValue={readSearchKeywordsFromParams(searchParams)}
       searchParamKey={searchParams.toString()}
     />
   );
@@ -77,6 +78,7 @@ function HeaderFrame({
   });
   const monitorTargetsState = resolveCounterState({
     enabled: canManageScopeTargets,
+    disabledState: "locked",
     isError: monitorTargetsQuery.isError,
     isLoading: monitorTargetsQuery.isLoading || monitorTargetsQuery.isPending,
     hasData: Boolean(monitorTargetsQuery.data),
@@ -174,7 +176,7 @@ function HeaderFrame({
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const params = new URLSearchParams();
-    params.set("tab", pathname === "/search" && currentSearchTab === "adjustments" ? "adjustments" : "announcements");
+    params.set("tab", pathname === "/search" ? currentSearchTab || "announcements" : "announcements");
     if (searchValue.trim()) {
       params.set("q", searchValue.trim());
     }
@@ -407,12 +409,13 @@ function isNavItemActive(
 
 function resolveCounterState(args: {
   enabled: boolean;
+  disabledState?: BiliHeaderCounterState;
   isError: boolean;
   isLoading: boolean;
   hasData: boolean;
 }): BiliHeaderCounterState {
   if (!args.enabled) {
-    return "unavailable";
+    return args.disabledState ?? "unavailable";
   }
   if (args.isError) {
     return "unavailable";

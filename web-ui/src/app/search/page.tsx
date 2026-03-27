@@ -34,6 +34,7 @@ import {
 import { fetchAdjustmentDetail } from "@/api/search";
 import { useAdjustmentSearchMutation, useAnnouncementSearchMutation } from "@/hooks/useSearch";
 import { useAddSubscriptionMutation, useDeleteSubscriptionMutation, useSubscriptionsQuery } from "@/hooks/useSubscriptions";
+import { resolveSearchQueryTypeFromParams } from "@/lib/search-route-state";
 import { useAppStore } from "@/lib/store";
 import { watchlistNoticeQueryKey } from "@/lib/notice-cache";
 
@@ -1991,7 +1992,7 @@ function parseSearchStateFromParams(
     hideMentorWarnings: parseBooleanParam(readSearchParam(searchParams, ["safe", "hideMentorWarnings", "exclude_mentor_warnings"])),
   };
   const keywords = readSearchParam(searchParams, ["q", "keyword", "keywords"]);
-  const queryType = resolveQueryTypeFromParams(searchParams, filters, keywords);
+  const queryType = resolveSearchQueryTypeFromParams(searchParams);
   const shouldSearch = hasSearchIntent(keywords, filters);
 
   return {
@@ -2053,38 +2054,6 @@ function parseCsvParam(value: string) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function resolveQueryTypeFromParams(
-  searchParams: Pick<URLSearchParams, "get">,
-  filters: SearchCommandCenterFilters,
-  keywords: string,
-): "announcements" | "adjustments" {
-  const tab = searchParams.get("tab");
-  if (tab === "announcements" || tab === "adjustments") {
-    return tab;
-  }
-
-  const hasAdjustmentOnlySignals = Boolean(
-    filters.major.trim() ||
-      filters.region !== "不限" ||
-      filters.city.trim() ||
-      filters.year.trim() ||
-      filters.level !== "不限" ||
-      filters.type !== "all" ||
-      filters.score.trim() ||
-      filters.historyBackedOnly ||
-      filters.longTrackOnly ||
-      filters.referenceLinksOnly ||
-      filters.hideMentorWarnings ||
-      isMajorCodeLikeQuery(keywords.trim()),
-  );
-
-  if (hasAdjustmentOnlySignals) {
-    return "adjustments";
-  }
-
-  return "announcements";
 }
 
 function hasSearchIntent(keywords: string, filters: SearchCommandCenterFilters) {

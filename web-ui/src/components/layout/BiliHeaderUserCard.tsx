@@ -55,6 +55,12 @@ function renderCounterValue(counter: BiliHeaderCounter) {
       tone: "text-slate-500",
     };
   }
+  if (counter.state === "locked") {
+    return {
+      value: "未开通",
+      tone: "text-sky-600",
+    };
+  }
   return {
     value: "暂不可用",
     tone: "text-amber-600",
@@ -67,6 +73,9 @@ function buildFooterCopy(summary: BiliHeaderSummary) {
   }
   if (summary.counterState === "loading") {
     return "统计仍在加载，先展示已确认的账号层信息。";
+  }
+  if (summary.counterState === "locked") {
+    return "监控位属于高级功能，当前先展示你已拥有的订阅和提醒。";
   }
   return "部分统计暂时不可用，请稍后重试或进入对应页面查看。";
 }
