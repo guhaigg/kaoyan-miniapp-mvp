@@ -3,6 +3,7 @@ import { BellRing, ExternalLink, Radar, Sparkles } from "lucide-react";
 import type { AccountActivityItem } from "./account-space-data";
 import { formatAccountSpaceDate } from "./account-space-data";
 import type { AccountSpacePanel } from "./account-space-query";
+import { AccountEmptyState, AccountSkeletonGrid, AccountSurface } from "./AccountSpaceUi";
 
 function kindLabel(kind: AccountActivityItem["kind"]) {
   if (kind === "signal") return "雷达命中";
@@ -33,13 +34,12 @@ export function AccountActivityTab({
 }) {
   if (!loggedIn) {
     return (
-      <section className="rounded-[2rem] border border-white/80 bg-white/90 p-8 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-        <div className="text-xs uppercase tracking-[0.24em] text-sky-500">Activity</div>
-        <h2 className="mt-3 text-2xl font-bold text-slate-900">登录后，这里会变成你的个人动态流</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-          新公告、雷达命中、已送达通知都会按时间线聚在这里，先看到发生了什么，再决定下一步要盯谁。
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3">
+      <AccountEmptyState
+        eyebrow="Activity"
+        title="登录后，这里会变成你的个人动态流"
+        description="新公告、雷达命中、已送达通知都会按时间线聚在这里，先看到发生了什么，再决定下一步要盯谁。"
+        actions={
+          <>
           <Link
             href="/login"
             className="rounded-full bg-[linear-gradient(90deg,#ff7fb7,#68d2ff)] px-5 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(253,146,195,0.28)]"
@@ -52,21 +52,15 @@ export function AccountActivityTab({
           >
             新建账号
           </Link>
-        </div>
-      </section>
+          </>
+        }
+      />
     );
   }
 
   if (loading) {
     return (
-      <section className="space-y-4">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <div
-            key={index}
-            className="h-40 animate-pulse rounded-[2rem] border border-white/80 bg-white/75 shadow-[0_20px_60px_rgba(122,147,192,0.1)]"
-          />
-        ))}
-      </section>
+      <AccountSkeletonGrid count={3} className="space-y-4" itemClassName="h-40" />
     );
   }
 
@@ -79,27 +73,27 @@ export function AccountActivityTab({
       ) : null}
 
       {items.length === 0 ? (
-        <div className="rounded-[2rem] border border-white/80 bg-white/90 p-8 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-          <div className="text-xs uppercase tracking-[0.24em] text-sky-500">No Activity Yet</div>
-          <h2 className="mt-3 text-2xl font-bold text-slate-900">你的空间还没有长出第一条动态</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-            先去搜索学校、加一点关注或补一个雷达范围，之后新的公告和命中信号就会开始在这里累积。
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3">
+        <AccountEmptyState
+          eyebrow="No Activity Yet"
+          title="你的空间还没有长出第一条动态"
+          description="先去搜索学校、加一点关注或补一个雷达范围，之后新的公告和命中信号就会开始在这里累积。"
+          actions={
+            <>
             <Link href="/search" className="rounded-full border border-sky-100 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700">
               去搜索页加关注
             </Link>
             <Link href="/watchlist" className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700">
               去工作台设置雷达
             </Link>
-          </div>
-        </div>
+            </>
+          }
+        />
       ) : null}
 
       {items.map((item) => (
-        <article
+        <AccountSurface
           key={item.id}
-          className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)] transition-transform duration-200 hover:-translate-y-0.5"
+          className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)] transition-transform duration-200 hover:-translate-y-0.5"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -133,7 +127,7 @@ export function AccountActivityTab({
               </a>
             </div>
           ) : null}
-        </article>
+        </AccountSurface>
       ))}
     </section>
   );

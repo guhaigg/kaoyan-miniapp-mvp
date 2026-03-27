@@ -10,6 +10,7 @@ import {
   subscriptionCardTitle,
   subscriptionTypeLabel,
 } from "./account-space-data";
+import { AccountEmptyState, AccountSkeletonGrid, AccountSurface } from "./AccountSpaceUi";
 
 function SubscriptionWall({ subscriptions }: { subscriptions: SubscriptionItem[] }) {
   return (
@@ -24,9 +25,9 @@ function SubscriptionWall({ subscriptions }: { subscriptions: SubscriptionItem[]
 
       <div className="grid gap-4 md:grid-cols-2">
         {subscriptions.map((item) => (
-          <article
+          <AccountSurface
             key={item.id}
-            className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]"
+            className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]"
           >
             <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600">
               <BellRing size={14} />
@@ -37,7 +38,7 @@ function SubscriptionWall({ subscriptions }: { subscriptions: SubscriptionItem[]
             <div className="mt-4 text-xs tracking-[0.14em] text-slate-400">
               创建于 {formatAccountSpaceDate(item.created_at) || "时间未知"}
             </div>
-          </article>
+          </AccountSurface>
         ))}
       </div>
     </section>
@@ -57,9 +58,9 @@ function RadarWall({ targets }: { targets: MonitorTargetItem[] }) {
 
       <div className="grid gap-4 md:grid-cols-2">
         {targets.map((item) => (
-          <article
+          <AccountSurface
             key={item.id}
-            className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]"
+            className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]"
           >
             <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600">
               <Radar size={14} />
@@ -73,7 +74,7 @@ function RadarWall({ targets }: { targets: MonitorTargetItem[] }) {
                 其中 {item.recent_signal.recruitment_announcement_count} 条与研招直接相关。
               </div>
             ) : null}
-          </article>
+          </AccountSurface>
         ))}
       </div>
     </section>
@@ -95,79 +96,72 @@ export function AccountFollowingTab({
 }) {
   if (!loggedIn) {
     return (
-      <section className="rounded-[2rem] border border-white/80 bg-white/90 p-8 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-        <div className="text-xs uppercase tracking-[0.24em] text-pink-500">Following</div>
-        <h2 className="mt-3 text-2xl font-bold text-slate-900">先登录，再把你想盯的学校和雷达装进这里</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-          订阅墙会展示你显式保存的学校、专业和关键词；雷达墙会展示你设置过的学校、院系和栏目级盯盘范围。
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3">
+      <AccountEmptyState
+        eyebrow="Following"
+        title="先登录，再把你想盯的学校和雷达装进这里"
+        description="订阅墙会展示你显式保存的学校、专业和关键词；雷达墙会展示你设置过的学校、院系和栏目级盯盘范围。"
+        actions={
+          <>
           <Link href="/login" className="rounded-full bg-[linear-gradient(90deg,#ff7fb7,#68d2ff)] px-5 py-3 text-sm font-semibold text-white">
             去登录
           </Link>
           <Link href="/search" className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700">
             先看看搜索页
           </Link>
-        </div>
-      </section>
+          </>
+        }
+      />
     );
   }
 
   if (loading) {
     return (
-      <section className="grid gap-4 md:grid-cols-2">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={index}
-            className="h-48 animate-pulse rounded-[2rem] border border-white/80 bg-white/75 shadow-[0_20px_60px_rgba(122,147,192,0.1)]"
-          />
-        ))}
-      </section>
+      <AccountSkeletonGrid count={4} className="grid gap-4 md:grid-cols-2" itemClassName="h-48" />
     );
   }
 
   if (subscriptions.length === 0 && monitorTargets.length === 0) {
     return (
-      <section className="rounded-[2rem] border border-white/80 bg-white/90 p-8 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-        <div className="text-xs uppercase tracking-[0.24em] text-pink-500">Following</div>
-        <h2 className="mt-3 text-2xl font-bold text-slate-900">你的关注墙还是空的</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-          先加几条院校、专业、关键词订阅，再决定要不要把学校、院系或栏目级雷达也拉进来。
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3">
+      <AccountEmptyState
+        eyebrow="Following"
+        title="你的关注墙还是空的"
+        description="先加几条院校、专业、关键词订阅，再决定要不要把学校、院系或栏目级雷达也拉进来。"
+        actions={
+          <>
           <Link href="/search" className="rounded-full border border-sky-100 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700">
             去搜索页加关注
           </Link>
           <Link href="/watchlist" className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700">
             去工作台补雷达
           </Link>
-        </div>
-      </section>
+          </>
+        }
+      />
     );
   }
 
   return (
     <section className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600">
             <Compass size={14} />
             已归档订阅
           </div>
           <div className="mt-4 text-3xl font-black text-slate-900">{subscriptions.length}</div>
           <p className="mt-2 text-sm leading-7 text-slate-600">这里放学校、专业、关键词和地区级的显式关注。</p>
-        </div>
+        </AccountSurface>
 
-        <div className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600">
             <Radar size={14} />
             雷达范围
           </div>
           <div className="mt-4 text-3xl font-black text-slate-900">{monitorTargets.length}</div>
           <p className="mt-2 text-sm leading-7 text-slate-600">学校、院系和栏目级盯盘会集中在这一块。</p>
-        </div>
+        </AccountSurface>
 
-        <div className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
             <Sparkles size={14} />
             下一步
@@ -180,7 +174,7 @@ export function AccountFollowingTab({
               ? "你已经可以直接去工作台继续加学校、院系和栏目级雷达。"
               : "学校、院系和栏目级雷达属于会员能力，但普通订阅已经能先把动态流喂起来。"}
           </p>
-        </div>
+        </AccountSurface>
       </div>
 
       {subscriptions.length > 0 ? <SubscriptionWall subscriptions={subscriptions} /> : null}

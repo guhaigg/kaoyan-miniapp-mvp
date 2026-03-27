@@ -12,6 +12,7 @@ import {
   type UserPaymentOrderItem,
 } from "@/lib/api";
 import type { AccountSpacePanel } from "./account-space-query";
+import { AccountEmptyState, AccountSkeletonGrid, AccountSurface } from "./AccountSpaceUi";
 
 const ACCOUNT_PANEL_COPY: Record<Exclude<AccountSpacePanel, null>, string> = {
   billing: "旧的会员页已经并到当前 tab，会员方案、订单列表和升级入口都会留在这里。",
@@ -162,13 +163,12 @@ export function AccountAccountTab({
 
   if (!loggedIn) {
     return (
-      <section className="rounded-[2rem] border border-white/80 bg-white/90 p-8 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
-        <div className="text-xs uppercase tracking-[0.24em] text-sky-500">Account</div>
-        <h2 className="mt-3 text-2xl font-bold text-slate-900">登录后，这里会变成你的账号操作区</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-          会员订单、微信绑定、密码修改和退出登录都会集中在这个 tab 里，不再把首屏占满。
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3">
+      <AccountEmptyState
+        eyebrow="Account"
+        title="登录后，这里会变成你的账号操作区"
+        description="会员订单、微信绑定、密码修改和退出登录都会集中在这个 tab 里，不再把首屏占满。"
+        actions={
+          <>
           <Link
             href="/login"
             className="rounded-full bg-[linear-gradient(90deg,#ff7fb7,#68d2ff)] px-5 py-3 text-sm font-semibold text-white"
@@ -181,8 +181,9 @@ export function AccountAccountTab({
           >
             新建账号
           </Link>
-        </div>
-      </section>
+          </>
+        }
+      />
     );
   }
 
@@ -195,7 +196,7 @@ export function AccountAccountTab({
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600">
             <Sparkles size={14} />
             会员状态
@@ -206,29 +207,29 @@ export function AccountAccountTab({
               ? `到期时间：${new Date(premiumExpiresAt).toLocaleString("zh-CN", { hour12: false })}`
               : "当前没有会员到期时间记录。"}
           </p>
-        </div>
+        </AccountSurface>
 
-        <div className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600">
             <Link2 size={14} />
             微信绑定
           </div>
           <div className="mt-4 text-2xl font-black text-slate-900">{wechatBound ? "已绑定" : "未绑定"}</div>
           <p className="mt-2 text-sm leading-7 text-slate-600">绑定后，小程序 silent-login 可以更稳定地命中当前主账号。</p>
-        </div>
+        </AccountSurface>
 
-        <div className="rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
             <ShieldCheck size={14} />
             安全维护
           </div>
           <div className="mt-4 text-2xl font-black text-slate-900">密码与会话</div>
           <p className="mt-2 text-sm leading-7 text-slate-600">密码修改和退出登录都会保留在这块，不会再占账号页首屏。</p>
-        </div>
+        </AccountSurface>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <section className="rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
+        <AccountSurface>
           <div className="text-xs uppercase tracking-[0.24em] text-sky-500">Membership</div>
           <h3 className="mt-3 text-2xl font-bold text-slate-900">会员与订单</h3>
           <p className="mt-2 text-sm leading-7 text-slate-600">
@@ -270,11 +271,7 @@ export function AccountAccountTab({
               订单记录
             </div>
             {ordersLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="h-20 animate-pulse rounded-[1.4rem] border border-slate-100 bg-slate-50/80" />
-                ))}
-              </div>
+              <AccountSkeletonGrid count={3} className="space-y-3" itemClassName="h-20 rounded-[1.4rem] border-slate-100 bg-slate-50/80 shadow-none" />
             ) : paymentOrders.length > 0 ? (
               <div className="space-y-3">
                 {paymentOrders.map((item) => (
@@ -301,10 +298,10 @@ export function AccountAccountTab({
               </div>
             )}
           </div>
-        </section>
+        </AccountSurface>
 
         <div className="space-y-5">
-          <section className="rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
+          <AccountSurface>
             <div className="text-xs uppercase tracking-[0.24em] text-sky-500">Security</div>
             <h3 className="mt-3 text-2xl font-bold text-slate-900">密码与绑定</h3>
             <div className="mt-5 space-y-3">
@@ -362,9 +359,9 @@ export function AccountAccountTab({
                 ) : null}
               </div>
             ) : null}
-          </section>
+          </AccountSurface>
 
-          <section className="rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]">
+          <AccountSurface>
             <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Session</div>
             <h3 className="mt-3 text-2xl font-bold text-slate-900">退出登录</h3>
             <p className="mt-2 text-sm leading-7 text-slate-600">
@@ -378,7 +375,7 @@ export function AccountAccountTab({
               <LogOut size={16} />
               退出登录
             </button>
-          </section>
+          </AccountSurface>
 
           {message ? (
             <div className="rounded-[1.4rem] border border-slate-200 bg-white/90 px-4 py-4 text-sm text-slate-600 shadow-[0_16px_36px_rgba(122,147,192,0.12)]">
