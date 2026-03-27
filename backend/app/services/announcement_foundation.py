@@ -263,27 +263,54 @@ def _category_page_url(detail_doc: html.HtmlElement, detail_url: str, label: str
     return urljoin(detail_url, anchor.get("href") or "")
 
 
+def enrich_chsi_school_entry(school: dict[str, Any]) -> dict[str, Any]:
+    detail_url = str(school.get("chsi_school_url") or "").strip()
+    if not detail_url:
+        return dict(school)
+    detail_text = _fetch_text(detail_url)
+    detail_doc = html.fromstring(detail_text)
+    source_meta = dict(school.get("source_meta") or {})
+    source_meta["seed_hint_urls"] = _extract_seed_hint_urls(detail_doc, detail_url)
+    source_meta["department_page_url"] = _category_page_url(detail_doc, detail_url, "院系设置")
+    source_meta["major_page_url"] = _category_page_url(detail_doc, detail_url, "专业介绍")
+    return {**dict(school), "source_meta": source_meta}
 def enrich_school_catalog_snapshot(
     schools: list[dict[str, Any]],
     *,
     paths: FoundationPaths,
 ) -> list[dict[str, Any]]:
-    enriched: list[dict[str, Any]] = []
-    for school in schools:
-        detail_url = str(school.get("chsi_school_url") or "").strip()
-        if not detail_url:
-            enriched.append(school)
-            continue
-        detail_text = _fetch_text(detail_url)
-        detail_doc = html.fromstring(detail_text)
-        source_meta = dict(school.get("source_meta") or {})
-        source_meta["seed_hint_urls"] = _extract_seed_hint_urls(detail_doc, detail_url)
-        source_meta["department_page_url"] = _category_page_url(detail_doc, detail_url, "院系设置")
-        source_meta["major_page_url"] = _category_page_url(detail_doc, detail_url, "专业介绍")
-        school["source_meta"] = source_meta
-        enriched.append(school)
+    enriched = [enrich_chsi_school_entry(school) for school in schools]
     _write_json(paths.school_catalog, enriched)
     return enriched
+
+
+def merge_chsi_school_catalog(
+    base_schools: list[dict[str, Any]],
+    enrich_rows: list[dict[str, Any]],
+    *,
+    paths: FoundationPaths,
+) -> list[dict[str, Any]]:
+    enrich_by_code = {
+        str(item.get("school_code") or "").strip(): dict(item)
+        for item in enrich_rows
+        if str(item.get("school_code") or "").strip()
+    }
+    merged: list[dict[str, Any]] = []
+    for school in base_schools:
+        school_code = str(school.get("school_code") or "").strip()
+        enriched = enrich_by_code.get(school_code, {})
+        merged.append(
+            {
+                **dict(school),
+                **{key: value for key, value in enriched.items() if key != "source_meta"},
+                "source_meta": {
+                    **dict(school.get("source_meta") or {}),
+                    **dict(enriched.get("source_meta") or {}),
+                },
+            }
+        )
+    _write_json(paths.school_catalog, merged)
+    return merged
 
 
 def _lines_from_html_text(html_text: str) -> list[str]:
@@ -666,7 +693,8 @@ def refresh_announcement_foundation(
         if str(item).strip()
     } or set(DEFAULT_FOUNDATION_SOURCES)
     schools = fetch_chsi_school_catalog(school_names=school_names) if "chsi" in enabled_sources else []
-    schools = enrich_school_catalog_snapshot(schools, paths=paths)
+    enrich_rows = [enrich_chsi_school_entry(school) for school in schools]
+    schools = merge_chsi_school_catalog(schools, enrich_rows, paths=paths)
     majors = fetch_chsi_major_catalog(schools, paths=paths) if "chsi" in enabled_sources else []
     official_rows = fetch_official_seed_rosters(paths=paths) if "official_rosters" in enabled_sources else []
     homepage_rows = fetch_school_homepages(paths=paths) if "school_homepages" in enabled_sources else []

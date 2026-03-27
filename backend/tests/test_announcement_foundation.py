@@ -23,6 +23,111 @@ def _temp_dir() -> Path:
     return path
 
 
+def test_enrich_chsi_school_entry_extracts_seed_and_category_urls(monkeypatch):
+    school = {
+        "school_code": "1001",
+        "school_name": "Example University",
+        "chsi_school_url": "https://yz.chsi.com.cn/sch/schoolInfo--schId-1001.dhtml",
+        "source_meta": {"source_type": "chsi_school_catalog"},
+    }
+    detail_html = """
+    <html><body>
+      <a href="/sch/schoolInfo--schId-1001,categoryId-481347.dhtml">院系设置</a>
+      <a href="/sch/listYzZyjs--schId-1001,categoryId-692157514.dhtml">专业介绍</a>
+      <a href="/sch/viewBulletin--infoId-5001,categoryId-481379,schId-1001,mindex-12.dhtml">Example University研究生招生信息网</a>
+    </body></html>
+    """
+    bulletin_html = '<html><body><a href="https://yz.example.edu.cn/">graduate admissions</a></body></html>'
+    monkeypatch.setattr(
+        announcement_foundation,
+        "_fetch_text",
+        lambda url, timeout=20: detail_html if "schoolInfo" in url else bulletin_html,
+    )
+
+    enriched = announcement_foundation.enrich_chsi_school_entry(school)
+
+    assert enriched["source_meta"]["seed_hint_urls"] == ["https://yz.example.edu.cn/"]
+    assert enriched["source_meta"]["department_page_url"].endswith("categoryId-481347.dhtml")
+    assert enriched["source_meta"]["major_page_url"].endswith("categoryId-692157514.dhtml")
+
+
+def test_merge_chsi_school_catalog_writes_final_snapshot(tmp_path):
+    paths = announcement_foundation.foundation_paths(tmp_path)
+    merged = announcement_foundation.merge_chsi_school_catalog(
+        [
+            {
+                "school_code": "1001",
+                "school_name": "Example University",
+                "source_meta": {"source_type": "chsi_school_catalog"},
+            },
+            {
+                "school_code": "1002",
+                "school_name": "Other University",
+                "source_meta": {"source_type": "chsi_school_catalog"},
+            },
+        ],
+        [
+            {
+                "school_code": "9999",
+                "school_name": "Unmatched University",
+                "source_meta": {"seed_hint_urls": ["https://unmatched.example.edu.cn/"]},
+            },
+            {
+                "school_code": "1002",
+                "school_name": "Other University",
+                "source_meta": {
+                    "seed_hint_urls": ["https://other.example.edu.cn/"],
+                    "major_page_url": "https://yz.chsi.com.cn/sch/listYzZyjs--schId-1002,categoryId-692157514.dhtml",
+                },
+            },
+            {
+                "school_code": "1001",
+                "school_name": "Example University",
+                "source_meta": {
+                    "seed_hint_urls": ["https://example.edu.cn/"],
+                    "department_page_url": "https://yz.chsi.com.cn/sch/schoolInfo--schId-1001,categoryId-481347.dhtml",
+                },
+            },
+        ],
+        paths=paths,
+    )
+
+    assert [item["school_code"] for item in merged] == ["1001", "1002"]
+    assert merged[0]["source_meta"]["seed_hint_urls"] == ["https://example.edu.cn/"]
+    assert merged[0]["source_meta"]["department_page_url"].endswith("categoryId-481347.dhtml")
+    assert merged[1]["source_meta"]["seed_hint_urls"] == ["https://other.example.edu.cn/"]
+    assert merged[1]["source_meta"]["major_page_url"].endswith("categoryId-692157514.dhtml")
+    assert json.loads(paths.school_catalog.read_text(encoding="utf-8"))[0]["school_code"] == "1001"
+
+
+def test_enrich_school_catalog_snapshot_writes_enriched_snapshot(tmp_path, monkeypatch):
+    paths = announcement_foundation.foundation_paths(tmp_path)
+    school = {
+        "school_code": "1001",
+        "school_name": "Example University",
+        "chsi_school_url": "https://yz.chsi.com.cn/sch/schoolInfo--schId-1001.dhtml",
+        "source_meta": {"source_type": "chsi_school_catalog"},
+    }
+    detail_html = """
+    <html><body>
+      <a href="/sch/schoolInfo--schId-1001,categoryId-481347.dhtml">院系设置</a>
+      <a href="/sch/listYzZyjs--schId-1001,categoryId-692157514.dhtml">专业介绍</a>
+      <a href="/sch/viewBulletin--infoId-5001,categoryId-481379,schId-1001,mindex-12.dhtml">Example University研究生招生信息网</a>
+    </body></html>
+    """
+    bulletin_html = '<html><body><a href="https://yz.example.edu.cn/">graduate admissions</a></body></html>'
+    monkeypatch.setattr(
+        announcement_foundation,
+        "_fetch_text",
+        lambda url, timeout=20: detail_html if "schoolInfo" in url else bulletin_html,
+    )
+
+    enriched = announcement_foundation.enrich_school_catalog_snapshot([school], paths=paths)
+
+    assert enriched[0]["source_meta"]["seed_hint_urls"] == ["https://yz.example.edu.cn/"]
+    assert json.loads(paths.school_catalog.read_text(encoding="utf-8"))[0]["school_code"] == "1001"
+
+
 def test_refresh_announcement_foundation_builds_snapshots_and_registry(monkeypatch):
     tmp_path = _temp_dir()
     school_catalog_html = """
@@ -36,7 +141,7 @@ def test_refresh_announcement_foundation_builds_snapshots_and_registry(monkeypat
     <html><body>
       <a href="/sch/schoolInfo--schId-1001,categoryId-481347.dhtml">院系设置</a>
       <a href="/sch/listYzZyjs--schId-1001,categoryId-692157514.dhtml">专业介绍</a>
-      <a href="/sch/viewBulletin--infoId-5001,categoryId-481379,schId-1001,mindex-12.dhtml">示例大学研究生招生信息</a>
+      <a href="/sch/viewBulletin--infoId-5001,categoryId-481379,schId-1001,mindex-12.dhtml">示例大学研究生招生信息网</a>
     </body></html>
     """
     school_bulletin_html = """
@@ -81,6 +186,7 @@ def test_refresh_announcement_foundation_builds_snapshots_and_registry(monkeypat
         "https://yz.chsi.com.cn/sch/viewBulletin--infoId-5001,categoryId-481379,schId-1001,mindex-12.dhtml": school_bulletin_html,
         "https://yz.chsi.com.cn/sch/schoolInfo--schId-1001,categoryId-481347.dhtml": department_listing_html,
         "https://yz.chsi.com.cn/sch/listYzZyjs--schId-1001,categoryId-692157514.dhtml": major_listing_html,
+        "https://www.example.edu.cn/": "<html><body></body></html>",
         announcement_foundation.OFFICIAL_SEED_ROSTER_SOURCES[0]["source_url"]: roster_html,
     }
 
