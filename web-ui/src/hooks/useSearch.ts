@@ -23,5 +23,13 @@ export function useHomeAnnouncementsQuery(payload: AnnouncementSearchRequest) {
   });
 }
 
+export function useHomeAdjustmentsQuery(payload: AdjustmentSearchRequest, enabled: boolean) {
+  return useQuery({
+    queryKey: ["home", "adjustments", payload],
+    queryFn: () => fetchAdjustmentResults(payload),
+    enabled,
+  });
+}
+
 export type AnnouncementSearchInput = AnnouncementSearchRequest;
 export type AdjustmentSearchInput = AdjustmentSearchRequest;
