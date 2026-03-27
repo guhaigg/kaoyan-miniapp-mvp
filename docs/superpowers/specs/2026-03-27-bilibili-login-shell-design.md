@@ -22,7 +22,7 @@ This is a frontend-only redesign. Existing backend authentication APIs, session 
 3. No real SMS login.
 4. No real third-party OAuth for WeChat, QQ, or Weibo.
 5. No fake video-platform metrics such as play count, likes, or fan count when we do not have real equivalents.
-6. No attempt to literally import React Native screens from `JKVideo`; it is only a visual and structural reference.
+6. We will not paste React Native screens into the web app unchanged, but `JKVideo` is allowed as a direct source for visual structure, assets, interaction patterns, and component composition that can be translated into the web stack.
 
 ## Product Direction
 
@@ -31,6 +31,7 @@ The target is a high-fidelity Bilibili-style shell:
 - The overall visual structure, spacing, color palette, and motion should strongly resemble the screenshots.
 - The product identity stays ours: our logo, our route destinations, our business data, and our copy.
 - The experience should read as "Bilibili-like front stage, our real business underneath."
+- `JKVideo` may be used as a direct implementation reference when converting equivalent patterns into web-native React/Next code.
 
 ## User Experience Overview
 
