@@ -19,7 +19,7 @@ from app.models import (
     WorkflowRun,
     WorkflowStep,
 )
-from app.services import announcement_foundation
+from app.services import announcement_foundation, workflow_v2
 from app.services.workflow_v2 import workflow_engine
 
 
@@ -405,33 +405,20 @@ def test_admin_content_reclassify_queues_workflow_step(client):
     assert detail_payload["content_classifications"][0]["classification_state"] == "school_visible"
 
 
-def test_admin_announcement_foundation_refresh_enqueues_workflow_chain(client, monkeypatch):
+def test_admin_announcement_foundation_refresh_fans_out_school_enrich_and_merges_after_barrier(client, monkeypatch):
     tmp_path = _temp_dir()
     monkeypatch.setenv("ANNOUNCEMENT_FOUNDATION_DATA_DIR", str(tmp_path))
 
-    def _fake_enrich(schools, paths):
-        payload = [
-            {
-                **schools[0],
-                "source_meta": {
-                    "seed_hint_urls": ["https://yz.example.edu.cn/"],
-                    "department_page_url": "https://example.edu.cn/departments/",
-                    "major_page_url": "https://yz.chsi.com.cn/sch/listYzZyjs--schId-1001,categoryId-692157514.dhtml",
-                },
-            }
-        ]
-        paths.school_catalog.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        return payload
-
-    def _fake_major_catalog(_schools, paths):
+    def _fake_major_catalog(schools, paths):
+        assert schools[0]["source_meta"]["seed_hint_urls"] == ["https://yz.example.edu.cn/"]
         payload = [
             {
                 "major_code": "081201",
-                "major_name": "???????",
+                "major_name": "Computer Systems Architecture",
                 "degree_type": "master",
                 "discipline_code": "08",
-                "discipline_name": "??",
-                "school_refs": [{"school_code": "1001", "school_name": "????"}],
+                "discipline_name": "Engineering",
+                "school_refs": [{"school_code": "1001", "school_name": "Example University"}],
                 "department_refs": [],
                 "source_meta": {},
             }
@@ -442,7 +429,7 @@ def test_admin_announcement_foundation_refresh_enqueues_workflow_chain(client, m
     def _fake_official_rosters(paths):
         payload = [
             {
-                "school_name": "????",
+                "school_name": "Example University",
                 "homepage_url": "https://yz.example.edu.cn/",
                 "seed_urls": ["https://yz.example.edu.cn/"],
                 "source_type": "official_roster",
@@ -454,17 +441,18 @@ def test_admin_announcement_foundation_refresh_enqueues_workflow_chain(client, m
         return payload
 
     def _fake_homepages(paths):
-        payload = [{"school_name": "????", "official_homepage": "https://www.example.edu.cn/", "source_meta": {}}]
+        payload = [{"school_name": "Example University", "official_homepage": "https://www.example.edu.cn/", "source_meta": {}}]
         paths.school_homepages.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return payload
 
-    def _fake_department_candidates(_schools, paths):
+    def _fake_department_candidates(schools, paths):
+        assert schools[0]["source_meta"]["department_page_url"] == "https://example.edu.cn/departments/"
         departments = [
             {
                 "school_code": "1001",
-                "school_name": "????",
+                "school_name": "Example University",
                 "department_code": "dept1",
-                "department_name": "?????",
+                "department_name": "School of Computing",
                 "aliases": [],
                 "major_count": 0,
                 "source_meta": {},
@@ -473,8 +461,8 @@ def test_admin_announcement_foundation_refresh_enqueues_workflow_chain(client, m
         candidates = [
             {
                 "scope_type": "department",
-                "school_name": "????",
-                "department_name": "?????",
+                "school_name": "Example University",
+                "department_name": "School of Computing",
                 "homepage_url": "https://yz.example.edu.cn/cs/",
                 "seed_urls": ["https://yz.example.edu.cn/cs/"],
                 "source_type": "department_candidate",
@@ -489,7 +477,7 @@ def test_admin_announcement_foundation_refresh_enqueues_workflow_chain(client, m
 
     def _fake_merge(*, paths, dry_run):
         diff_payload = {
-            "added": ["school|????|"],
+            "added": ["school|ExampleUniversity|"],
             "removed": [],
             "updated": [],
             "department_candidate_count": 1,
@@ -497,28 +485,6 @@ def test_admin_announcement_foundation_refresh_enqueues_workflow_chain(client, m
             "school_count": 1,
         }
         paths.seed_diff.write_text(json.dumps(diff_payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        if not dry_run:
-            paths.seed_registry.write_text(
-                json.dumps(
-                    [
-                        {
-                            "scope_type": "school",
-                            "school_name": "????",
-                            "department_name": None,
-                            "homepage_url": "https://yz.example.edu.cn/",
-                            "seed_urls": ["https://yz.example.edu.cn/"],
-                            "source_type": "official_roster",
-                            "confidence": "high",
-                            "deny_prefixes": [],
-                            "notes": "fixture",
-                            "last_verified_at": "2026-03-26T00:00:00+00:00",
-                        }
-                    ],
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
         return diff_payload
 
     monkeypatch.setattr(
@@ -526,16 +492,27 @@ def test_admin_announcement_foundation_refresh_enqueues_workflow_chain(client, m
         lambda school_names=None: [
             {
                 "school_code": "1001",
-                "school_name": "????",
+                "school_name": "Example University",
                 "aliases": [],
-                "province": "??",
+                "province": "Beijing",
                 "official_homepage": None,
                 "chsi_school_url": "https://yz.chsi.com.cn/sch/schoolInfo--schId-1001.dhtml",
-                "source_meta": {},
+                "source_meta": {"source_type": "chsi_school_catalog"},
             }
         ],
     )
-    monkeypatch.setattr("app.services.announcement_foundation.enrich_school_catalog_snapshot", _fake_enrich)
+    monkeypatch.setattr(
+        "app.services.announcement_foundation.enrich_chsi_school_entry",
+        lambda school: {
+            **school,
+            "source_meta": {
+                **dict(school.get("source_meta") or {}),
+                "seed_hint_urls": ["https://yz.example.edu.cn/"],
+                "department_page_url": "https://example.edu.cn/departments/",
+                "major_page_url": "https://example.edu.cn/majors/",
+            },
+        },
+    )
     monkeypatch.setattr("app.services.announcement_foundation.fetch_chsi_major_catalog", _fake_major_catalog)
     monkeypatch.setattr("app.services.announcement_foundation.fetch_official_seed_rosters", _fake_official_rosters)
     monkeypatch.setattr("app.services.announcement_foundation.fetch_school_homepages", _fake_homepages)
@@ -544,33 +521,61 @@ def test_admin_announcement_foundation_refresh_enqueues_workflow_chain(client, m
 
     response = client.post(
         "/api/v1/admin/catalog-refreshes/announcement-foundation",
-        json={"school_names": ["????"], "dry_run": False, "sources": ["chsi", "official_rosters", "school_homepages"]},
+        json={
+            "school_names": ["Example University"],
+            "dry_run": True,
+            "sources": ["chsi", "official_rosters", "school_homepages"],
+        },
         headers=_admin_headers(),
     )
     assert response.status_code == 200
     payload = response.json()
     assert payload["workflow_type"] == "announcement_catalog_refresh"
 
-    total_processed = 0
-    for _ in range(6):
+    for _ in range(12):
         processed = workflow_engine.process_step_batch(batch_size=5, worker_name="test-worker")
-        total_processed += processed
-        if processed == 0:
+        with SessionLocal() as db:
+            pending_barriers = (
+                db.query(WorkflowStep)
+                .filter(
+                    WorkflowStep.run_id == payload["workflow_run_id"],
+                    WorkflowStep.step_type == "await_chsi_school_enrich",
+                    WorkflowStep.status == "pending",
+                )
+                .all()
+            )
+            for barrier in pending_barriers:
+                barrier.available_at = workflow_v2.utcnow()
+            db.commit()
+            run = db.query(WorkflowRun).filter(WorkflowRun.id == payload["workflow_run_id"]).one()
+            if run.status in {"done", "failed"}:
+                break
+        if processed == 0 and not pending_barriers:
             break
-    assert total_processed == 6
 
     with SessionLocal() as db:
         run = db.query(WorkflowRun).filter(WorkflowRun.id == payload["workflow_run_id"]).one()
-        steps = db.query(WorkflowStep).filter(WorkflowStep.run_id == run.id).order_by(WorkflowStep.created_at.asc()).all()
+        steps = (
+            db.query(WorkflowStep)
+            .filter(WorkflowStep.run_id == run.id)
+            .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+            .all()
+        )
         assert run.status == "done"
         assert [step.step_type for step in steps] == [
             "fetch_chsi_school_catalog",
+            "enqueue_chsi_school_enrich",
+            "enrich_chsi_school_snapshot",
+            "await_chsi_school_enrich",
             "fetch_chsi_major_catalog",
             "fetch_official_seed_rosters",
             "fetch_school_homepages",
             "build_department_candidates",
             "merge_announcement_seed_registry",
         ]
-        assert json.loads((tmp_path / announcement_foundation.ANNOUNCEMENT_SEED_REGISTRY_FILENAME).read_text(encoding="utf-8"))[0]["school_name"] == "????"
+        school_snapshot = json.loads((tmp_path / announcement_foundation.SCHOOL_CATALOG_FILENAME).read_text(encoding="utf-8"))
+        assert school_snapshot[0]["school_name"] == "Example University"
+        assert school_snapshot[0]["source_meta"]["seed_hint_urls"] == ["https://yz.example.edu.cn/"]
+        assert run.result_payload["registry_diff"]["added"] == ["school|ExampleUniversity|"]
 
     shutil.rmtree(tmp_path, ignore_errors=True)

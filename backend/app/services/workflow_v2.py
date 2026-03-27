@@ -780,11 +780,16 @@ def _create_idempotent_child_step(
     host_key: str | None,
     input_payload: dict[str, Any],
 ) -> WorkflowStep:
-    idempotency_key = _step_idempotency_key(
-        step_type=step_type,
-        scope_key=parent_step.scope_key,
-        host_key=host_key,
-        input_payload=input_payload,
+    school_code = str(input_payload.get("school_code") or "").strip()
+    idempotency_key = (
+        f"{step_type}:{parent_step.scope_key}:school_code:{school_code}"
+        if school_code
+        else _step_idempotency_key(
+            step_type=step_type,
+            scope_key=parent_step.scope_key,
+            host_key=host_key,
+            input_payload=input_payload,
+        )
     )
     existing = (
         db.query(WorkflowStep)
@@ -1441,7 +1446,11 @@ def _process_scope_rebuild_step(db: Session, step: WorkflowStep) -> dict[str, An
 
 
 def _announcement_catalog_refresh_host_key(step_type: str) -> str | None:
-    if step_type in {STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG, STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG}:
+    if step_type in {
+        STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG,
+        STEP_TYPE_ENRICH_CHSI_SCHOOL_SNAPSHOT,
+        STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG,
+    }:
         return "yz.chsi.com.cn"
     if step_type == STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS:
         return "yz.chsi.com.cn"
@@ -1472,15 +1481,181 @@ def _queue_next_announcement_catalog_step(
 
 def _process_fetch_chsi_school_catalog_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
     from .announcement_foundation import (
+        CHSI_SCHOOL_CATALOG_URL,
         foundation_paths,
-        enrich_school_catalog_snapshot,
         fetch_chsi_school_catalog,
     )
 
     payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
     paths = foundation_paths()
     schools = fetch_chsi_school_catalog(school_names=payload.school_names or None)
-    enriched = enrich_school_catalog_snapshot(schools, paths=paths)
+    _record_parse_artifact(
+        db,
+        workflow_step_id=step.id,
+        artifact_type=PARSE_ARTIFACT_TYPE_CHSI_SCHOOL_CATALOG_BASE,
+        source_url=CHSI_SCHOOL_CATALOG_URL,
+        payload={"schools": schools},
+    )
+    next_step = _queue_next_announcement_catalog_step(
+        db,
+        step=step,
+        next_step_type=STEP_TYPE_ENQUEUE_CHSI_SCHOOL_ENRICH,
+        payload=payload,
+    )
+    return {
+        "school_count": len(schools),
+        "base_dir": str(paths.base_dir),
+        "child_step_id": next_step.id if next_step is not None else None,
+    }
+
+
+def _process_enqueue_chsi_school_enrich_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import foundation_paths
+
+    payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
+    paths = foundation_paths()
+    base_artifact = (
+        db.query(ParseArtifact)
+        .filter(
+            ParseArtifact.workflow_step_id == step.parent_step_id,
+            ParseArtifact.artifact_type == PARSE_ARTIFACT_TYPE_CHSI_SCHOOL_CATALOG_BASE,
+        )
+        .order_by(ParseArtifact.created_at.desc(), ParseArtifact.id.desc())
+        .first()
+    )
+    if base_artifact is None:
+        raise ValueError("missing chsi school catalog base artifact")
+
+    base_schools = list((base_artifact.payload or {}).get("schools") or [])
+    run = db.query(WorkflowRun).filter(WorkflowRun.id == step.run_id).one()
+    child_ids: list[str] = []
+    for school in base_schools:
+        child = _create_idempotent_child_step(
+            db,
+            run=run,
+            parent_step=step,
+            step_type=STEP_TYPE_ENRICH_CHSI_SCHOOL_SNAPSHOT,
+            host_key="yz.chsi.com.cn",
+            input_payload=ChsiSchoolEnrichPayload(
+                school_code=str(school.get("school_code") or ""),
+                school_name=str(school.get("school_name") or ""),
+                chsi_school_url=str(school.get("chsi_school_url") or ""),
+            ).model_dump(),
+        )
+        child_ids.append(child.id)
+    barrier = _create_idempotent_child_step(
+        db,
+        run=run,
+        parent_step=step,
+        step_type=STEP_TYPE_AWAIT_CHSI_SCHOOL_ENRICH,
+        host_key=None,
+        input_payload=payload.model_dump(),
+    )
+    return {
+        "queued_school_count": len(child_ids),
+        "child_step_ids": child_ids,
+        "barrier_step_id": barrier.id,
+        "base_dir": str(paths.base_dir),
+    }
+
+
+def _process_enrich_chsi_school_snapshot_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import enrich_chsi_school_entry
+
+    payload = ChsiSchoolEnrichPayload.model_validate(step.input_payload or {})
+    school = enrich_chsi_school_entry(payload.model_dump())
+    _record_parse_artifact(
+        db,
+        workflow_step_id=step.id,
+        artifact_type=PARSE_ARTIFACT_TYPE_CHSI_SCHOOL_ENRICH,
+        source_url=payload.chsi_school_url,
+        payload=school,
+    )
+    source_meta = dict(school.get("source_meta") or {})
+    return {
+        "school_code": payload.school_code,
+        "school_name": payload.school_name,
+        "seed_hint_count": len(source_meta.get("seed_hint_urls") or []),
+        "has_department_page": bool(source_meta.get("department_page_url")),
+        "has_major_page": bool(source_meta.get("major_page_url")),
+    }
+
+
+def _process_await_chsi_school_enrich_step(db: Session, step: WorkflowStep) -> dict[str, Any]:
+    from .announcement_foundation import foundation_paths, merge_chsi_school_catalog
+
+    payload = AnnouncementCatalogRefreshPayload.model_validate(step.input_payload or {})
+    paths = foundation_paths()
+    children = (
+        db.query(WorkflowStep)
+        .filter(
+            WorkflowStep.run_id == step.run_id,
+            WorkflowStep.parent_step_id == step.parent_step_id,
+            WorkflowStep.step_type == STEP_TYPE_ENRICH_CHSI_SCHOOL_SNAPSHOT,
+        )
+        .order_by(WorkflowStep.created_at.asc(), WorkflowStep.id.asc())
+        .all()
+    )
+    succeeded = [child for child in children if child.status == "done"]
+    failed = [child for child in children if child.status == "failed"]
+    pending = [child for child in children if child.status in {"pending", "running"}]
+    summary = {
+        "total_school_count": len(children),
+        "succeeded_school_count": len(succeeded),
+        "failed_school_count": len(failed),
+        "pending_school_count": len(pending),
+        "failed_schools": [
+            {
+                "school_code": str((child.input_payload or {}).get("school_code") or ""),
+                "school_name": str((child.input_payload or {}).get("school_name") or ""),
+                "error_type": child.error_type,
+                "error_message": child.error_message,
+            }
+            for child in failed
+        ],
+        "base_dir": str(paths.base_dir),
+    }
+    if pending:
+        raise DeferredStep(result_payload=summary, delay_seconds=15)
+    if failed:
+        raise TerminalStepFailure(
+            message="chsi school enrich barrier failed",
+            result_payload={**summary, "terminal_reason": "chsi_school_enrich_failed"},
+        )
+
+    enqueue_step = db.query(WorkflowStep).filter(WorkflowStep.id == step.parent_step_id).one_or_none()
+    if enqueue_step is None or not enqueue_step.parent_step_id:
+        raise ValueError("missing chsi school enrich parent chain")
+    base_artifact = (
+        db.query(ParseArtifact)
+        .filter(
+            ParseArtifact.workflow_step_id == enqueue_step.parent_step_id,
+            ParseArtifact.artifact_type == PARSE_ARTIFACT_TYPE_CHSI_SCHOOL_CATALOG_BASE,
+        )
+        .order_by(ParseArtifact.created_at.desc(), ParseArtifact.id.desc())
+        .first()
+    )
+    if base_artifact is None:
+        raise ValueError("missing chsi school catalog base artifact")
+
+    child_ids = [child.id for child in succeeded]
+    enrich_artifacts = (
+        db.query(ParseArtifact)
+        .filter(
+            ParseArtifact.workflow_step_id.in_(child_ids or [""]),
+            ParseArtifact.artifact_type == PARSE_ARTIFACT_TYPE_CHSI_SCHOOL_ENRICH,
+        )
+        .order_by(ParseArtifact.created_at.asc(), ParseArtifact.id.asc())
+        .all()
+        if child_ids
+        else []
+    )
+    enrich_rows = [artifact.payload for artifact in enrich_artifacts]
+    merged = merge_chsi_school_catalog(
+        list((base_artifact.payload or {}).get("schools") or []),
+        enrich_rows,
+        paths=paths,
+    )
     next_step = _queue_next_announcement_catalog_step(
         db,
         step=step,
@@ -1488,8 +1663,8 @@ def _process_fetch_chsi_school_catalog_step(db: Session, step: WorkflowStep) -> 
         payload=payload,
     )
     return {
-        "school_count": len(enriched),
-        "base_dir": str(paths.base_dir),
+        **summary,
+        "school_count": len(merged),
         "child_step_id": next_step.id if next_step is not None else None,
     }
 
@@ -1981,6 +2156,12 @@ class WorkflowEngine:
                         result = _process_scope_rebuild_step(db, step)
                     elif step.step_type == STEP_TYPE_FETCH_CHSI_SCHOOL_CATALOG:
                         result = _process_fetch_chsi_school_catalog_step(db, step)
+                    elif step.step_type == STEP_TYPE_ENQUEUE_CHSI_SCHOOL_ENRICH:
+                        result = _process_enqueue_chsi_school_enrich_step(db, step)
+                    elif step.step_type == STEP_TYPE_ENRICH_CHSI_SCHOOL_SNAPSHOT:
+                        result = _process_enrich_chsi_school_snapshot_step(db, step)
+                    elif step.step_type == STEP_TYPE_AWAIT_CHSI_SCHOOL_ENRICH:
+                        result = _process_await_chsi_school_enrich_step(db, step)
                     elif step.step_type == STEP_TYPE_FETCH_CHSI_MAJOR_CATALOG:
                         result = _process_fetch_chsi_major_catalog_step(db, step)
                     elif step.step_type == STEP_TYPE_FETCH_OFFICIAL_SEED_ROSTERS:
