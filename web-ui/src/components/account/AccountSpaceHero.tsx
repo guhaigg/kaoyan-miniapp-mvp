@@ -22,14 +22,14 @@ export function AccountSpaceHero({
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, ease: "easeOut" }}
-        className="relative h-[220px] bg-[linear-gradient(120deg,#7bd9ff_0%,#9ee4ff_20%,#ffd6e7_60%,#ffa6cc_100%)]"
+        className="relative h-[180px] bg-[linear-gradient(120deg,#7bd9ff_0%,#9ee4ff_20%,#ffd6e7_60%,#ffa6cc_100%)] md:h-[220px]"
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.7),transparent_24%),radial-gradient(circle_at_78%_26%,rgba(255,255,255,0.35),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.08),transparent)]" />
       </motion.div>
 
       <div className="mx-auto flex max-w-[1440px] flex-col gap-6 px-4 pb-6 md:px-6 lg:flex-row lg:items-end">
-        <div className="-mt-14 flex items-end gap-4">
-          <div className="flex h-28 w-28 items-center justify-center rounded-full border-[6px] border-white bg-[linear-gradient(135deg,#ffb8d6,#86dbff)] text-3xl font-black text-white shadow-[0_18px_44px_rgba(96,122,177,0.25)]">
+        <div className="-mt-12 flex items-end gap-4 md:-mt-14">
+          <div className="flex h-24 w-24 items-center justify-center rounded-full border-[5px] border-white bg-[linear-gradient(135deg,#ffb8d6,#86dbff)] text-3xl font-black text-white shadow-[0_18px_44px_rgba(96,122,177,0.25)] md:h-28 md:w-28 md:border-[6px]">
             {displayName.slice(0, 1).toUpperCase()}
           </div>
           <div className="pb-2">

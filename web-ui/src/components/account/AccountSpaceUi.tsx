@@ -4,14 +4,18 @@ import { cn } from "@/lib/utils";
 export function AccountSurface({
   children,
   className,
+  interactive = false,
 }: {
   children: ReactNode;
   className?: string;
+  interactive?: boolean;
 }) {
   return (
     <section
       className={cn(
-        "rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_rgba(122,147,192,0.16)]",
+        "rounded-[2rem] border border-white/80 bg-white/90 p-5 shadow-[0_20px_60px_rgba(122,147,192,0.16)] md:p-6",
+        interactive &&
+          "transition-[transform,box-shadow] duration-200 md:hover:-translate-y-0.5 md:hover:shadow-[0_24px_66px_rgba(122,147,192,0.2)]",
         className,
       )}
     >

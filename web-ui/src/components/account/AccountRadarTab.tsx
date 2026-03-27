@@ -15,6 +15,7 @@ function MetricCard({
 }) {
   return (
     <AccountSurface
+      interactive
       className={`rounded-[2rem] border p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)] ${
         tone === "pink"
           ? "border-pink-100 bg-pink-50/80"
@@ -149,6 +150,7 @@ export function AccountRadarTab({
               return (
                 <AccountSurface
                   key={item.id}
+                  interactive
                   className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]"
                 >
                   <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600">

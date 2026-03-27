@@ -196,7 +196,7 @@ export function AccountAccountTab({
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface interactive className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600">
             <Sparkles size={14} />
             会员状态
@@ -209,7 +209,7 @@ export function AccountAccountTab({
           </p>
         </AccountSurface>
 
-        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface interactive className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600">
             <Link2 size={14} />
             微信绑定
@@ -218,7 +218,7 @@ export function AccountAccountTab({
           <p className="mt-2 text-sm leading-7 text-slate-600">绑定后，小程序 silent-login 可以更稳定地命中当前主账号。</p>
         </AccountSurface>
 
-        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface interactive className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
             <ShieldCheck size={14} />
             安全维护

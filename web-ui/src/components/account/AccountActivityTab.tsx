@@ -93,6 +93,7 @@ export function AccountActivityTab({
       {items.map((item) => (
         <AccountSurface
           key={item.id}
+          interactive
           className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)] transition-transform duration-200 hover:-translate-y-0.5"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">

@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ApiError,
   getCurrentUserAccountOverview,
@@ -181,7 +182,7 @@ export default function AccountSpacePage({
   }
 
   return (
-    <div className="pb-20 text-slate-900">
+    <div className="pb-16 text-slate-900 md:pb-20">
       <AccountSpaceHero
         displayName={spaceSummary.displayName}
         username={spaceSummary.username}
@@ -192,8 +193,20 @@ export default function AccountSpacePage({
 
       <AccountSpaceTabs activeTab={currentTab} activePanel={currentPanel} />
 
-      <div className="mx-auto grid max-w-[1440px] gap-6 px-4 py-6 md:px-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <main className="min-w-0">{content}</main>
+      <div className="mx-auto grid max-w-[1440px] gap-4 px-4 py-4 md:gap-6 md:px-6 md:py-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <main className="min-w-0">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={`${currentTab}-${currentPanel || "base"}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            >
+              {content}
+            </motion.div>
+          </AnimatePresence>
+        </main>
 
         <aside className="min-w-0">
           <AccountSpaceSidebar

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { AccountSpacePanel, AccountSpaceTab } from "./account-space-query";
 
@@ -38,17 +39,30 @@ export function AccountSpaceTabs({
             params.delete("panel");
           }
           const active = item.id === activeTab;
+
           return (
             <Link
               key={item.id}
               href={`${pathname}?${params.toString()}`}
-              className={`relative inline-flex shrink-0 items-center py-4 text-sm font-semibold transition-colors after:absolute after:bottom-0 after:left-0 after:h-[3px] after:w-full after:rounded-full after:transition-opacity ${
-                active
-                  ? "text-[#00aeec] after:opacity-100 after:bg-[#00aeec]"
-                  : "text-slate-600 hover:text-slate-900 after:opacity-0 after:bg-transparent"
+              className={`relative inline-flex shrink-0 items-center rounded-full px-4 py-3 text-sm font-semibold transition-colors ${
+                active ? "text-[#00aeec]" : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              {item.label}
+              {active ? (
+                <motion.span
+                  layoutId="account-space-active-tab"
+                  className="absolute inset-0 rounded-full bg-[#00aeec]/12"
+                  transition={{ type: "spring", stiffness: 340, damping: 28 }}
+                />
+              ) : null}
+              <span className="relative">{item.label}</span>
+              {active ? (
+                <motion.span
+                  layoutId="account-space-active-underline"
+                  className="absolute -bottom-[1px] left-2 right-2 h-[3px] rounded-full bg-[#00aeec]"
+                  transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                />
+              ) : null}
             </Link>
           );
         })}

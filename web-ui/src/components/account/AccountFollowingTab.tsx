@@ -27,6 +27,7 @@ function SubscriptionWall({ subscriptions }: { subscriptions: SubscriptionItem[]
         {subscriptions.map((item) => (
           <AccountSurface
             key={item.id}
+            interactive
             className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]"
           >
             <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600">
@@ -60,6 +61,7 @@ function RadarWall({ targets }: { targets: MonitorTargetItem[] }) {
         {targets.map((item) => (
           <AccountSurface
             key={item.id}
+            interactive
             className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]"
           >
             <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600">
@@ -143,7 +145,7 @@ export function AccountFollowingTab({
   return (
     <section className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
-        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface interactive className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600">
             <Compass size={14} />
             已归档订阅
@@ -152,7 +154,7 @@ export function AccountFollowingTab({
           <p className="mt-2 text-sm leading-7 text-slate-600">这里放学校、专业、关键词和地区级的显式关注。</p>
         </AccountSurface>
 
-        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface interactive className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-600">
             <Radar size={14} />
             雷达范围
@@ -161,7 +163,7 @@ export function AccountFollowingTab({
           <p className="mt-2 text-sm leading-7 text-slate-600">学校、院系和栏目级盯盘会集中在这一块。</p>
         </AccountSurface>
 
-        <AccountSurface className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
+        <AccountSurface interactive className="p-5 shadow-[0_18px_44px_rgba(122,147,192,0.14)]">
           <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
             <Sparkles size={14} />
             下一步
