@@ -2,22 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { motion } from "framer-motion";
+import { useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowUpRight,
-  BellRing,
-  BookOpenText,
-  ChevronRight,
-  Compass,
-  LogIn,
+  BookOpen,
   Radar,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  TrendingUp,
-  Zap,
+  User,
+  X,
 } from "lucide-react";
+import { ApiError, getCurrentUser, loginUser } from "@/lib/api";
 import type { SearchItem } from "@/lib/api";
 import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
@@ -25,47 +18,70 @@ import { useHomeAdjustmentsQuery, useHomeAnnouncementsQuery } from "@/hooks/useS
 import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
 
-type SearchMode = "announcements" | "adjustments";
+type SearchMode = "adjustment" | "announcement";
 
-type DistributionDatum = {
+type DistributionBar = {
   label: string;
   value: number;
-  tone: string;
+  color: string;
 };
 
-const DISTRIBUTION_TONES = ["bg-cyan-500", "bg-sky-500", "bg-slate-400", "bg-slate-200"] as const;
+const TOP_NAV_ITEMS = [
+  { id: "home", label: "情报总览", href: "/" },
+  { id: "announcement", label: "公告检索", href: "/search?tab=announcements" },
+  { id: "radar", label: "雷达监控", href: "/radar" },
+] as const;
 
-const ANONYMOUS_RADAR_FALLBACK = [
+const FALLBACK_DISTRIBUTION: DistributionBar[] = [
+  { label: "公告", value: 420, color: "bg-cyan-500" },
+  { label: "调剂", value: 280, color: "bg-blue-500" },
+  { label: "PDF", value: 160, color: "bg-slate-400" },
+  { label: "其他", value: 92, color: "bg-slate-200" },
+];
+
+const ANONYMOUS_ADJUSTMENT_FALLBACK = [
   {
-    title: "调剂雷达需要登录后解锁",
-    summary: "登录主账号后可以查看缺额、风险和历史样本，不再只靠零散帖子拼情报。",
-    accent: "登录后可看",
+    title: "登录后解锁调剂雷达",
+    summary: "调剂卡片会切到真实缺额、历史样本和近期活跃学校，不再只是静态演示文本。",
+    accent: "Private Feed",
   },
   {
     title: "学校 / 专业 / 关键词联动追踪",
-    summary: "把关注学校、院系、关键词挂到同一套雷达里，命中后会自动推送到你的空间。",
-    accent: "监控范围",
+    summary: "把你的关注范围挂到同一套雷达里，命中时自动进入个人空间和通知队列。",
+    accent: "Signal Scope",
   },
   {
-    title: "高频学校优先露出",
-    summary: "优先展示最近活跃、样本更完整的学校，避免首页变成纯视觉摆设。",
-    accent: "情报优先级",
+    title: "首页只放高优先级信号",
+    summary: "真正的细筛仍在检索页，首页只保留最值得你进一步点开的调剂入口。",
+    accent: "Priority",
   },
 ] as const;
 
 export default function SignalDashboardHome() {
   const router = useRouter();
   const dashboardRef = useRef<HTMLDivElement | null>(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [searchMode, setSearchMode] = useState<SearchMode>("adjustments");
+
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<SearchMode>("adjustment");
   const [keyword, setKeyword] = useState("");
+  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [loginName, setLoginName] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [loginMessage, setLoginMessage] = useState("");
 
-  const { portalAuth, setAuthOpen, setWatchlistOpen, showToast } = useAppStore();
+  const {
+    portalAuth,
+    showToast,
+    setPortalAuthFromToken,
+    setPortalProfile,
+  } = useAppStore();
+
   const canManageScopeTargets = Boolean(portalAuth?.isPremium || portalAuth?.isAdmin);
-
   const announcementsQuery = useHomeAnnouncementsQuery({
     page: 1,
-    page_size: 6,
+    page_size: 3,
   });
   const adjustmentsQuery = useHomeAdjustmentsQuery(
     {
@@ -84,38 +100,32 @@ export default function SignalDashboardHome() {
   const followingCount = portalAuth ? subscriptionsQuery.data?.items.length ?? 0 : 0;
   const radarCount = portalAuth && canManageScopeTargets ? monitorTargetsQuery.data?.items.length ?? 0 : 0;
   const activityCount = portalAuth ? noticesQuery.data?.length ?? 0 : 0;
-  const announcementsUnavailable = announcementsQuery.isError;
 
-  const trendSeries = useMemo(() => {
-    const total = Math.max(indexedCount, 24);
-    return [0.18, 0.24, 0.22, 0.34, 0.42, 0.47, 0.58, 0.55, 0.72, 0.8, 0.76, 0.92].map((ratio, index) =>
-      Math.round(total * ratio + index * 3),
+  const latestAnnouncements = announcementsQuery.data?.items ?? [];
+  const adjustmentSignals = adjustmentsQuery.data?.items ?? [];
+
+  const trendData = useMemo(() => {
+    const base = Math.max(indexedCount, 40);
+    return [0.08, 0.12, 0.09, 0.16, 0.22, 0.18, 0.34, 0.29, 0.42, 0.56, 0.52, 0.64, 0.6, 0.76, 0.72, 0.88].map(
+      (ratio, index) => Math.round(base * ratio + index * 4),
     );
   }, [indexedCount]);
 
-  const distributionData = useMemo<DistributionDatum[]>(() => {
-    const entries = Object.entries(announcementsQuery.data?.source_breakdown ?? {})
+  const distributionData = useMemo<DistributionBar[]>(() => {
+    const breakdown = Object.entries(announcementsQuery.data?.source_breakdown ?? {})
       .sort((left, right) => right[1] - left[1])
       .slice(0, 4);
 
-    if (!entries.length) {
-      return [
-        { label: "公告", value: 52, tone: DISTRIBUTION_TONES[0] },
-        { label: "调剂", value: 34, tone: DISTRIBUTION_TONES[1] },
-        { label: "PDF", value: 18, tone: DISTRIBUTION_TONES[2] },
-        { label: "其他", value: 10, tone: DISTRIBUTION_TONES[3] },
-      ];
+    if (!breakdown.length) {
+      return FALLBACK_DISTRIBUTION;
     }
 
-    return entries.map(([label, value], index) => ({
+    return breakdown.map(([label, value], index) => ({
       label: label.slice(0, 8),
       value,
-      tone: DISTRIBUTION_TONES[index] ?? DISTRIBUTION_TONES[DISTRIBUTION_TONES.length - 1],
+      color: FALLBACK_DISTRIBUTION[index]?.color ?? "bg-slate-300",
     }));
   }, [announcementsQuery.data?.source_breakdown]);
-
-  const latestAnnouncements = announcementsQuery.data?.items.slice(0, 3) ?? [];
-  const adjustmentSignals = adjustmentsQuery.data?.items.slice(0, 3) ?? [];
 
   function handleMouseMove(event: ReactMouseEvent<HTMLDivElement>) {
     const node = dashboardRef.current;
@@ -130,545 +140,486 @@ export default function SignalDashboardHome() {
     setMousePos({ x: 0, y: 0 });
   }
 
-  function openLogin() {
-    setAuthOpen(true, "login");
-  }
-
-  function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    navigateToSearch();
-  }
-
-  function navigateToSearch() {
+  function routeToSearch() {
     const trimmed = keyword.trim();
-
-    if (searchMode === "adjustments" && !portalAuth) {
-      showToast("请先登录", "调剂检索和雷达追踪属于登录后的深度功能。", "info");
-      openLogin();
+    if (searchMode === "adjustment" && !portalAuth) {
+      setIsLoginOpen(true);
+      setLoginMessage("调剂检索需要先登录主账号。");
       return;
     }
 
     const params = new URLSearchParams();
-    params.set("tab", searchMode);
+    params.set("tab", searchMode === "adjustment" ? "adjustments" : "announcements");
     if (trimmed) {
       params.set("keywords", trimmed);
     }
     router.push(`/search?${params.toString()}`);
   }
 
-  function handleAccountAction() {
+  function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    routeToSearch();
+  }
+
+  function handleProfileClick() {
     if (portalAuth) {
       router.push("/account?tab=activity");
       return;
     }
-    openLogin();
+    setIsLoginOpen(true);
+    setLoginMessage("");
   }
 
-  function handleRadarAction() {
+  function handleRadarClick() {
     if (!portalAuth) {
-      showToast("请先登录", "登录后才能把公告和调剂信号收进你的雷达。", "info");
-      openLogin();
+      setIsLoginOpen(true);
+      setLoginMessage("登录后才能打开你的监控面板。");
       return;
     }
-    if (canManageScopeTargets) {
-      router.push("/radar");
-      return;
-    }
-    setWatchlistOpen(true);
+    router.push("/radar");
   }
 
-  const statusCards = [
-    {
-      label: "已索引公告",
-      value: announcementsUnavailable ? "--" : formatCompactNumber(indexedCount),
-      detail: announcementsQuery.isLoading
-        ? "正在同步首页公告…"
-        : announcementsUnavailable
-          ? "当前环境还没有接上公告 API，首页会先显示离线占位。"
-          : "首页实时取最新检索结果",
-    },
-    {
-      label: "关注范围",
-      value: formatCompactNumber(followingCount),
-      detail: portalAuth ? "与你的个人关注库同步" : "登录后可保存学校与频道",
-    },
-    {
-      label: "雷达活动",
-      value: formatCompactNumber(portalAuth ? radarCount + activityCount : 0),
-      detail: portalAuth ? "监控目标与未读信号合并显示" : "登录后可开启提醒与命中推送",
-    },
-  ];
+  async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loginSubmitting) return;
+
+    if (loginName.trim().length < 3) {
+      setLoginMessage("账号至少 3 位。");
+      return;
+    }
+    if (loginPassword.length < 8) {
+      setLoginMessage("密码至少 8 位。");
+      return;
+    }
+
+    setLoginSubmitting(true);
+    setLoginMessage("");
+
+    try {
+      const result = await loginUser({
+        username: loginName.trim(),
+        password: loginPassword,
+      });
+
+      setPortalAuthFromToken({
+        tokenType: result.token_type,
+        accessToken: result.access_token,
+        expiresIn: result.expires_in,
+        refreshExpiresIn: result.refresh_expires_in,
+        userId: result.user_id,
+        username: result.username,
+      });
+
+      try {
+        const profile = await getCurrentUser(result.access_token);
+        setPortalProfile({
+          nickname: profile.nickname,
+          status: profile.status,
+          isAdmin: profile.is_admin,
+          isPremium: profile.is_premium,
+          role: profile.role,
+          premiumExpiresAt: profile.premium_expires_at,
+        });
+      } catch {
+        setPortalProfile({
+          nickname: null,
+          status: "active",
+          isAdmin: false,
+          isPremium: false,
+          role: "user",
+          premiumExpiresAt: null,
+        });
+      }
+
+      setIsLoginOpen(false);
+      setLoginPassword("");
+      showToast("已接入系统", "首页登录框已连到真实账号接口。", "info");
+    } catch (error) {
+      setLoginMessage(error instanceof ApiError ? error.message : "登录失败，请稍后重试。");
+    } finally {
+      setLoginSubmitting(false);
+    }
+  }
+
+  const displayName = portalAuth?.nickname || portalAuth?.username || "guest";
+  const syncLabel = portalAuth ? `${portalAuth.role.toUpperCase()} ONLINE` : "GUEST MODE";
+  const sourceCount = Object.keys(announcementsQuery.data?.source_breakdown ?? {}).length;
 
   return (
-    <div className="pb-24 text-slate-900">
-      <section className="relative overflow-hidden border-b border-black/5 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_30%),radial-gradient(circle_at_80%_20%,rgba(34,197,94,0.12),transparent_24%),linear-gradient(180deg,#ffffff_0%,#f7fafc_70%,#eef6fb_100%)]">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.03)_1px,transparent_1px)] bg-[size:36px_36px] opacity-40" />
-        <div className="relative mx-auto grid max-w-[1440px] gap-10 px-4 pb-12 pt-8 md:px-6 md:pb-16 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:pt-12">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-200/70 bg-white/90 px-3 py-1.5 text-xs font-semibold text-cyan-700 shadow-[0_10px_30px_rgba(8,145,178,0.08)]">
-              <Sparkles size={14} />
-              首页已切到新的情报看板
+    <div className="min-h-screen w-full bg-white font-sans text-slate-900 selection:bg-cyan-100 selection:text-cyan-900">
+      <header className="fixed left-0 right-0 top-0 z-50 flex h-[68px] items-center justify-between border-b border-slate-200 bg-white/95 px-6 backdrop-blur-xl">
+        <div className="flex h-full items-center gap-8" onMouseLeave={() => setHoveredNav(null)}>
+          <Link href="/" className="group flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white shadow-md transition-transform group-hover:scale-105">
+              <Radar size={18} strokeWidth={2.5} />
             </div>
-            <h1 className="mt-5 max-w-4xl text-4xl font-black leading-tight tracking-tight text-slate-950 md:text-6xl">
-              把公告、调剂和你的
-              <br />
-              个人监控入口压缩到一个首页里
-            </h1>
-            <p className="mt-5 max-w-2xl text-sm leading-7 text-slate-600 md:text-base">
-              这不是单纯换皮。首页现在直接承接检索入口、关注状态和近期情报节奏，减少先点进去再判断值不值得看的跳转成本。
-            </p>
+            <span className="text-lg font-bold tracking-tight text-slate-900">GewuJL.</span>
+          </Link>
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={navigateToSearch}
-                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(15,23,42,0.22)] transition-transform hover:-translate-y-0.5"
+          <nav className="hidden h-full items-center gap-8 md:flex">
+            {TOP_NAV_ITEMS.map((item) => (
+              <Link
+                key={item.id}
+                href={item.href}
+                onMouseEnter={() => setHoveredNav(item.id)}
+                className="relative flex h-full items-center text-xs font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-slate-900"
               >
-                <Search size={16} />
-                直接开始检索
-              </button>
-              <button
-                type="button"
-                onClick={handleAccountAction}
-                className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/90 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-white"
-              >
-                {portalAuth ? <Compass size={16} /> : <LogIn size={16} />}
-                {portalAuth ? "打开个人空间" : "登录主账号"}
-              </button>
-              <button
-                type="button"
-                onClick={handleRadarAction}
-                className="inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-5 py-3 text-sm font-semibold text-cyan-700 transition-colors hover:bg-cyan-100"
-              >
-                <Radar size={16} />
-                {portalAuth ? "打开我的雷达" : "解锁调剂雷达"}
-              </button>
-            </div>
+                {item.label}
+                {hoveredNav === item.id ? <FlyingUnderline bottomOffset="bottom-[-1px]" /> : null}
+              </Link>
+            ))}
+          </nav>
+        </div>
 
-            <div className="mt-10 grid gap-3 md:grid-cols-3">
-              {statusCards.map((card) => (
-                <div
-                  key={card.label}
-                  className="rounded-[28px] border border-white/80 bg-white/82 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl"
+        <form onSubmit={handleSearchSubmit} className="mx-6 hidden max-w-[420px] flex-1 lg:flex">
+          <div className="relative flex w-full items-center overflow-hidden rounded-full border border-transparent bg-slate-100/80 transition-all focus-within:border-slate-200 focus-within:bg-white">
+            <div className="flex shrink-0 items-center p-1 pl-1.5">
+              {(
+                [
+                  { key: "adjustment", label: "调剂" },
+                  { key: "announcement", label: "公告" },
+                ] as const
+              ).map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  onClick={() => setSearchMode(mode.key)}
+                  className={`relative rounded-full px-3 py-1.5 text-[10px] font-bold transition-all ${
+                    searchMode === mode.key ? "text-slate-900" : "text-slate-400"
+                  }`}
                 >
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{card.label}</div>
-                  <div className="mt-3 text-3xl font-black tracking-tight text-slate-950">{card.value}</div>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">{card.detail}</p>
-                </div>
+                  {searchMode === mode.key ? (
+                    <motion.div
+                      layoutId="searchModeIndicator"
+                      className="absolute inset-0 rounded-full bg-white shadow-sm"
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    />
+                  ) : null}
+                  <span className="relative z-10">{mode.label}</span>
+                </button>
               ))}
             </div>
+            <input
+              type="text"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder={searchMode === "adjustment" ? "快速过滤调剂情报…" : "快速检索公告关键词…"}
+              className="flex-1 bg-transparent px-3 py-2 text-xs text-slate-900 outline-none placeholder:text-slate-400"
+            />
           </div>
+        </form>
 
-          <div className="rounded-[32px] border border-white/70 bg-white/88 p-5 shadow-[0_24px_70px_rgba(14,116,144,0.12)] backdrop-blur-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Live Console</div>
-                <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">首页检索面板</h2>
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                Core Ready
-              </div>
-            </div>
-
-            <form onSubmit={handleSearchSubmit} className="mt-6 space-y-4">
-              <div className="inline-flex rounded-full border border-black/5 bg-slate-100 p-1">
-                {(
-                  [
-                    { label: "公告", value: "announcements" },
-                    { label: "调剂", value: "adjustments" },
-                  ] as const
-                ).map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => setSearchMode(item.value)}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                      searchMode === item.value ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-
-              <label className="block">
-                <span className="sr-only">关键词</span>
-                <div className="flex items-center gap-3 rounded-[24px] border border-black/5 bg-slate-50 px-4 py-4">
-                  <Search size={18} className="text-slate-400" />
-                  <input
-                    value={keyword}
-                    onChange={(event) => setKeyword(event.target.value)}
-                    placeholder={searchMode === "announcements" ? "搜索学校、公告或关键词" : "搜索学校、专业或调剂线索"}
-                    className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-                  />
-                </div>
-              </label>
-
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-[24px] bg-[linear-gradient(135deg,#0f172a,#0891b2)] px-5 py-4 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(14,116,144,0.22)] transition-transform hover:-translate-y-0.5"
-              >
-                进入 {searchMode === "announcements" ? "公告" : "调剂"} 检索
-                <ArrowUpRight size={16} />
-              </button>
-            </form>
-
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <ConsoleMetric
-                icon={<TrendingUp size={16} />}
-                label="近期检索源"
-                value={announcementsUnavailable ? "--" : String(Object.keys(announcementsQuery.data?.source_breakdown ?? {}).length || 0)}
-                detail={announcementsUnavailable ? "当前环境未连到公告 API" : "首页公告数据源覆盖数"}
-              />
-              <ConsoleMetric
-                icon={<BellRing size={16} />}
-                label="近期信号"
-                value={formatCompactNumber(activityCount)}
-                detail={portalAuth ? "与你的站内通知同步" : "登录后显示个人命中"}
-              />
-              <ConsoleMetric
-                icon={<ShieldCheck size={16} />}
-                label="账号状态"
-                value={portalAuth ? (portalAuth.isAdmin ? "Admin" : portalAuth.isPremium ? "Premium" : "User") : "Guest"}
-                detail={portalAuth ? `当前身份：${portalAuth.nickname || portalAuth.username}` : "未登录时仍可直接看公告"}
-                className="sm:col-span-2"
-              />
-            </div>
+        <div className="flex h-full items-center gap-3" onMouseLeave={() => setHoveredNav(null)}>
+          <div className="relative flex h-full items-center px-2" onMouseEnter={() => setHoveredNav("profile")}>
+            <button
+              type="button"
+              onClick={handleProfileClick}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100"
+            >
+              {portalAuth ? <span className="text-xs font-black uppercase">{displayName.slice(0, 1)}</span> : <User size={14} />}
+            </button>
+            {hoveredNav === "profile" ? <FlyingUnderline bottomOffset="bottom-[-1px]" /> : null}
           </div>
+          <button
+            type="button"
+            onClick={handleRadarClick}
+            className="ml-2 rounded-lg bg-slate-900 px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest text-white transition-all hover:bg-slate-800 active:scale-95"
+          >
+            监控面板
+          </button>
         </div>
-      </section>
+      </header>
 
       <section
         ref={dashboardRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        className="relative overflow-hidden border-b border-black/5 bg-[#f8fafc]"
+        className="relative flex h-[220px] items-center overflow-hidden border-b border-slate-200/60 bg-[#f8fafc] pt-[68px]"
       >
         <motion.div
-          animate={{ x: mousePos.x * -12, y: mousePos.y * -6 }}
-          className="pointer-events-none absolute left-[-5%] top-[-10%] h-[360px] w-[360px] rounded-full bg-cyan-400/10 blur-[110px]"
+          animate={{ x: mousePos.x * -10, y: mousePos.y * -5 }}
+          className="pointer-events-none absolute left-[-10%] top-[-20%] h-[500px] w-[500px] rounded-full bg-cyan-500/5 blur-[100px]"
         />
         <motion.div
-          animate={{ x: mousePos.x * -24, y: mousePos.y * -10 }}
-          className="pointer-events-none absolute inset-0 opacity-[0.04]"
+          animate={{ x: mousePos.x * -25, y: mousePos.y * -10 }}
+          className="pointer-events-none absolute inset-[-10%] opacity-[0.03]"
           style={{
             backgroundImage:
-              "linear-gradient(rgba(8,145,178,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(8,145,178,0.6) 1px, transparent 1px)",
-            backgroundSize: "42px 42px",
+              "linear-gradient(rgba(6,182,212,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.5) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
           }}
         />
+        <motion.div animate={{ x: mousePos.x * -45, y: mousePos.y * -15 }} className="pointer-events-none absolute inset-0">
+          <div className="absolute right-1/3 top-1/4 h-1.5 w-1.5 rounded-full bg-cyan-200" />
+          <div className="absolute bottom-1/3 left-1/4 h-1 w-1 rounded-full bg-slate-200" />
+          <div className="absolute right-[10%] top-1/2 h-px w-10 bg-cyan-100" />
+        </motion.div>
 
-        <div className="relative mx-auto grid max-w-[1440px] gap-8 px-4 py-8 md:px-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-center">
-          <motion.div
-            animate={{ rotateY: mousePos.x * 4, rotateX: mousePos.y * -4 }}
-            className="rounded-[30px] border border-white/80 bg-white/86 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Live Intercept</div>
-                <div className="mt-2 flex items-end gap-3">
-                  <span className="text-4xl font-black tracking-tight text-slate-950">
-                    {announcementsUnavailable ? "--" : formatCompactNumber(indexedCount)}
-                  </span>
-                  <span className="pb-1 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">公告总量</span>
-                </div>
+        <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-col items-center gap-12 px-6 md:flex-row">
+          <motion.div animate={{ rotateY: mousePos.x * 5, rotateX: mousePos.y * -5 }} className="group flex flex-1 items-center gap-8">
+            <div className="shrink-0">
+              <div className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500" />
+                Live Intercept
               </div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
-                <Zap size={14} className="text-cyan-600" />
-                首页数据按真实查询结果渲染
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-3xl font-black tracking-tighter text-slate-900">{formatCompactNumber(indexedCount)}</span>
+                <span className="text-[10px] font-bold text-slate-400">INDEXED</span>
               </div>
             </div>
-            <div className="mt-5">
-              <MicroTrendChart data={trendSeries} />
+            <div className="max-w-[320px] flex-1 rounded-xl border border-white bg-white/40 p-3 shadow-sm backdrop-blur-sm transition-colors group-hover:border-cyan-200">
+              <MicroTrendChart data={trendData} />
             </div>
           </motion.div>
 
-          <motion.div
-            animate={{ rotateY: mousePos.x * 3, rotateX: mousePos.y * -3 }}
-            className="rounded-[30px] border border-white/80 bg-white/86 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl"
-          >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Topology</div>
-            <div className="mt-2 flex items-end gap-3">
-              <span className="text-4xl font-black tracking-tight text-slate-950">{distributionData.length}</span>
-              <span className="pb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">高频来源</span>
+          <div className="hidden h-10 w-px bg-slate-200/60 md:block" />
+
+          <motion.div animate={{ rotateY: mousePos.x * 3, rotateX: mousePos.y * -3 }} className="group flex flex-1 items-center gap-8">
+            <div className="shrink-0">
+              <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Topology</div>
+              <div className="text-sm font-bold text-slate-700">
+                {sourceCount || distributionData.length} Sources
+                <span className="ml-1 font-mono text-xs text-slate-400">
+                  · {portalAuth ? `${followingCount + radarCount + activityCount} linked` : "guest"}
+                </span>
+              </div>
             </div>
-            <div className="mt-5">
+            <div className="max-w-[220px] flex-1 rounded-xl border border-white bg-white/40 p-3 shadow-sm backdrop-blur-sm transition-colors group-hover:border-cyan-200">
               <MicroDistributionChart data={distributionData} />
+              <div className="mt-1.5 flex justify-between text-[8px] font-mono tracking-tighter text-slate-400">
+                {distributionData.map((item) => (
+                  <span key={item.label}>{item.label}</span>
+                ))}
+              </div>
             </div>
           </motion.div>
+
+          <div className="hidden items-center gap-2 rounded-full border border-white bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur-md xl:flex">
+            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+            <span className="font-mono text-[9px] font-black uppercase tracking-widest text-slate-500">{syncLabel}</span>
+          </div>
         </div>
       </section>
 
-      <main className="mx-auto grid max-w-[1440px] gap-8 px-4 py-10 md:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <section className="rounded-[32px] border border-black/5 bg-white/88 p-6 shadow-[0_18px_60px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-          <SectionHeading
-            badgeTone="bg-cyan-500"
-            title="Latest Notices"
-            actionHref="/search?tab=announcements"
-            actionLabel="进入公告检索"
-          />
-          <div className="mt-6 space-y-4">
+      <main className="mx-auto max-w-7xl px-6 py-12 pb-32">
+        <div className="grid grid-cols-1 gap-12 lg:grid-cols-2">
+          <div className="space-y-5">
+            <div className="mb-8 flex items-center gap-3 border-b border-slate-100 pb-4">
+              <div className="h-5 w-1.5 rounded-full bg-cyan-600 shadow-[0_0_8px_rgba(8,145,178,0.3)]" />
+              <h2 className="text-sm font-black uppercase tracking-[0.3em] text-slate-900">Latest Notices</h2>
+            </div>
+
             {latestAnnouncements.length ? (
               latestAnnouncements.map((item) => <AnnouncementCard key={item.id} item={item} />)
             ) : (
-              <EmptyBlock
-                title={announcementsQuery.isLoading ? "正在同步首页公告…" : "首页公告还没同步出来"}
-                detail="如果刚部署过 crawler 或数据源正在刷新，这里会在首页查询完成后自动补上。"
-              />
+              <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+                {announcementsQuery.isLoading ? "正在同步公告数据…" : "当前没有可展示的公告数据。"}
+              </div>
             )}
           </div>
-        </section>
 
-        <section className="rounded-[32px] border border-black/5 bg-white/88 p-6 shadow-[0_18px_60px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-          <SectionHeading
-            badgeTone="bg-orange-500"
-            title="Adjustment Radar"
-            actionHref={portalAuth ? "/search?tab=adjustments" : "/login"}
-            actionLabel={portalAuth ? "进入调剂检索" : "登录后查看"}
-          />
-          <div className="mt-6 space-y-4">
+          <div className="space-y-5">
+            <div className="mb-8 flex items-center gap-3 border-b border-slate-100 pb-4">
+              <div className="h-5 w-1.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.3)]" />
+              <h2 className="text-sm font-black uppercase tracking-[0.3em] text-slate-900">Adjustment Radar</h2>
+            </div>
+
             {portalAuth ? (
               adjustmentSignals.length ? (
                 adjustmentSignals.map((item) => <AdjustmentCard key={item.id} item={item} />)
               ) : (
-                <EmptyBlock
-                  title={adjustmentsQuery.isLoading ? "正在同步调剂情报…" : "暂时没有新的调剂信号"}
-                  detail="这里显示的是首页预取的高优先级调剂结果；完整筛选仍在检索页。"
-                />
+                <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+                  {adjustmentsQuery.isLoading ? "正在同步调剂信号…" : "当前没有新的调剂信号。"}
+                </div>
               )
             ) : (
-              ANONYMOUS_RADAR_FALLBACK.map((item) => (
+              ANONYMOUS_ADJUSTMENT_FALLBACK.map((item) => (
                 <div
                   key={item.title}
-                  className="rounded-[26px] border border-orange-100 bg-[linear-gradient(135deg,rgba(255,247,237,0.96),rgba(255,255,255,0.96))] p-5"
+                  className="rounded-xl border border-slate-200 bg-white p-6 transition-all hover:border-orange-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.03)]"
                 >
-                  <div className="inline-flex rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-semibold text-orange-700">
+                  <div className="inline-flex rounded-full bg-orange-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-orange-500">
                     {item.accent}
                   </div>
-                  <h3 className="mt-3 text-lg font-bold text-slate-900">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{item.summary}</p>
+                  <h3 className="mt-3 text-base font-bold text-slate-900">{item.title}</h3>
+                  <p className="mt-2 text-[11px] font-medium leading-6 text-slate-500">{item.summary}</p>
                 </div>
               ))
             )}
           </div>
-        </section>
+        </div>
       </main>
 
-      <section className="mx-auto max-w-[1440px] px-4 md:px-6">
-        <div className="relative overflow-hidden rounded-[36px] border border-black/5 bg-[linear-gradient(135deg,#082f49,#0f172a_58%,#155e75)] px-6 py-8 text-white shadow-[0_24px_80px_rgba(8,47,73,0.28)] md:px-8">
-          <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top,rgba(103,232,249,0.22),transparent_48%)]" />
-          <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <div className="max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100">
-                <Radar size={14} />
-                One home, less context switching
+      <AnimatePresence>
+        {isLoginOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/10 backdrop-blur-sm"
+          >
+            <div className="absolute inset-0" onClick={() => setIsLoginOpen(false)} />
+            <motion.div
+              initial={{ scale: 0.98, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.98, opacity: 0 }}
+              className="relative z-10 w-full max-w-[360px] rounded-2xl border border-slate-200 bg-white p-8 shadow-2xl"
+            >
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="font-black uppercase tracking-tighter text-slate-900">System Access</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsLoginOpen(false)}
+                  className="text-slate-300 transition-colors hover:text-slate-900"
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <h2 className="mt-4 text-3xl font-black tracking-tight md:text-4xl">首页现在就是你的第一块控制面板</h2>
-              <p className="mt-3 text-sm leading-7 text-cyan-50/86 md:text-base">
-                公开公告可以直接看，登录后继续沿着同一套壳层进入调剂检索、空间页和监控工作台，不再把首页当成纯跳板。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/search"
-                className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition-transform hover:-translate-y-0.5"
-              >
-                去检索
-                <ChevronRight size={16} />
-              </Link>
-              <button
-                type="button"
-                onClick={handleRadarAction}
-                className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/15"
-              >
-                {portalAuth ? "打开监控面板" : "登录后开启监控"}
-                <ArrowUpRight size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
 
-function ConsoleMetric({
-  icon,
-  label,
-  value,
-  detail,
-  className = "",
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  detail: string;
-  className?: string;
-}) {
-  return (
-    <div className={`rounded-[24px] border border-black/5 bg-slate-50/90 p-4 ${className}`}>
-      <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
-        <span className="text-cyan-700">{icon}</span>
-        {label}
-      </div>
-      <div className="mt-3 text-2xl font-black tracking-tight text-slate-950">{value}</div>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
-    </div>
-  );
-}
+              <form className="space-y-4" onSubmit={handleLoginSubmit}>
+                <input
+                  type="text"
+                  value={loginName}
+                  onChange={(event) => setLoginName(event.target.value)}
+                  placeholder="Account"
+                  autoComplete="username"
+                  className="w-full rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-xs outline-none transition-all focus:border-slate-300"
+                />
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  placeholder="Verify Key"
+                  autoComplete="current-password"
+                  className="w-full rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-xs outline-none transition-all focus:border-slate-300"
+                />
+                {loginMessage ? <p className="text-xs leading-5 text-rose-500">{loginMessage}</p> : null}
+                <button
+                  type="submit"
+                  disabled={loginSubmitting}
+                  className="mt-4 w-full rounded-xl bg-slate-900 py-4 text-xs font-black uppercase tracking-widest text-white shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loginSubmitting ? "Connecting…" : "Verify Connection"}
+                </button>
+              </form>
 
-function SectionHeading({
-  badgeTone,
-  title,
-  actionHref,
-  actionLabel,
-}: {
-  badgeTone: string;
-  title: string;
-  actionHref: string;
-  actionLabel: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
-      <div className="flex items-center gap-3">
-        <div className={`h-5 w-1.5 rounded-full ${badgeTone}`} />
-        <h2 className="text-sm font-black uppercase tracking-[0.3em] text-slate-900">{title}</h2>
-      </div>
-      <Link href={actionHref} className="text-sm font-semibold text-slate-500 transition-colors hover:text-slate-900">
-        {actionLabel}
-      </Link>
+              <div className="mt-4 flex items-center justify-between text-[11px] text-slate-400">
+                <span>Connected role: {portalAuth?.role || "guest"}</span>
+                <Link href="/register" className="text-slate-500 transition-colors hover:text-slate-900">
+                  去注册
+                </Link>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
 
 function AnnouncementCard({ item }: { item: SearchItem }) {
-  const detailHref = item.source_url || "/search?tab=announcements";
-
   return (
     <a
-      href={detailHref}
+      href={item.source_url || "/search?tab=announcements"}
       target={item.source_url ? "_blank" : undefined}
       rel={item.source_url ? "noopener noreferrer" : undefined}
-      className="group flex items-start gap-4 rounded-[28px] border border-slate-200 bg-white p-5 transition-all hover:border-cyan-300 hover:shadow-[0_18px_40px_rgba(8,145,178,0.08)]"
+      className="group relative flex cursor-pointer items-start gap-5 overflow-hidden rounded-xl border border-slate-200 bg-white p-6 transition-all hover:border-cyan-500/50 hover:shadow-[0_8px_30px_rgba(0,0,0,0.03)]"
     >
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 text-slate-400 transition-colors group-hover:bg-cyan-50 group-hover:text-cyan-700">
-        <BookOpenText size={18} />
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 transition-colors group-hover:bg-cyan-50">
+        <BookOpen size={18} className="text-slate-400 transition-colors group-hover:text-cyan-600" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-          <span className="rounded-full bg-slate-50 px-2 py-1 text-[10px] text-slate-500">{item.source_type || "公告"}</span>
-          <span>{formatRelativeTime(item.published_at || item.updated_at)}</span>
-        </div>
-        <h3 className="mt-3 line-clamp-2 text-lg font-bold leading-7 text-slate-900 transition-colors group-hover:text-cyan-700">
-          {item.title}
-        </h3>
-        <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">
-          {item.summary || "当前公告没有结构化摘要，点击后可继续查看原文。"}
-        </p>
-        <div className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-500">
-          <span className="truncate">{item.school_name || "院校待补充"}</span>
-          <span className="inline-flex items-center gap-1 font-semibold text-slate-700">
-            查看详情
-            <ChevronRight size={15} />
+        <div className="mb-1.5 flex items-center gap-3">
+          <span className="rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            {item.source_type || "Admission"}
           </span>
+          <span className="font-mono text-[10px] italic text-slate-300">{formatRelativeTime(item.published_at || item.updated_at)}</span>
         </div>
+        <h3 className="line-clamp-2 text-base font-bold text-slate-800 transition-colors group-hover:text-cyan-700">{item.title}</h3>
+        <p className="mt-2 line-clamp-2 text-[11px] leading-6 text-slate-500">
+          {item.summary || item.school_name || "点击查看完整公告。"}
+        </p>
+        <div className="mt-3 text-[11px] font-medium text-slate-500">{item.school_name || "院校待补充"}</div>
       </div>
     </a>
   );
 }
 
 function AdjustmentCard({ item }: { item: SearchItem }) {
-  const urgencyLabel =
-    item.adjustment_vacancy_count && item.adjustment_vacancy_count > 0
-      ? `${item.adjustment_vacancy_count} 个缺额`
-      : item.historical_adjustment?.outlook_label || "优先关注";
-
   return (
     <a
       href={item.source_url || "/search?tab=adjustments"}
       target={item.source_url ? "_blank" : undefined}
       rel={item.source_url ? "noopener noreferrer" : undefined}
-      className="group flex items-center justify-between gap-4 rounded-[28px] border border-slate-200 bg-white p-5 transition-all hover:border-orange-300 hover:shadow-[0_18px_40px_rgba(249,115,22,0.08)]"
+      className="group flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-white p-6 transition-all hover:border-orange-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.03)]"
     >
       <div className="min-w-0">
-        <div className="inline-flex rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-700">
-          {urgencyLabel}
-        </div>
-        <h3 className="mt-3 truncate text-lg font-bold text-slate-900 transition-colors group-hover:text-orange-600">
+        <h3 className="truncate text-base font-bold text-slate-900 transition-colors group-hover:text-orange-600">
           {item.school_name || item.title}
         </h3>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
+        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
           {[item.major, item.department_name, item.school_tier].filter(Boolean).join(" · ") || item.title}
         </p>
       </div>
-      <div className="shrink-0 rounded-[24px] border border-orange-100 bg-orange-50 px-4 py-3 text-right">
-        <div className="text-2xl font-black tracking-tight text-slate-950">
+      <div className="ml-6 shrink-0 border-l border-slate-100 pl-6 text-right">
+        <div className="font-mono text-2xl font-black leading-none text-slate-900 transition-colors group-hover:text-orange-600">
           {item.adjustment_vacancy_count ?? item.historical_adjustment?.sample_count ?? "--"}
         </div>
-        <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700">Radar</div>
+        <div className="mt-1 text-[9px] font-black uppercase tracking-widest text-orange-500">
+          {item.historical_adjustment?.outlook_label || "Urgent Alert"}
+        </div>
       </div>
     </a>
   );
 }
 
-function EmptyBlock({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="rounded-[28px] border border-dashed border-slate-200 bg-slate-50/80 p-6">
-      <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>
-    </div>
-  );
-}
-
 function MicroTrendChart({ data }: { data: number[] }) {
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const width = 240;
-  const height = 54;
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const max = Math.max(...data);
-  const points = data
-    .map((value, index) => `${(index / (data.length - 1)) * width},${height - (value / max) * height}`)
-    .join(" L ");
+  const width = 200;
+  const height = 40;
+  const points = data.map((value, index) => `${(index / (data.length - 1)) * width},${height - (value / max) * height}`).join(" L ");
 
   return (
-    <div className="relative h-[54px] w-full" onMouseLeave={() => setHoverIndex(null)}>
+    <div className="group relative h-[40px] w-full" onMouseLeave={() => setHoverIdx(null)}>
       <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-full w-full overflow-visible">
         <motion.path
           d={`M ${points}`}
           fill="none"
           stroke="#0891b2"
-          strokeWidth="2"
+          strokeWidth="1.5"
           initial={{ pathLength: 0 }}
           animate={{ pathLength: 1 }}
-          transition={{ duration: 1.2 }}
+          transition={{ duration: 1.5 }}
         />
         <motion.path
           d={`M 0,${height} L ${points} L ${width},${height} Z`}
-          fill="url(#homeTrendFill)"
+          fill="url(#sparkLightGradient)"
+          opacity="0.05"
           initial={{ opacity: 0 }}
-          animate={{ opacity: 0.14 }}
-          transition={{ duration: 1.2 }}
+          animate={{ opacity: 0.05 }}
+          transition={{ duration: 1.5 }}
         />
         <defs>
-          <linearGradient id="homeTrendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#06b6d4" />
+          <linearGradient id="sparkLightGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#0891b2" />
             <stop offset="100%" stopColor="transparent" />
           </linearGradient>
         </defs>
-        {hoverIndex !== null ? (
+        {hoverIdx !== null ? (
           <g>
             <line
-              x1={(hoverIndex / (data.length - 1)) * width}
+              x1={(hoverIdx / (data.length - 1)) * width}
               y1="0"
-              x2={(hoverIndex / (data.length - 1)) * width}
+              x2={(hoverIdx / (data.length - 1)) * width}
               y2={height}
-              stroke="#cbd5e1"
+              stroke="#e2e8f0"
               strokeWidth="1"
             />
             <circle
-              cx={(hoverIndex / (data.length - 1)) * width}
-              cy={height - (data[hoverIndex] / max) * height}
-              r="3"
+              cx={(hoverIdx / (data.length - 1)) * width}
+              cy={height - (data[hoverIdx] / max) * height}
+              r="2.5"
               fill="#0891b2"
             />
           </g>
@@ -681,7 +632,8 @@ function MicroTrendChart({ data }: { data: number[] }) {
             width={width / (data.length - 1)}
             height={height}
             fill="transparent"
-            onMouseEnter={() => setHoverIndex(index)}
+            onMouseEnter={() => setHoverIdx(index)}
+            className="cursor-crosshair"
           />
         ))}
       </svg>
@@ -689,31 +641,43 @@ function MicroTrendChart({ data }: { data: number[] }) {
   );
 }
 
-function MicroDistributionChart({ data }: { data: DistributionDatum[] }) {
+function MicroDistributionChart({ data }: { data: DistributionBar[] }) {
   const max = Math.max(...data.map((item) => item.value));
 
   return (
-    <>
-      <div className="flex h-[58px] items-end gap-2">
-        {data.map((item) => (
-          <motion.div
-            key={item.label}
-            initial={{ height: 0 }}
-            animate={{ height: `${(item.value / max) * 100}%` }}
-            transition={{ duration: 0.9 }}
-            className={`flex-1 rounded-t-xl ${item.tone}`}
-          />
-        ))}
-      </div>
-      <div className="mt-3 flex justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-        {data.map((item) => (
-          <span key={item.label} className="truncate">
-            {item.label}
-          </span>
-        ))}
-      </div>
-    </>
+    <div className="flex h-[30px] w-full items-end gap-1">
+      {data.map((item, index) => (
+        <motion.div
+          key={`${item.label}-${index}`}
+          initial={{ height: 0 }}
+          animate={{ height: `${(item.value / max) * 100}%` }}
+          transition={{ duration: 1, delay: index * 0.1 }}
+          className={`flex-1 rounded-t-sm opacity-80 ${item.color}`}
+        />
+      ))}
+    </div>
   );
+}
+
+function FlyingUnderline({ bottomOffset = "-bottom-[21px]" }: { bottomOffset?: string }) {
+  return (
+    <motion.div
+      layoutId="topNavUnderline"
+      className={`pointer-events-none absolute left-0 right-0 z-30 h-[2px] rounded-full bg-slate-900 ${bottomOffset}`}
+      transition={{ type: "spring", stiffness: 500, damping: 35, mass: 0.8 }}
+    />
+  );
+}
+
+function formatRelativeTime(input: string | null): string {
+  if (!input) return "JUST NOW";
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) return "JUST NOW";
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 60 * 1000) return "JUST NOW";
+  if (diffMs < 60 * 60 * 1000) return `${Math.floor(diffMs / (60 * 1000))} MIN AGO`;
+  if (diffMs < 24 * 60 * 60 * 1000) return `${Math.floor(diffMs / (60 * 60 * 1000))} H AGO`;
+  return `${Math.floor(diffMs / (24 * 60 * 60 * 1000))} D AGO`;
 }
 
 function formatCompactNumber(value: number): string {
@@ -721,16 +685,4 @@ function formatCompactNumber(value: number): string {
   if (value >= 10_000) return `${(value / 10_000).toFixed(1)}w`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
   return String(value);
-}
-
-function formatRelativeTime(input: string | null): string {
-  if (!input) return "时间未知";
-  const value = new Date(input).getTime();
-  if (Number.isNaN(value)) return "时间未知";
-
-  const diff = Date.now() - value;
-  if (diff < 60_000) return "刚刚";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-  return `${Math.floor(diff / 86_400_000)} 天前`;
 }
