@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { LockKeyhole, LogOut, QrCode, Sparkles, WalletCards } from "lucide-react";
+import { FolderKanban, LockKeyhole, LogOut, QrCode, Sparkles, WalletCards } from "lucide-react";
 
 export function AccountSpaceSidebar({
   membershipLabel,
@@ -42,13 +42,17 @@ export function AccountSpaceSidebar({
         <div className="text-xs uppercase tracking-[0.24em] text-sky-500">Membership</div>
         <div className="mt-3 text-xl font-bold text-slate-900">{membershipLabel}</div>
         <p className="mt-3 text-sm leading-7 text-slate-600">
-          会员权益、订单、绑定和安全管理统一在这里处理，主列只展示动态与情报流。
+          会员权益、订单、绑定和安全管理统一在这里处理；关注库里的订阅、雷达和实时提醒改由独立工作台承载。
         </p>
       </section>
 
       <section className="bili-surface p-6">
         <div className="text-xs uppercase tracking-[0.24em] text-slate-400">Quick Actions</div>
         <div className="mt-4 grid gap-3">
+          <Link href="/watchlist" className="flex items-center gap-3 rounded-2xl bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100">
+            <FolderKanban size={16} />
+            打开关注库
+          </Link>
           <Link href="/account?tab=account&panel=billing" className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100">
             <WalletCards size={16} />
             会员与订单

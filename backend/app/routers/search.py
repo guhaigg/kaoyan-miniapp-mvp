@@ -12,6 +12,7 @@ from ..db import get_db
 from ..dependencies import audit_event, enforce_rate_limit, get_portal_user_optional
 from ..models import AdjustmentOpportunity, Content, CrawlJob, HistoricalAdjustmentProfile, School, SiteSection, User
 from ..schemas import (
+    AnnouncementSearchDetailResponse,
     AdjustmentSearchDetailResponse,
     AdjustmentSearchLinkItem,
     AdjustmentSearchRequest,
@@ -2454,3 +2455,49 @@ def get_adjustment_item_detail(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="adjustment opportunity not found")
         return _build_adjustment_detail_from_opportunity(db, row)
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unsupported adjustment item kind")
+
+
+@router.get("/announcements/items/{content_id}", response_model=AnnouncementSearchDetailResponse)
+def get_announcement_item_detail(
+    content_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AnnouncementSearchDetailResponse:
+    row = db.query(Content).filter(Content.id == content_id, Content.category == "announcement").first()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="announcement not found")
+
+    if not _row_is_visible_announcement(db, row):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="announcement not found")
+
+    extra = dict(row.extra or {})
+    links = []
+    if row.source_url:
+        links.append(
+            AdjustmentSearchLinkItem(
+                label="原始链接",
+                url=row.source_url,
+                link_type="source_url",
+                source=row.source_type,
+            )
+        )
+
+    return AnnouncementSearchDetailResponse(
+        id=row.id,
+        title=row.title,
+        school_name=extra.get("school_name"),
+        department_name=extra.get("department_name"),
+        notice_kind=extra.get("notice_kind"),
+        channel_label=extra.get("channel_label"),
+        channel_tier=extra.get("channel_tier"),
+        source_type=row.source_type,
+        source_url=row.source_url,
+        published_at=row.published_at,
+        updated_at=row.updated_at,
+        summary=row.summary,
+        body=row.body,
+        tags=list(extra.get("tags") or []),
+        system_tags=_announcement_system_tags_from_extra(extra),
+        links=links,
+        meta_json=extra,
+    )

@@ -53,18 +53,18 @@ function buildSignature(args: {
   radarCount: number;
 }) {
   if (!args.isLoggedIn) {
-    return "登录后，你关注的院校、栏目和雷达信号都会在这里聚合成个人空间首页。";
+    return "登录后，账号摘要、通知历史和会员状态会在这里聚合成你的个人空间首页。";
   }
   if (args.membershipLabel === "管理员") {
-    return "把账号动态、关注范围和雷达信号集中在一个更像个人空间的首页里，方便日常巡检。";
+    return "把账号动态、通知历史和管理员身份摘要集中在一个更像个人空间的首页里，方便日常巡检。";
   }
   if (args.membershipLabel === "高级会员") {
-    return "最近动态、关注范围和雷达命中会在这里形成一条连续的信息流，保持盯盘节奏。";
+    return "最近动态、通知历史和会员状态会在这里形成一条连续的信息流，保持你的研招盯盘节奏。";
   }
   if (args.followCount > 0 || args.radarCount > 0) {
-    return "先从最近动态开始，再回看你关注的学校和雷达范围，个人空间会逐渐长出来。";
+    return "先从最近动态和通知开始，再回看你的关注库与雷达范围，个人空间会逐渐长出来。";
   }
-  return "先关注学校、补齐雷达范围，再把你的研招动态慢慢堆满这张主页。";
+  return "先从动态和通知开始，等你补齐关注库后，这里会慢慢长成完整的个人摘要页。";
 }
 
 function joinBits(parts: Array<string | null | undefined>) {

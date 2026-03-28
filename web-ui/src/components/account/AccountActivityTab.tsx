@@ -79,7 +79,7 @@ export function AccountActivityTab({
           description="先去搜索学校、加一点关注或补一个雷达范围，之后新的公告和命中信号就会开始在这里累积。"
           actions={
             <>
-            <Link href="/search" className="rounded-full border border-sky-100 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700">
+            <Link href="/announcements" className="rounded-full border border-sky-100 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700">
               去搜索页加关注
             </Link>
             <Link href="/watchlist" className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700">

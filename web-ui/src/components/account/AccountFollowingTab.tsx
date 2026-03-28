@@ -107,7 +107,7 @@ export function AccountFollowingTab({
           <Link href="/login" className="rounded-full bg-[linear-gradient(90deg,#ff7fb7,#68d2ff)] px-5 py-3 text-sm font-semibold text-white">
             去登录
           </Link>
-          <Link href="/search" className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700">
+          <Link href="/announcements" className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700">
             先看看搜索页
           </Link>
           </>
@@ -130,7 +130,7 @@ export function AccountFollowingTab({
         description="先加几条院校、专业、关键词订阅，再决定要不要把学校、院系或栏目级雷达也拉进来。"
         actions={
           <>
-          <Link href="/search" className="rounded-full border border-sky-100 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700">
+          <Link href="/announcements" className="rounded-full border border-sky-100 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700">
             去搜索页加关注
           </Link>
           <Link href="/watchlist" className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700">

@@ -1,7 +1,7 @@
-export type AccountSpaceTab = "activity" | "following" | "radar" | "account";
+export type AccountSpaceTab = "activity" | "notifications" | "account";
 export type AccountSpacePanel = "billing" | "security" | "notifications" | null;
 
-const VALID_TABS = new Set<AccountSpaceTab>(["activity", "following", "radar", "account"]);
+const VALID_TABS = new Set<AccountSpaceTab>(["activity", "notifications", "account"]);
 const VALID_PANELS = new Set<Exclude<AccountSpacePanel, null>>(["billing", "security", "notifications"]);
 
 function readSingle(value: string | string[] | undefined): string | null {
@@ -16,6 +16,9 @@ function readSingle(value: string | string[] | undefined): string | null {
 
 export function parseAccountSpaceTab(value: string | string[] | undefined): AccountSpaceTab {
   const next = readSingle(value);
+  if (next === "following" || next === "radar") {
+    return "activity";
+  }
   return next && VALID_TABS.has(next as AccountSpaceTab) ? (next as AccountSpaceTab) : "activity";
 }
 

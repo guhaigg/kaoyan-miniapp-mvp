@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { Crown, LogOut, Radar, Search, Sparkles, Star } from "lucide-react";
@@ -7,11 +7,18 @@ import type { BiliHeaderSummary } from "./bili-header-data";
 type Props = {
   summary: BiliHeaderSummary;
   membershipLabel: string;
+  isAdmin?: boolean;
   onLogout: () => void;
   onNavigate: () => void;
 };
 
-export default function BiliHeaderUserCard({ summary, membershipLabel, onLogout, onNavigate }: Props) {
+export default function BiliHeaderUserCard({
+  summary,
+  membershipLabel,
+  isAdmin = false,
+  onLogout,
+  onNavigate,
+}: Props) {
   return (
     <div className="bili-surface absolute right-0 top-14 w-[340px] p-5 text-slate-900">
       <div className="flex flex-col items-center text-center">
@@ -49,7 +56,7 @@ export default function BiliHeaderUserCard({ summary, membershipLabel, onLogout,
           className="inline-flex items-center gap-2 rounded-xl border border-black/5 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
         >
           <Star size={15} />
-          关注工作台
+          关注库
         </Link>
         <Link
           href="/radar"
@@ -60,13 +67,23 @@ export default function BiliHeaderUserCard({ summary, membershipLabel, onLogout,
           雷达测算
         </Link>
         <Link
-          href="/search"
+          href="/announcements"
           onClick={onNavigate}
           className="inline-flex items-center gap-2 rounded-xl border border-black/5 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
         >
           <Search size={15} />
-          公告检索
+          公告汇总
         </Link>
+        {isAdmin ? (
+          <Link
+            href="/admin"
+            onClick={onNavigate}
+            className="inline-flex items-center gap-2 rounded-xl border border-black/5 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            <Sparkles size={15} />
+            管理后台
+          </Link>
+        ) : null}
       </div>
 
       <button

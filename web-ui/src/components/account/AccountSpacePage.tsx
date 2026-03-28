@@ -17,8 +17,6 @@ import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
 import { AccountAccountTab } from "./AccountAccountTab";
 import { AccountActivityTab } from "./AccountActivityTab";
-import { AccountFollowingTab } from "./AccountFollowingTab";
-import { AccountRadarTab } from "./AccountRadarTab";
 import { AccountSpaceHero } from "./AccountSpaceHero";
 import { AccountSpaceSidebar } from "./AccountSpaceSidebar";
 import { AccountSpaceTabs } from "./AccountSpaceTabs";
@@ -124,9 +122,9 @@ export default function AccountSpacePage({
   });
 
   const stats = [
-    { label: "关注数", value: String(spaceSummary.followCount), tone: "blue" as const },
-    { label: "雷达数", value: String(spaceSummary.radarCount), tone: "pink" as const },
-    { label: "动态数", value: String(spaceSummary.recentActivityCount), tone: "slate" as const },
+    { label: "关注库", value: String(spaceSummary.followCount), tone: "blue" as const },
+    { label: "雷达范围", value: String(spaceSummary.radarCount), tone: "pink" as const },
+    { label: "通知流", value: String(spaceSummary.recentActivityCount), tone: "slate" as const },
     {
       label: "会员状态",
       value: portalAuth?.isPremium || portalAuth?.isAdmin ? "已开通" : "普通",
@@ -134,31 +132,8 @@ export default function AccountSpacePage({
     },
   ];
 
-  const followingLoading = Boolean(portalAuth) && subscriptionsQuery.isLoading;
-  const radarLoading = Boolean(portalAuth) && canManageScopeTargets && monitorTargetsQuery.isLoading;
-
   let content: ReactNode;
-  if (currentTab === "following") {
-    content = (
-      <AccountFollowingTab
-        loggedIn={Boolean(portalAuth)}
-        loading={followingLoading}
-        subscriptions={subscriptions}
-        monitorTargets={monitorTargets}
-        canManageScopeTargets={canManageScopeTargets}
-      />
-    );
-  } else if (currentTab === "radar") {
-    content = (
-      <AccountRadarTab
-        loggedIn={Boolean(portalAuth)}
-        loading={radarLoading}
-        canManageScopeTargets={canManageScopeTargets}
-        targets={monitorTargets}
-        overview={monitorTargetsQuery.data?.recent_signal_overview || null}
-      />
-    );
-  } else if (currentTab === "account") {
+  if (currentTab === "account") {
     content = (
       <AccountAccountTab
         accessToken={portalAuth?.accessToken || null}
@@ -168,6 +143,15 @@ export default function AccountSpacePage({
         premiumExpiresAt={accountOverview?.premium_expires_at || portalAuth?.premiumExpiresAt || null}
         wechatBound={spaceSummary.wechatBound}
         onLoggedOut={handleLogout}
+      />
+    );
+  } else if (currentTab === "notifications") {
+    content = (
+      <AccountActivityTab
+        items={activityItems}
+        loggedIn={Boolean(portalAuth)}
+        loading={activityLoading || noticesQuery.isLoading}
+        panel="notifications"
       />
     );
   } else {

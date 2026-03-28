@@ -125,7 +125,7 @@ export default function AuthEntryPage({ initialMode, routeMode = true, onRequest
       }
 
       setAuthOpen(false);
-      router.push("/search");
+      router.push("/announcements");
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : "操作失败，请稍后重试");
     } finally {
@@ -238,11 +238,11 @@ export default function AuthEntryPage({ initialMode, routeMode = true, onRequest
                 账号中心
               </Link>
               <Link
-                href="/search"
+                href="/announcements"
                 onClick={() => setAuthOpen(false)}
                 className="rounded-xl border border-black/5 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
               >
-                公告检索
+                公告汇总
               </Link>
               <button
                 type="button"

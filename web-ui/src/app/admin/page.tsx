@@ -496,10 +496,10 @@ export default function AdminPage() {
 
   if (!authBootstrapped && (portalAuth || hasServerSessionHint)) {
     return (
-      <div className="mx-auto max-w-3xl px-4 pb-20 pt-16">
-        <div className="rounded-3xl border border-white/10 bg-black/35 p-8 text-center text-slate-200">
-          <h2 className="mb-3 text-2xl font-bold text-white">正在校验管理员身份</h2>
-          <p className="text-sm text-slate-300">等待会话与角色信息同步。</p>
+      <div className="mx-auto max-w-3xl px-6 pb-20 pt-12">
+        <div className="rounded-3xl border border-slate-200/70 bg-white/92 p-8 text-center text-slate-600 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+          <h2 className="mb-3 text-2xl font-bold text-slate-900">正在校验管理员身份</h2>
+          <p className="text-sm text-slate-500">等待会话与角色信息同步。</p>
         </div>
       </div>
     );
@@ -507,15 +507,15 @@ export default function AdminPage() {
 
   if (!portalAuth) {
     return (
-      <div className="mx-auto max-w-3xl px-4 pb-20 pt-16">
-        <div className="rounded-3xl border border-white/10 bg-black/35 p-8 text-center text-slate-200">
-          <h2 className="mb-3 text-2xl font-bold text-white">监控台仅管理员可见</h2>
-          <p className="mb-6 text-sm text-slate-300">请先登录管理员账号对应的用户账户。</p>
+      <div className="mx-auto max-w-3xl px-6 pb-20 pt-12">
+        <div className="rounded-3xl border border-slate-200/70 bg-white/92 p-8 text-center text-slate-600 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+          <h2 className="mb-3 text-2xl font-bold text-slate-900">监控台仅管理员可见</h2>
+          <p className="mb-6 text-sm text-slate-500">请先登录管理员账号对应的用户账户。</p>
           <div className="flex justify-center gap-3">
             <Link href="/login" className="rounded-xl bg-cyan-500 px-5 py-2.5 text-sm font-semibold text-white">
               去登录
             </Link>
-            <Link href="/search" className="rounded-xl border border-white/20 bg-white/5 px-5 py-2.5 text-sm text-slate-200">
+            <Link href="/announcements" className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-2.5 text-sm text-slate-700">
               返回检索
             </Link>
           </div>
@@ -526,10 +526,10 @@ export default function AdminPage() {
 
   if (resolvingAdminRole && !canAccessAdminShell) {
     return (
-      <div className="mx-auto max-w-3xl px-4 pb-20 pt-16">
-        <div className="rounded-3xl border border-white/10 bg-black/35 p-8 text-center text-slate-200">
-          <h2 className="mb-3 text-2xl font-bold text-white">正在刷新管理员权限</h2>
-          <p className="text-sm text-slate-300">正在从服务器确认当前账户的管理员状态。</p>
+      <div className="mx-auto max-w-3xl px-6 pb-20 pt-12">
+        <div className="rounded-3xl border border-slate-200/70 bg-white/92 p-8 text-center text-slate-600 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+          <h2 className="mb-3 text-2xl font-bold text-slate-900">正在刷新管理员权限</h2>
+          <p className="text-sm text-slate-500">正在从服务器确认当前账户的管理员状态。</p>
         </div>
       </div>
     );
@@ -537,11 +537,11 @@ export default function AdminPage() {
 
   if (!canAccessAdminShell) {
     return (
-      <div className="mx-auto max-w-3xl px-4 pb-20 pt-16">
-        <div className="rounded-3xl border border-red-500/20 bg-red-950/20 p-8 text-center text-slate-200">
-          <h2 className="mb-3 text-2xl font-bold text-white">无权限访问监控台</h2>
-          <p className="mb-6 text-sm text-slate-300">当前账户不是管理员，普通用户和高级用户不可见该页面。</p>
-          <Link href="/search" className="rounded-xl border border-white/20 bg-white/5 px-5 py-2.5 text-sm text-slate-200">
+      <div className="mx-auto max-w-3xl px-6 pb-20 pt-12">
+        <div className="rounded-3xl border border-rose-200 bg-rose-50/92 p-8 text-center text-rose-700 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+          <h2 className="mb-3 text-2xl font-bold text-rose-700">无权限访问监控台</h2>
+          <p className="mb-6 text-sm text-rose-600/90">当前账户不是管理员，普通用户和高级用户不可见该页面。</p>
+          <Link href="/announcements" className="rounded-xl border border-rose-200 bg-white px-5 py-2.5 text-sm text-rose-700">
             返回检索
           </Link>
         </div>
@@ -555,25 +555,25 @@ export default function AdminPage() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.4 }}
-      className="mx-auto max-w-6xl px-4 pb-20 pt-10"
+      className="admin-home-shell mx-auto max-w-[1600px] px-6 pb-20 pt-8"
     >
-      <section className="relative overflow-hidden rounded-[2rem] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_32%),linear-gradient(180deg,rgba(8,12,22,0.92),rgba(4,8,18,0.98))] p-8 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-        <div className="absolute inset-y-0 right-0 hidden w-80 bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.16),transparent_62%)] lg:block" />
+      <section className="relative overflow-hidden rounded-[2rem] border border-slate-200/70 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.94))] p-8 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+        <div className="absolute inset-y-0 right-0 hidden w-80 bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.12),transparent_62%)] lg:block" />
         <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl text-white">
-            <div className="text-xs uppercase tracking-[0.28em] text-cyan-300">Admin Settings Shell</div>
+          <div className="max-w-3xl text-slate-900">
+            <div className="text-xs uppercase tracking-[0.28em] text-cyan-600">Admin Settings Shell</div>
             <h1 className="mt-3 text-3xl font-black sm:text-5xl">爬虫阵列中控</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
               监控台现在按稳定应用壳组织。左侧是长期导航，右侧保留现有业务模块，不再是单页堆叠。
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-200">
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
               当前管理员：{portalAuth?.nickname || portalAuth?.username || meQuery.data?.username || "--"}
             </div>
             <Link
               href="/account"
-              className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 font-medium text-white transition-colors hover:bg-white/10"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 font-medium text-slate-700 transition-colors hover:bg-slate-100"
             >
               返回账号中心
             </Link>
@@ -582,7 +582,7 @@ export default function AdminPage() {
       </section>
 
       <div className="mt-8 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-[2rem] border border-white/10 bg-black/30 p-4 shadow-2xl backdrop-blur-xl xl:sticky xl:top-28 xl:self-start">
+        <aside className="rounded-[2rem] border border-slate-200/70 bg-white/92 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl xl:sticky xl:top-28 xl:self-start">
           <div className="mb-4 px-3 text-xs uppercase tracking-[0.24em] text-slate-500">Admin Sections</div>
           <nav className="space-y-2">
             {ADMIN_NAV_ITEMS.map((item) => {
@@ -591,25 +591,25 @@ export default function AdminPage() {
                 <a
                   key={item.id}
                   href={`#${item.id}`}
-                  className="block rounded-[1.4rem] border border-white/5 bg-white/[0.03] px-4 py-4 transition-all hover:border-white/10 hover:bg-white/[0.06]"
+                  className="block rounded-[1.4rem] border border-slate-200/70 bg-slate-50/90 px-4 py-4 transition-all hover:border-slate-300 hover:bg-white"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="rounded-2xl bg-white/5 p-2 text-slate-300">
+                    <div className="rounded-2xl bg-slate-100 p-2 text-slate-500">
                       <Icon size={18} />
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-white">{item.label}</div>
-                      <div className="mt-1 text-xs leading-6 text-slate-400">{item.description}</div>
+                      <div className="text-sm font-semibold text-slate-900">{item.label}</div>
+                      <div className="mt-1 text-xs leading-6 text-slate-500">{item.description}</div>
                     </div>
                   </div>
                 </a>
               );
             })}
           </nav>
-          <div className="mt-4 rounded-[1.4rem] border border-amber-400/15 bg-amber-500/10 p-4">
-            <div className="text-xs uppercase tracking-[0.24em] text-amber-300">Ops Frame</div>
-            <div className="mt-2 text-sm font-semibold text-white">数据和动作都保留。</div>
-            <div className="mt-2 text-xs leading-6 text-amber-50/80">
+          <div className="mt-4 rounded-[1.4rem] border border-amber-200 bg-amber-50/90 p-4">
+            <div className="text-xs uppercase tracking-[0.24em] text-amber-600">Ops Frame</div>
+            <div className="mt-2 text-sm font-semibold text-slate-900">数据和动作都保留。</div>
+            <div className="mt-2 text-xs leading-6 text-amber-700/90">
               这一层只调整信息架构，不改变用户提权、订单确认、选择器维护和 PDF 解析的业务逻辑。
             </div>
           </div>

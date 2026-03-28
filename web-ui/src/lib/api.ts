@@ -439,6 +439,26 @@ export type AdjustmentSearchDetailResponse = {
   meta_json: Record<string, unknown>;
 };
 
+export type AnnouncementSearchDetailResponse = {
+  id: string;
+  title: string;
+  school_name: string | null;
+  department_name: string | null;
+  notice_kind: string | null;
+  channel_label: string | null;
+  channel_tier: "core" | "supplemental" | null;
+  source_type: string;
+  source_url: string | null;
+  published_at: string | null;
+  updated_at: string;
+  summary: string | null;
+  body: string | null;
+  tags: string[];
+  system_tags: string[];
+  links: AdjustmentSearchDetailLinkItem[];
+  meta_json: Record<string, unknown>;
+};
+
 export type SearchBaseRequest = {
   school_name?: string;
   keywords?: string;

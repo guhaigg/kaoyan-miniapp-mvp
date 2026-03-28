@@ -508,9 +508,9 @@ function buildRadarSearchPlan(result: RadarPredictResponse, score: string) {
   }
 
   return {
-    primaryHref: `/search?${primaryParams.toString()}`,
+    primaryHref: `/adjustments?${primaryParams.toString()}`,
     primaryLabel,
-    secondaryHref: `/search?${secondaryParams.toString()}`,
+    secondaryHref: `/announcements?${secondaryParams.toString()}`,
     secondaryLabel,
   };
 }

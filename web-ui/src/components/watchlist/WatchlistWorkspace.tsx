@@ -322,16 +322,16 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
 
   const composerCard = (
     <section
-      className={`overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(13,20,34,0.96),rgba(7,11,19,0.96))] shadow-[0_24px_80px_rgba(0,0,0,0.35)] ${
+      className={`overflow-hidden rounded-[28px] border border-slate-200/70 bg-white/92 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl ${
         mode === "page" ? "p-5" : "p-4"
       }`}
     >
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">Watch Composer</div>
-          <div className="mt-1 text-lg font-semibold text-white">添加新关注</div>
+          <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-600">Watch Composer</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">添加新关注</div>
         </div>
-        <div className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-medium text-cyan-100">
+        <div className="rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-[11px] font-medium text-cyan-700">
           {watchEntries.length} 项已入库
         </div>
       </div>
@@ -355,10 +355,10 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
             className={`rounded-2xl px-3 py-2 text-xs transition-colors ${
               watchType === item.key
                 ? "bg-cyan-500 text-white shadow-[0_0_24px_rgba(6,182,212,0.3)]"
-                : "bg-white/5 text-slate-300 hover:bg-white/10"
+                : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
             } ${
               (item.key === "school" || item.key === "department" || item.key === "section") && !canManageScopeTargets
-                ? "cursor-not-allowed opacity-50 hover:bg-white/5"
+                ? "cursor-not-allowed opacity-50 hover:bg-slate-50"
                 : ""
             }`}
           >
@@ -369,13 +369,13 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
 
       {!canManageScopeTargets ? (
         <div className="mb-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3">
-          <div className="text-[11px] leading-6 text-amber-100">
+          <div className="text-[11px] leading-6 text-amber-700">
             学校、学院、栏目级关注只对高级用户开放。普通用户仍可追踪专业、关键词和地区。
           </div>
           <Link
-            href="/account/billing"
+            href="/account?tab=account&panel=billing"
             onClick={onNavigate}
-            className="mt-3 inline-flex rounded-xl border border-amber-300/25 bg-black/25 px-3 py-2 text-xs font-semibold text-amber-100 transition-colors hover:bg-black/35"
+            className="mt-3 inline-flex rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-50"
           >
             开通高级会员
           </Link>
@@ -388,18 +388,18 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
             value={scopeSchoolName}
             onChange={(event) => handleScopeSchoolInputChange(event.target.value)}
             placeholder="学校名称，例如：电子科技大学"
-            className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-cyan-400"
           />
-          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs leading-6 text-slate-400">
+          <div className="rounded-2xl border border-slate-200/70 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-slate-500">
             候选列表只是提速和纠偏，不需要先点选；直接输入后添加，后端也会自动尝试解析学校、学院和栏目。
           </div>
           {schoolSuggestionsQuery.isLoading ? (
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-slate-300">
+            <div className="rounded-2xl border border-slate-200/70 bg-slate-50/90 px-4 py-3 text-xs text-slate-500">
               正在匹配学校候选...
             </div>
           ) : null}
           {schoolSuggestions.length ? (
-            <div className="max-h-40 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/25 p-2">
+            <div className="max-h-40 space-y-2 overflow-y-auto rounded-2xl border border-slate-200/70 bg-slate-50/90 p-2">
               {schoolSuggestions.map((item) => {
                 const active = selectedSchoolId === item.id;
                 return (
@@ -408,11 +408,11 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                     type="button"
                     onClick={() => selectSchoolSuggestion(item)}
                     className={`block w-full rounded-xl border px-3 py-3 text-left transition-colors ${
-                      active ? "border-cyan-400/40 bg-cyan-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                      active ? "border-cyan-200 bg-cyan-50" : "border-slate-200 bg-white hover:bg-slate-50"
                     }`}
                   >
-                    <div className="text-sm font-medium text-white">{item.name}</div>
-                    <div className="mt-1 text-[11px] text-slate-400">{item.province || "学校候选"}</div>
+                    <div className="text-sm font-medium text-slate-900">{item.name}</div>
+                    <div className="mt-1 text-[11px] text-slate-500">{item.province || "学校候选"}</div>
                   </button>
                 );
               })}
@@ -424,15 +424,15 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                 value={scopeDepartmentName}
                 onChange={(event) => handleScopeDepartmentInputChange(event.target.value)}
                 placeholder={watchType === "department" ? "学院名称，例如：计算机学院" : "学院名称，可选"}
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-cyan-400"
               />
               {departmentSuggestionsQuery.isLoading ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-slate-300">
+                <div className="rounded-2xl border border-slate-200/70 bg-slate-50/90 px-4 py-3 text-xs text-slate-500">
                   正在匹配学院候选...
                 </div>
               ) : null}
               {departmentSuggestions.length ? (
-                <div className="max-h-40 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/25 p-2">
+                <div className="max-h-40 space-y-2 overflow-y-auto rounded-2xl border border-slate-200/70 bg-slate-50/90 p-2">
                   {departmentSuggestions.map((item) => {
                     const active = selectedDepartmentId === item.id;
                     return (
@@ -441,13 +441,11 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                         type="button"
                         onClick={() => selectDepartmentSuggestion(item)}
                         className={`block w-full rounded-xl border px-3 py-3 text-left transition-colors ${
-                          active
-                            ? "border-cyan-400/40 bg-cyan-500/10"
-                            : "border-white/10 bg-white/5 hover:bg-white/10"
+                          active ? "border-cyan-200 bg-cyan-50" : "border-slate-200 bg-white hover:bg-slate-50"
                         }`}
                       >
-                        <div className="text-sm font-medium text-white">{item.name}</div>
-                        <div className="mt-1 text-[11px] text-slate-400">
+                        <div className="text-sm font-medium text-slate-900">{item.name}</div>
+                        <div className="mt-1 text-[11px] text-slate-500">
                           {[item.school_name, item.department_type].filter(Boolean).join(" · ")}
                         </div>
                       </button>
@@ -463,15 +461,15 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                 value={scopeSectionName}
                 onChange={(event) => handleScopeSectionInputChange(event.target.value)}
                 placeholder="栏目名称或关键词，例如：通知公告 / 招生动态"
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-cyan-400"
               />
               {sectionLookupQuery.isLoading ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-slate-300">
+                <div className="rounded-2xl border border-slate-200/70 bg-slate-50/90 px-4 py-3 text-xs text-slate-500">
                   正在匹配栏目候选...
                 </div>
               ) : null}
               {sectionSuggestions.length ? (
-                <div className="max-h-44 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/25 p-2">
+                <div className="max-h-44 space-y-2 overflow-y-auto rounded-2xl border border-slate-200/70 bg-slate-50/90 p-2">
                   {sectionSuggestions.map((item) => {
                     const active = selectedSectionId === item.id;
                     return (
@@ -480,13 +478,11 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                         type="button"
                         onClick={() => selectSectionSuggestion(item)}
                         className={`block w-full rounded-xl border px-3 py-3 text-left transition-colors ${
-                          active
-                            ? "border-cyan-400/40 bg-cyan-500/10"
-                            : "border-white/10 bg-white/5 hover:bg-white/10"
+                          active ? "border-cyan-200 bg-cyan-50" : "border-slate-200 bg-white hover:bg-slate-50"
                         }`}
                       >
-                        <div className="text-sm font-medium text-white">{item.name}</div>
-                        <div className="mt-1 text-[11px] text-slate-400">
+                        <div className="text-sm font-medium text-slate-900">{item.name}</div>
+                        <div className="mt-1 text-[11px] text-slate-500">
                           {[item.school_name, item.department_name, item.discovery_category].filter(Boolean).join(" · ")}
                         </div>
                       </button>
@@ -511,7 +507,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
             value={watchValue}
             onChange={(event) => setWatchValue(event.target.value)}
             placeholder="例如：0854 / 复试线 / 华中地区"
-            className="flex-1 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-cyan-400"
+            className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-cyan-400"
           />
           <button
             type="button"
@@ -524,7 +520,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
         </div>
       )}
       {message ? (
-        <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-slate-300">
+        <div className="mt-3 rounded-2xl border border-slate-200/70 bg-slate-50/90 px-4 py-3 text-xs text-slate-500">
           {message}
         </div>
       ) : null}
@@ -533,21 +529,21 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
 
   const realtimeCard = (
     <section
-      className={`rounded-[28px] border border-white/10 bg-white/[0.04] shadow-[0_18px_60px_rgba(0,0,0,0.28)] ${
+      className={`rounded-[28px] border border-slate-200/70 bg-white/92 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl ${
         mode === "page" ? "p-5" : "p-4"
       }`}
     >
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">Live Radar</div>
-          <div className="mt-1 text-lg font-semibold text-white">实时情报流</div>
+          <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-600">Live Radar</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">实时情报流</div>
         </div>
-        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
+        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] text-slate-500">
           {latestNoticeCount} 条
         </div>
       </div>
       {realtimeNoticesQuery.isLoading ? (
-        <div className="text-xs text-slate-300">探针巡航中，拉取最新节点...</div>
+        <div className="text-xs text-slate-500">探针巡航中，拉取最新节点...</div>
       ) : realtimeNoticesQuery.data?.length ? (
         <div className="space-y-2">
           <AnimatePresence initial={false}>
@@ -566,38 +562,38 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                     y: { type: "spring", bounce: 0.45, duration: 0.5 },
                   }}
                   className={`rounded-2xl border p-3 ${
-                    urgent ? "border-orange-500/35 bg-orange-950/25" : "border-white/10 bg-white/5"
+                    urgent ? "border-orange-200 bg-orange-50/90" : "border-slate-200/70 bg-slate-50/90"
                   }`}
                 >
-                  <div className={`mb-2 flex items-center gap-2 text-[11px] font-medium ${urgent ? "text-orange-300" : "text-cyan-300"}`}>
+                  <div className={`mb-2 flex items-center gap-2 text-[11px] font-medium ${urgent ? "text-orange-600" : "text-cyan-600"}`}>
                     <BellRing size={12} />
                     {urgent ? "紧急异动" : "常规监控"}
                   </div>
-                  <div className="text-sm font-medium leading-6 text-white">{formatNoticeTitle(item)}</div>
-                  <div className="mt-1 text-xs leading-5 text-slate-400">{formatNoticeSubline(item)}</div>
+                  <div className="text-sm font-medium leading-6 text-slate-900">{formatNoticeTitle(item)}</div>
+                  <div className="mt-1 text-xs leading-5 text-slate-500">{formatNoticeSubline(item)}</div>
                 </motion.div>
               );
             })}
           </AnimatePresence>
         </div>
       ) : (
-        <div className="text-xs text-slate-300">暂无最新公告。底层探针正在持续观测。</div>
+        <div className="text-xs text-slate-500">暂无最新公告。底层探针正在持续观测。</div>
       )}
     </section>
   );
 
   const recentSignalCard = (
     <section
-      className={`rounded-[28px] border border-cyan-400/14 bg-[linear-gradient(180deg,rgba(8,16,27,0.96),rgba(5,10,18,0.98))] shadow-[0_18px_60px_rgba(0,0,0,0.28)] ${
+      className={`rounded-[28px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.94))] shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl ${
         mode === "page" ? "p-5" : "p-4"
       }`}
     >
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">3 Day Signal</div>
-          <div className="mt-1 text-lg font-semibold text-white">近三日公告雷达</div>
+          <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-600">3 Day Signal</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">近三日公告雷达</div>
         </div>
-        <div className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-medium text-cyan-100">
+        <div className="rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-[11px] font-medium text-cyan-700">
           {recentSignalOverview?.window_days || 3} 天窗
         </div>
       </div>
@@ -605,28 +601,28 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
       {monitorCount ? (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+            <div className="rounded-[22px] border border-slate-200/70 bg-slate-50/90 p-4">
               <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500">有更新</div>
-              <div className="mt-2 text-3xl font-semibold text-white">{recentSignalOverview?.active_target_count || 0}</div>
-              <div className="mt-1 text-xs text-slate-400">共 {recentSignalOverview?.tracked_target_count || monitorCount} 个范围关注</div>
+              <div className="mt-2 text-3xl font-semibold text-slate-900">{recentSignalOverview?.active_target_count || 0}</div>
+              <div className="mt-1 text-xs text-slate-500">共 {recentSignalOverview?.tracked_target_count || monitorCount} 个范围关注</div>
             </div>
-            <div className="rounded-[22px] border border-orange-400/15 bg-orange-500/10 p-4">
-              <div className="text-[10px] uppercase tracking-[0.28em] text-orange-200/75">研招相关</div>
-              <div className="mt-2 text-3xl font-semibold text-orange-50">
+            <div className="rounded-[22px] border border-orange-200 bg-orange-50/90 p-4">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-orange-600">研招相关</div>
+              <div className="mt-2 text-3xl font-semibold text-orange-700">
                 {recentSignalOverview?.recruitment_target_count || 0}
               </div>
-              <div className="mt-1 text-xs text-orange-100/70">
+              <div className="mt-1 text-xs text-orange-600/80">
                 公告 {recentSignalOverview?.total_recruitment_announcements || 0} 条
               </div>
             </div>
           </div>
 
-          <div className="mt-3 rounded-[22px] border border-white/10 bg-black/25 p-4">
+          <div className="mt-3 rounded-[22px] border border-slate-200/70 bg-slate-50/90 p-4">
             <div className="flex flex-wrap gap-2 text-[11px]">
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-300">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-500">
                 近 3 日总公告 {recentSignalOverview?.total_recent_announcements || 0} 条
               </span>
-              <span className="rounded-full border border-cyan-400/18 bg-cyan-500/10 px-3 py-1 text-cyan-100">
+              <span className="rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-cyan-700">
                 重点看学校级、学院级、栏目级关注
               </span>
             </div>
@@ -638,16 +634,16 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                     href={recentSignalOverview.latest_announcement.source_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="block text-sm font-medium leading-6 text-white transition-colors hover:text-cyan-200"
+                    className="block text-sm font-medium leading-6 text-slate-900 transition-colors hover:text-cyan-700"
                   >
                     {recentSignalOverview.latest_announcement.title}
                   </a>
                 ) : (
-                  <div className="text-sm font-medium leading-6 text-white">
+                  <div className="text-sm font-medium leading-6 text-slate-900">
                     {recentSignalOverview.latest_announcement.title}
                   </div>
                 )}
-                <div className="text-xs leading-6 text-slate-400">
+                <div className="text-xs leading-6 text-slate-500">
                   {[
                     recentSignalOverview.latest_announcement.school_name,
                     recentSignalOverview.latest_announcement.department_name,
@@ -659,14 +655,14 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                 </div>
               </div>
             ) : (
-              <div className="mt-3 text-xs leading-6 text-slate-400">
+              <div className="mt-3 text-xs leading-6 text-slate-500">
                 近 3 日还没有命中新公告，底层扫描会继续刷新这块情报板。
               </div>
             )}
           </div>
         </>
       ) : (
-        <div className="rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] p-4 text-xs leading-6 text-slate-300">
+        <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/90 p-4 text-xs leading-6 text-slate-500">
           先添加学校、学院或栏目级关注，这里才会开始汇总近 3 日最新公告和研招相关动态。
         </div>
       )}
@@ -674,22 +670,22 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
   );
 
   const accountCard = portalAuth ? (
-    <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
-      <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">Control Deck</div>
-      <div className="mt-1 text-lg font-semibold text-white">{portalAuth.nickname || portalAuth.username}</div>
-      <div className="mt-2 text-xs text-slate-400">角色：{portalAuth.role} · 状态：{portalAuth.status}</div>
+    <section className="rounded-[28px] border border-slate-200/70 bg-white/92 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+      <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-600">Control Deck</div>
+      <div className="mt-1 text-lg font-semibold text-slate-900">{portalAuth.nickname || portalAuth.username}</div>
+      <div className="mt-2 text-xs text-slate-500">角色：{portalAuth.role} · 状态：{portalAuth.status}</div>
       <div className="mt-4 grid grid-cols-2 gap-2">
         <Link
           href="/account"
           onClick={onNavigate}
-          className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-center text-xs font-semibold text-white transition-colors hover:bg-white/10"
+          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100"
         >
           账号中心
         </Link>
         <Link
-          href="/search"
+          href="/announcements"
           onClick={onNavigate}
-          className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-center text-xs font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20"
+          className="rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-3 text-center text-xs font-semibold text-cyan-700 transition-colors hover:bg-cyan-100"
         >
           去检索页
         </Link>
@@ -700,14 +696,14 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
   if (mode === "page") {
     if (!portalAuth) {
       return (
-        <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(6,182,212,0.14),transparent_34%),linear-gradient(180deg,#040810_0%,#08111d_100%)] px-6 pb-20 pt-28 text-white">
-          <div className="mx-auto max-w-5xl">
-            <div className="overflow-hidden rounded-[36px] border border-white/10 bg-[linear-gradient(135deg,rgba(10,16,28,0.96),rgba(5,9,16,0.98))] p-10 shadow-[0_40px_120px_rgba(0,0,0,0.45)]">
-              <div className="text-[11px] uppercase tracking-[0.38em] text-cyan-300/80">Watchlist Workspace</div>
-              <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-tight text-white md:text-5xl">
+        <div className="min-h-screen px-6 pb-20 pt-8 text-slate-900">
+          <div className="mx-auto max-w-[1600px]">
+            <div className="overflow-hidden rounded-[36px] border border-slate-200/70 bg-white/92 p-10 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+              <div className="text-[11px] uppercase tracking-[0.38em] text-cyan-600">Watchlist Workspace</div>
+              <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-tight text-slate-900 md:text-5xl">
                 关注项不该被挤在一条侧边缝里。
               </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500">
                 登录后，这里会展开成完整的关注管理工作台。你可以集中查看学校、学院、栏目、关键词和实时雷达，不再被抽屉高度限制。
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
@@ -719,7 +715,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                 </Link>
                 <Link
                   href="/register"
-                  className="rounded-full border border-white/20 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+                  className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
                 >
                   去注册
                 </Link>
@@ -731,28 +727,28 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
     }
 
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(6,182,212,0.16),transparent_30%),radial-gradient(circle_at_85%_20%,rgba(245,158,11,0.09),transparent_24%),linear-gradient(180deg,#040810_0%,#08111d_100%)] px-6 pb-20 pt-28 text-white">
-        <div className="mx-auto max-w-7xl">
-          <section className="relative overflow-hidden rounded-[36px] border border-white/10 bg-[linear-gradient(135deg,rgba(11,18,31,0.96),rgba(7,12,21,0.98))] p-8 shadow-[0_40px_120px_rgba(0,0,0,0.42)] md:p-10">
-            <div className="absolute inset-y-0 right-0 hidden w-72 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.12),transparent_62%)] md:block" />
+      <div className="min-h-screen px-6 pb-20 pt-8 text-slate-900">
+        <div className="mx-auto max-w-[1600px]">
+          <section className="relative overflow-hidden rounded-[36px] border border-slate-200/70 bg-white/92 p-8 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl md:p-10">
+            <div className="absolute inset-y-0 right-0 hidden w-72 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.10),transparent_62%)] md:block" />
             <div className="relative">
-              <div className="text-[11px] uppercase tracking-[0.38em] text-cyan-300/80">Watchlist Operations Board</div>
+              <div className="text-[11px] uppercase tracking-[0.38em] text-cyan-600">Watchlist Operations Board</div>
               <div className="mt-5 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                 <div className="max-w-3xl">
-                  <h1 className="text-4xl font-semibold leading-tight text-white md:text-5xl">我的关注库</h1>
-                  <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
+                  <h1 className="text-4xl font-semibold leading-tight text-slate-900 md:text-5xl">我的关注库</h1>
+                  <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500">
                     抽屉现在退回“快看和快加”，完整管理搬到这里。关注项再多，也可以按类型筛、按关键词搜、按实时信号整理。
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <Link
-                    href="/search"
-                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+                    href="/announcements"
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
                   >
                     <Search size={16} />
                     去检索页补充关注
                   </Link>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-5 py-3 text-sm font-semibold text-cyan-100">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-cyan-100 bg-cyan-50 px-5 py-3 text-sm font-semibold text-cyan-700">
                     <FolderKanban size={16} />
                     当前是完整工作台
                   </div>
@@ -769,21 +765,21 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
           </section>
 
           <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(340px,0.95fr)]">
-            <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,28,0.96),rgba(5,9,16,0.98))] shadow-[0_32px_100px_rgba(0,0,0,0.38)]">
-              <div className="border-b border-white/10 px-5 py-5 md:px-6">
+            <section className="overflow-hidden rounded-[32px] border border-slate-200/70 bg-white/92 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+              <div className="border-b border-slate-200/70 px-5 py-5 md:px-6">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">Library Surface</div>
-                    <div className="mt-1 text-xl font-semibold text-white">关注项总览</div>
+                    <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-600">Library Surface</div>
+                    <div className="mt-1 text-xl font-semibold text-slate-900">关注项总览</div>
                   </div>
                   <div className="w-full max-w-sm">
-                    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-4 py-3">
+                    <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-3">
                       <Search size={15} className="text-slate-500" />
                       <input
                         value={entryQuery}
                         onChange={(event) => setEntryQuery(event.target.value)}
                         placeholder="搜索学校、学院、栏目或关键词"
-                        className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
+                        className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
                       />
                     </div>
                   </div>
@@ -806,7 +802,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                       className={`rounded-full px-4 py-2 text-xs font-medium transition-colors ${
                         entryFilter === item.key
                           ? "bg-cyan-500 text-white shadow-[0_0_22px_rgba(6,182,212,0.25)]"
-                          : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                          : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
                       }`}
                     >
                       {item.label}
@@ -831,9 +827,9 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
                     />
                   ))
                 ) : (
-                  <div className="rounded-[28px] border border-dashed border-white/10 bg-white/[0.03] p-8 text-center">
-                    <div className="text-lg font-semibold text-white">当前筛选下没有匹配项</div>
-                    <div className="mt-2 text-sm leading-7 text-slate-400">
+                  <div className="rounded-[28px] border border-dashed border-slate-200 bg-slate-50/90 p-8 text-center">
+                    <div className="text-lg font-semibold text-slate-900">当前筛选下没有匹配项</div>
+                    <div className="mt-2 text-sm leading-7 text-slate-500">
                       换个关键词，或者去右侧继续添加新的学校、学院、栏目级关注。
                     </div>
                   </div>
@@ -855,16 +851,16 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
 
   return (
     <div className="flex-1 space-y-4 overflow-y-auto p-4">
-      <div className="rounded-[28px] border border-cyan-400/14 bg-[linear-gradient(135deg,rgba(5,11,19,0.96),rgba(10,18,30,0.96))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.32)]">
+      <div className="rounded-[28px] border border-slate-200/70 bg-white/92 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">Expanded Mode</div>
-            <div className="mt-1 text-base font-semibold text-white">抽屉只保留快看，完整管理移到专页。</div>
+            <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-600">Expanded Mode</div>
+            <div className="mt-1 text-base font-semibold text-slate-900">抽屉只保留快看，完整管理移到专页。</div>
           </div>
           <Link
             href="/watchlist"
             onClick={onNavigate}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-4 py-2 text-xs font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-100 bg-cyan-50 px-4 py-2 text-xs font-semibold text-cyan-700 transition-colors hover:bg-cyan-100"
           >
             打开工作台
             <ChevronRight size={14} />
@@ -880,13 +876,13 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
       {recentSignalCard}
       {realtimeCard}
 
-      <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
+      <section className="rounded-[28px] border border-slate-200/70 bg-white/92 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-300/80">Watchlist Preview</div>
-            <div className="mt-1 text-lg font-semibold text-white">当前关注</div>
+            <div className="text-[10px] uppercase tracking-[0.32em] text-cyan-600">Watchlist Preview</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">当前关注</div>
           </div>
-          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
+          <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] text-slate-500">
             {filteredEntries.length} 项
           </div>
         </div>
@@ -909,7 +905,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
               <Link
                 href="/watchlist"
                 onClick={onNavigate}
-                className="flex items-center justify-between rounded-2xl border border-dashed border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100 transition-colors hover:bg-cyan-500/15"
+                className="flex items-center justify-between rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-700 transition-colors hover:bg-cyan-100"
               >
                 <span>还有 {hiddenEntryCount} 项未展开</span>
                 <span className="inline-flex items-center gap-1">
@@ -920,7 +916,7 @@ export default function WatchlistWorkspace({ mode, onNavigate }: WatchlistWorksp
             ) : null}
           </div>
         ) : subscriptionsQuery.isSuccess && (!canManageScopeTargets || monitorTargetsQuery.isSuccess) ? (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-slate-300">
+          <div className="rounded-2xl border border-slate-200/70 bg-slate-50/90 p-4 text-xs text-slate-500">
             暂无归档。将有价值的卡片留存于此。
           </div>
         ) : null}
@@ -953,26 +949,26 @@ function WatchEntryCard({
 
   return (
     <article
-      className={`rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] ${
+      className={`rounded-[24px] border border-slate-200/70 bg-white/92 ${
         mode === "page" ? "p-5" : "p-4"
-      } transition-colors hover:bg-white/[0.07]`}
+      } shadow-[0_18px_44px_rgba(15,23,42,0.06)] transition-colors hover:bg-slate-50`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-cyan-300">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-cyan-600">
             <span className="inline-flex items-center gap-1">{icon}{item.kind === "monitor" ? monitorScopeLabel(item.scope_type) : watchTypeLabel(item.subscription_type)}</span>
             <span className="text-slate-500">•</span>
-            <span className="text-slate-400">{new Date(timestampLabel).toLocaleString("zh-CN", { hour12: false })}</span>
+            <span className="text-slate-500">{new Date(timestampLabel).toLocaleString("zh-CN", { hour12: false })}</span>
           </div>
-          <div className="mt-2 break-words text-base font-semibold leading-6 text-white">{title}</div>
-          {detail ? <div className="mt-2 text-xs leading-6 text-slate-400">{detail}</div> : null}
+          <div className="mt-2 break-words text-base font-semibold leading-6 text-slate-900">{title}</div>
+          {detail ? <div className="mt-2 text-xs leading-6 text-slate-500">{detail}</div> : null}
           {item.kind === "monitor" ? <RecentSignalPanel signal={recentSignal} /> : null}
         </div>
         <button
           type="button"
           disabled={deleting}
           onClick={onDelete}
-          className="shrink-0 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-60"
+          className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-60"
         >
           移除
         </button>
@@ -992,7 +988,7 @@ function RecentSignalPanel({
 
   if (!signal.has_recent_announcements) {
     return (
-      <div className="mt-3 rounded-[20px] border border-white/10 bg-black/20 px-4 py-3 text-xs leading-6 text-slate-400">
+      <div className="mt-3 rounded-[20px] border border-slate-200/70 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-slate-500">
         近 {signal.window_days} 日暂无新公告，当前仍会持续盯住下一条更新。
       </div>
     );
@@ -1001,16 +997,16 @@ function RecentSignalPanel({
   const latest = signal.latest_announcement;
 
   return (
-    <div className="mt-3 rounded-[20px] border border-cyan-400/12 bg-cyan-500/[0.07] p-4">
+    <div className="mt-3 rounded-[20px] border border-cyan-100 bg-cyan-50/80 p-4">
       <div className="flex flex-wrap gap-2">
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-slate-200">
+        <span className="rounded-full border border-white bg-white px-3 py-1 text-[11px] font-medium text-slate-600">
           近 {signal.window_days} 日 {signal.recent_announcement_count} 条公告
         </span>
         <span
           className={`rounded-full border px-3 py-1 text-[11px] font-medium ${
             signal.has_recruitment_announcements
-              ? "border-orange-400/20 bg-orange-500/10 text-orange-100"
-              : "border-white/10 bg-white/5 text-slate-300"
+              ? "border-orange-200 bg-orange-50 text-orange-700"
+              : "border-white bg-white text-slate-600"
           }`}
         >
           研招相关 {signal.recruitment_announcement_count} 条
@@ -1019,20 +1015,20 @@ function RecentSignalPanel({
 
       {latest ? (
         <div className="mt-3 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-cyan-200/80">Latest Notice</div>
+          <div className="text-[11px] uppercase tracking-[0.24em] text-cyan-600">Latest Notice</div>
           {latest.source_url ? (
             <a
               href={latest.source_url}
               target="_blank"
               rel="noreferrer"
-              className="block text-sm font-medium leading-6 text-white transition-colors hover:text-cyan-200"
+              className="block text-sm font-medium leading-6 text-slate-900 transition-colors hover:text-cyan-700"
             >
               {latest.title}
             </a>
           ) : (
-            <div className="text-sm font-medium leading-6 text-white">{latest.title}</div>
+            <div className="text-sm font-medium leading-6 text-slate-900">{latest.title}</div>
           )}
-          <div className="text-xs leading-6 text-slate-300">
+          <div className="text-xs leading-6 text-slate-500">
             {[latest.department_name, latest.site_section_name, formatSignalTimestamp(latest.published_at)]
               .filter(Boolean)
               .join(" · ")}
@@ -1056,26 +1052,26 @@ function StatCard({
 }) {
   const accentStyles =
     accent === "amber"
-      ? "border-amber-400/20 bg-amber-500/10 text-amber-100"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
       : accent === "orange"
-        ? "border-orange-400/20 bg-orange-500/10 text-orange-100"
-        : "border-cyan-400/20 bg-cyan-500/10 text-cyan-100";
+        ? "border-orange-200 bg-orange-50 text-orange-700"
+        : "border-cyan-100 bg-cyan-50 text-cyan-700";
   return (
-    <div className="rounded-[26px] border border-white/10 bg-white/[0.04] p-4">
+    <div className="rounded-[26px] border border-slate-200/70 bg-slate-50/90 p-4">
       <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] ${accentStyles}`}>
         {icon}
         {label}
       </div>
-      <div className="mt-4 text-3xl font-semibold tracking-tight text-white">{value}</div>
+      <div className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">{value}</div>
     </div>
   );
 }
 
 function DrawerMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
+    <div className="rounded-2xl border border-slate-200/70 bg-slate-50/90 px-3 py-3">
       <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-white">{value}</div>
+      <div className="mt-2 text-lg font-semibold text-slate-900">{value}</div>
     </div>
   );
 }

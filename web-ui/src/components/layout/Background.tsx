@@ -3,10 +3,11 @@
 import { usePathname } from "next/navigation";
 
 const BANNER_ROUTES = new Set(["/", "/login", "/register", "/account"]);
+const GRID_ROUTE_PREFIXES = ["/announcements", "/adjustments", "/radar", "/watchlist", "/admin"];
 
 export default function Background() {
   const pathname = usePathname();
-  const showWorkspaceGrid = pathname === "/" || pathname === "/radar";
+  const showWorkspaceGrid = pathname === "/" || GRID_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   const showBannerGlow = !showWorkspaceGrid && BANNER_ROUTES.has(pathname);
   const showAdminTone = pathname.startsWith("/admin");
 
@@ -23,8 +24,11 @@ export default function Background() {
           }}
         />
         <div className="pointer-events-none fixed right-[20%] top-[10%] z-0 h-[400px] w-[400px] rounded-full bg-cyan-100/20 blur-[120px]" />
-        {pathname === "/radar" ? (
+        {pathname === "/radar" || pathname.startsWith("/adjustments") ? (
           <div className="pointer-events-none fixed bottom-[8%] left-[10%] z-0 h-[260px] w-[260px] rounded-full bg-orange-100/20 blur-[120px]" />
+        ) : null}
+        {showAdminTone ? (
+          <div className="pointer-events-none fixed left-[8%] top-[14%] z-0 h-[240px] w-[240px] rounded-full bg-pink-100/20 blur-[120px]" />
         ) : null}
       </>
     );

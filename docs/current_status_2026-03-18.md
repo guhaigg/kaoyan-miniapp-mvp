@@ -1,12 +1,24 @@
 # 格物简录当前进度（2026-03-18）
 
-最近更新：`2026-03-27`
+最近更新：`2026-03-28`
+
+## 2026-03-28 Homepage-Based Site Redesign
+
+- 全站用户侧与 `/admin` 现在都以首页视觉为唯一基准，统一走共享顶栏、共享背景和共享宽度系统。
+- 旧的 `/search` 与 `/query` 已从可见产品路由中移除，站内正式检索入口改为：
+  - `/announcements`
+  - `/adjustments`
+- 公告与调剂已经拆成两个独立页面，并新增独立详情入口：
+  - `/announcements/detail?id=<content_id>`
+  - `/adjustments/detail?id=<item_id>&kind=<content|opportunity>`
+- `/watchlist` 已收口为纯操作台；`/account` 已收口为账号/会员/通知/个人摘要页，主 tab 改为 `activity / notifications / account`。
+- `/admin` 外层已经改成首页式浅色壳，内部仍保留高密度运维与治理面板。
 
 ## 2026-03-27 Account Space Page Follow-up
 
 - `/account` 现在是新的个人空间首页，默认落在 `activity` 视图，而不是旧的设置面板。
-- 顶部信息架构已经改成空间页：封面、头像、摘要统计、四个主 tab。
-- `activity / following / radar / account` 四个 tab 已接到现有账号、订阅、雷达和通知数据。
+- 顶部信息架构已经改成空间页：封面、头像、摘要统计、三个主 tab。
+- `activity / notifications / account` 三个 tab 已接到现有账号、通知与会员数据；关注与雷达操作已迁回 `watchlist`。
 - `/account/security`、`/account/billing`、`/account/notifications` 现在都会 redirect 到 `/account` 的 query-state 视图。
 - 旧的 `AccountDashboard.tsx` 已移除，会员、微信绑定、密码修改和退出登录已经收敛到新的 `account` tab。
 
@@ -65,10 +77,14 @@
 当前 Web UI 已具备以下页面与主链路：
 
 - 官网首页：`web-ui/src/app/page.tsx`
+- 公告汇总页：`web-ui/src/app/announcements/page.tsx`
+- 公告详情页：`web-ui/src/app/announcements/detail/page.tsx`
+- 调剂汇总页：`web-ui/src/app/adjustments/page.tsx`
+- 调剂详情页：`web-ui/src/app/adjustments/detail/page.tsx`
+- 雷达测算页：`web-ui/src/app/radar/page.tsx`
+- 关注库：`web-ui/src/app/watchlist/page.tsx`
 - 登录页：`web-ui/src/app/login/page.tsx`
 - 注册页：`web-ui/src/app/register/page.tsx`
-- 查询导航页：`web-ui/src/app/query/page.tsx`
-- 查询页：`web-ui/src/app/search/page.tsx`
 - 账号中心：`web-ui/src/app/account/page.tsx`
 - 账号安全：`web-ui/src/app/account/security/page.tsx`
 - 会员与支付：`web-ui/src/app/account/billing/page.tsx`
@@ -77,14 +93,16 @@
 
 已完成的关键能力：
 
-- 站点基础 UI 已成型
-- 查询页已接真实后端接口
+- 站点基础 UI 已成型，且公共外壳已统一到首页风格
+- 公告汇总页、调剂汇总页与详情页已接真实后端接口
 - 管理页已接真实数据层
 - 登录/注册/退出/会话恢复已接通
 - 用户中心已从弹窗中拆出，改为独立应用式页面
-- 管理后台已改成稳定 dashboard/settings 框架，而不是临时表单堆叠
+- 关注库已收口为纯操作工作台
+- 管理后台已改成首页式外壳 + 稳定 dashboard/settings 框架，而不是临时表单堆叠
 - 关注抽屉、Toast、实时通知动画已落地
 - 数据层已统一到 Axios 网关 + thin wrappers + hooks 的方向
+- 旧的 `/search` 和 `/query` 已退出可见产品信息架构
 - 未登录用户只能查看公告检索前 2 条预览；调剂、收藏、深度功能需要登录或会员
 
 ### 2.2 Portal 用户体系

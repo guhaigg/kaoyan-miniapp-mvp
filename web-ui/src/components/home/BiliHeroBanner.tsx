@@ -25,11 +25,11 @@ export default function BiliHeroBanner({ indexedCount }: { indexedCount: number 
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/search"
+              href="/announcements"
               className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(90deg,#fb7299,#00aeec)] px-5 py-2.5 text-sm font-semibold text-white"
             >
               <Search size={15} />
-              立即检索公告
+              立即进入公告汇总
             </Link>
             <Link
               href="/account"

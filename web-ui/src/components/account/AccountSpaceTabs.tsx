@@ -10,8 +10,7 @@ const TAB_ITEMS: Array<{
   label: string;
 }> = [
   { id: "activity", label: "动态" },
-  { id: "following", label: "关注" },
-  { id: "radar", label: "雷达" },
+  { id: "notifications", label: "通知" },
   { id: "account", label: "账号" },
 ];
 
@@ -31,7 +30,9 @@ export function AccountSpaceTabs({
         {TAB_ITEMS.map((item) => {
           const params = new URLSearchParams(searchParams.toString());
           params.set("tab", item.id);
-          if (item.id === "account" && (activePanel === "billing" || activePanel === "security")) {
+          if (item.id === "notifications") {
+            params.set("panel", "notifications");
+          } else if (item.id === "account" && (activePanel === "billing" || activePanel === "security")) {
             params.set("panel", activePanel);
           } else if (item.id === "activity" && activePanel === "notifications") {
             params.set("panel", activePanel);

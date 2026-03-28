@@ -3,9 +3,9 @@
 import Link from "next/link";
 
 const CATEGORY_ITEMS = [
-  { label: "院校公告", href: "/search?system_tags=%E5%AD%A6%E6%A0%A1%E5%85%AC%E5%91%8A" },
-  { label: "复试通知", href: "/search?keywords=%E5%A4%8D%E8%AF%95" },
-  { label: "调剂信息", href: "/search?keywords=%E8%B0%83%E5%89%82" },
+  { label: "院校公告", href: "/announcements?system_tags=%E5%AD%A6%E6%A0%A1%E5%85%AC%E5%91%8A" },
+  { label: "复试通知", href: "/announcements?keywords=%E5%A4%8D%E8%AF%95" },
+  { label: "调剂信息", href: "/adjustments?keywords=%E8%B0%83%E5%89%82" },
   { label: "导师风险", href: "/radar" },
   { label: "关注学校", href: "/watchlist" },
   { label: "账号权益", href: "/account?tab=account" },

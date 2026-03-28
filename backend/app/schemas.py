@@ -1389,6 +1389,26 @@ class AdjustmentSearchDetailResponse(BaseModel):
     meta_json: dict[str, Any] = Field(default_factory=dict)
 
 
+class AnnouncementSearchDetailResponse(BaseModel):
+    id: str
+    title: str
+    school_name: str | None = None
+    department_name: str | None = None
+    notice_kind: str | None = None
+    channel_label: str | None = None
+    channel_tier: Literal["core", "supplemental"] | None = None
+    source_type: str
+    source_url: str | None = None
+    published_at: datetime | None = None
+    updated_at: datetime
+    summary: str | None = None
+    body: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    system_tags: list[str] = Field(default_factory=list)
+    links: list[AdjustmentSearchLinkItem] = Field(default_factory=list)
+    meta_json: dict[str, Any] = Field(default_factory=dict)
+
+
 class SchoolSuggestItem(BaseModel):
     id: str
     name: str

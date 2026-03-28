@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  buildAnnouncementDetailHref,
+  buildAdjustmentDetailHref,
+  buildSearchDestination,
+} from "@/components/layout/site-navigation";
 import type {
   AdjustmentSearchRequest,
   MonitorTargetItem,
@@ -76,19 +81,19 @@ function formatClockLabel(timestamp: number) {
 }
 
 function buildAnnouncementSearchHref(item: SearchItem) {
-  const keyword = item.school_name || item.department_name || item.title;
-  if (!keyword) {
-    return "/search?tab=announcements";
+  if (item.id) {
+    return buildAnnouncementDetailHref(item.id);
   }
-  return `/search?tab=announcements&q=${encodeURIComponent(keyword)}`;
+  const keyword = item.school_name || item.department_name || item.title;
+  return buildSearchDestination("announcements", keyword || "");
 }
 
 function buildAdjustmentSearchHref(item: SearchItem) {
-  const keyword = item.school_name || item.major || item.department_name || item.title;
-  if (!keyword) {
-    return "/search?tab=adjustments";
+  if (item.id) {
+    return buildAdjustmentDetailHref(item.id, item.item_kind);
   }
-  return `/search?tab=adjustments&q=${encodeURIComponent(keyword)}`;
+  const keyword = item.school_name || item.major || item.department_name || item.title;
+  return buildSearchDestination("adjustments", keyword || "");
 }
 
 function buildAdjustmentTags(item: SearchItem) {
@@ -180,6 +185,7 @@ export function mapAdjustmentSearchItem(item: SearchItem): AdjustmentFeedItem {
 
 export function mapPendingAnnouncementNotice(item: NotificationEventItem): AnnouncementFeedItem {
   const school = item.payload.school_name || item.payload.department_name || "\u6211\u7684\u5173\u6ce8";
+  const detailHref = item.payload.content_id ? buildAnnouncementDetailHref(item.payload.content_id) : null;
   return {
     id: item.id,
     type: item.payload.category === "adjustment" ? "\u8c03\u5242\u63d0\u9192" : "\u5173\u6ce8\u516c\u544a",
@@ -191,7 +197,7 @@ export function mapPendingAnnouncementNotice(item: NotificationEventItem): Annou
     school,
     time: formatRelativeTime(item.payload.published_at || item.created_at),
     isNew: true,
-    href: `/search?tab=announcements&q=${encodeURIComponent(school)}`,
+    href: detailHref || buildSearchDestination("announcements", school),
     sourceUrl: item.payload.source_url || null,
   };
 }
@@ -211,7 +217,9 @@ export function mapMonitorTargetSignal(target: MonitorTargetItem): AnnouncementF
     school,
     time: formatRelativeTime(latest.published_at || target.last_hit_at || target.updated_at),
     isNew: isFresh(latest.published_at || target.last_hit_at || target.updated_at),
-    href: `/search?tab=announcements&q=${encodeURIComponent(school)}`,
+    href: latest.content_id
+      ? buildAnnouncementDetailHref(latest.content_id)
+      : buildSearchDestination("announcements", school),
     sourceUrl: latest.source_url || null,
   };
 }

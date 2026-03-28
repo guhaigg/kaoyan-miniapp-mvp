@@ -104,6 +104,44 @@ def test_search_announcements_refresh_queues_job_without_portal_user_fk(client):
         assert job.requested_by_user_id is None
 
 
+def test_announcement_detail_returns_body_and_metadata(client):
+    created = client.post(
+        "/api/v1/content",
+        json={
+            "category": "announcement",
+            "title": "浙江大学 2026 年硕士研究生招生简章",
+            "body": "这里是完整正文。",
+            "summary": "这里是摘要。",
+            "school_name": "浙江大学",
+            "source_type": "crawler",
+            "source_url": "https://example.com/zju-announcement",
+            "extra": {
+                "school_name": "浙江大学",
+                "department_name": "计算机科学与技术学院",
+                "notice_kind": "招生简章",
+                "channel_label": "硕士招生",
+                "channel_tier": "core",
+                "tags": ["招生简章"],
+                "system_tags": ["硕士招生"],
+            },
+        },
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+    assert created.status_code == 200
+
+    item_id = created.json()["id"]
+    detail = client.get(f"/api/v1/search/announcements/items/{item_id}")
+
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["title"] == "浙江大学 2026 年硕士研究生招生简章"
+    assert payload["body"] == "这里是完整正文。"
+    assert payload["school_name"] == "浙江大学"
+    assert payload["department_name"] == "计算机科学与技术学院"
+    assert payload["source_url"] == "https://example.com/zju-announcement"
+    assert payload["system_tags"] == ["硕士招生"]
+
+
 def test_announcement_search_school_filter_matches_extra_school_name_when_school_fk_is_missing(client):
     with SessionLocal() as db:
         db.add(

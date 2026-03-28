@@ -1,5 +1,6 @@
 import {
   request,
+  type AnnouncementSearchDetailResponse,
   type AdjustmentSearchDetailResponse,
   type AdjustmentSearchRequest,
   type AnnouncementSearchRequest,
@@ -20,6 +21,13 @@ export const fetchAdjustmentResults = (payload: AdjustmentSearchRequest) =>
     url: "/search/adjustments",
     data: payload,
     timeout: 45_000,
+  });
+
+export const fetchAnnouncementDetail = (contentId: string) =>
+  request<AnnouncementSearchDetailResponse>({
+    method: "GET",
+    url: `/search/announcements/items/${contentId}`,
+    timeout: 30_000,
   });
 
 export const fetchAdjustmentDetail = (itemId: string, itemKind: "content" | "opportunity") =>
