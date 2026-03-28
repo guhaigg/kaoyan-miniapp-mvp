@@ -630,3 +630,15 @@
 
 - `/` keeps the frozen `ui.html` homepage and the live API integrations added on 2026-03-28.
 - The desktop homepage shell is now fluid: the local homepage navigation, top metric strip, and dual-column feeds expand close to the viewport edges on large screens instead of staying inside the prior narrow centered container.
+
+## 2026-03-28 Homepage Live Portal Entry
+
+- The homepage is now a real portal entry instead of a mock dashboard shell.
+- Local homepage navigation routes to the existing announcement search, adjustment search, radar, watchlist, account, and admin pages.
+- Homepage search no longer filters in place. Mode buttons and Enter now redirect into the matching `/search` results page.
+- Both homepage columns support `latest` and `watching` views:
+  - watched announcements come from pending notices plus active monitor-target signals
+  - watched adjustments come from the newest active saved subscription focus
+- The top micro charts are now derived from live homepage data instead of hardcoded mock arrays.
+- The `See Live` summary card now reflects real reminder state from pending notices and active monitoring targets.
+- Anonymous users still see the frozen homepage shell, but the adjustment feed stays login-gated because the current adjustment search API requires authentication.

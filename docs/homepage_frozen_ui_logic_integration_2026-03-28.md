@@ -35,3 +35,19 @@
 
 - This task was frontend-only. `npm run test:backend` was not run.
 - The build still shows the pre-existing Next.js workspace-root warning caused by multiple lockfiles; it does not block lint or export.
+
+## 2026-03-28 Live Homepage Upgrade
+
+- Homepage local navigation now routes into the real announcement search, adjustment search, radar, watchlist, account, and admin pages instead of placeholder actions.
+- Homepage search is no longer an in-place filter. The mode buttons and Enter action now redirect into the matching `/search` results view.
+- Both homepage columns now support `最新 / 我的关注`:
+  - announcement watching view is derived from pending notices plus active monitor-target recent signals
+  - adjustment watching view is derived from the newest active saved subscription focus
+- The top micro charts now use live-derived homepage data:
+  - release trend uses latest adjustment timestamps
+  - tier bars use latest adjustment school tiers
+  - the right-side `See Live` card uses pending notices plus active monitor-target counts
+- Homepage cards and CTA buttons now perform real actions:
+  - open source URLs when available
+  - otherwise route into the correct search or watchlist page
+- Anonymous users now see an explicit login prompt in the adjustment column because the current adjustment search API requires authentication.
