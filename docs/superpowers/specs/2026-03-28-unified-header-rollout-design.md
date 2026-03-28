@@ -9,6 +9,8 @@ Replace the current split homepage/header implementations with one shared header
 - all pages use the same visual header
 - announcement summary and adjustment summary views hide the center search box
 - every other page that shows the search box uses the same shorter width
+- the shared primary nav includes `关注库` and `我的空间`
+- the old `监控台` label is replaced by `雷达测算`
 
 ## Current Problem
 
@@ -51,6 +53,16 @@ Responsibilities:
 Homepage and non-home pages must both use this same component.
 
 The old shared header should no longer remain as an independent competing implementation.
+
+Primary nav labels and targets should be standardized as:
+
+- `公告汇总` -> `/search?tab=announcements`
+- `调剂汇总` -> `/search?tab=adjustments`
+- `雷达测算` -> `/radar`
+- `关注库` -> `/watchlist`
+- `我的空间` -> `/account`
+
+This replaces the older `监控台` wording with `雷达测算`.
 
 ### 2. Route-Aware Search Visibility
 
@@ -116,6 +128,7 @@ That means:
 - `AppChrome` uses the shared unified header
 - homepage page/component also uses the same shared unified header
 - the old duplication is removed
+- the same shared nav item list is used by homepage and non-home pages
 
 ### 6. Search Behavior
 
@@ -169,6 +182,9 @@ Manual review targets:
 - `/search?tab=announcements` has no center search box
 - `/search?tab=adjustments` has no center search box
 - another non-search page still shows the shorter search box
+- `关注库` routes to `/watchlist`
+- `我的空间` routes to `/account`
+- `雷达测算` is the visible nav label for `/radar`
 - nav links and user actions still work
 
 ## Risks
