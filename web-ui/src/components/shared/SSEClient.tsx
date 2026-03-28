@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useQueryClient } from "@tanstack/react-query";
 import { NotificationEventItem, notificationsStreamUrl } from "@/lib/api";
@@ -24,6 +25,7 @@ function buildToastContent(item: NotificationEventItem) {
 }
 
 export default function SSEClient() {
+  const pathname = usePathname();
   const queryClient = useQueryClient();
   const portalAuth = useAppStore((state) => state.portalAuth);
   const logout = useAppStore((state) => state.logout);
@@ -31,6 +33,9 @@ export default function SSEClient() {
   const isDocumentVisible = useDocumentVisibility();
 
   useEffect(() => {
+    if (pathname === "/") {
+      return;
+    }
     const userId = portalAuth?.userId;
     const token = portalAuth?.accessToken;
     if (!userId || !token || !isDocumentVisible) {
@@ -96,7 +101,7 @@ export default function SSEClient() {
     return () => {
       abortController.abort();
     };
-  }, [isDocumentVisible, logout, portalAuth?.accessToken, portalAuth?.userId, queryClient, showToast]);
+  }, [isDocumentVisible, logout, pathname, portalAuth?.accessToken, portalAuth?.userId, queryClient, showToast]);
 
   return null;
 }
