@@ -7,7 +7,7 @@
   - `web-ui/src/components/layout/AppChrome.tsx` skips the shared `Background/Header/Modals/Toast` on `/`
   - `web-ui/src/components/shared/SSEClient.tsx` skips the shared SSE listener on `/`
 - The homepage visual structure, Tailwind classes, and Framer Motion hierarchy were preserved from `ui.html`; only logic was replaced.
-- The desktop homepage shell is now fluid: the top metric strip and the dual-column content area expand close to the viewport edges on large screens instead of staying inside the previous narrow centered container.
+- The desktop homepage shell is now fluid: the local homepage navigation, top metric strip, and dual-column content area expand close to the viewport edges on large screens instead of staying inside the previous narrow centered container.
 
 ## Real integrations on the frozen homepage
 

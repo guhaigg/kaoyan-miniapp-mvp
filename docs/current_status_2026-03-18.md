@@ -629,4 +629,4 @@
 ## 2026-03-28 Homepage Fullscreen Shell
 
 - `/` keeps the frozen `ui.html` homepage and the live API integrations added on 2026-03-28.
-- The desktop homepage shell is now fluid: the top metric strip and the dual-column feeds expand close to the viewport edges on large screens instead of staying inside the prior narrow centered container.
+- The desktop homepage shell is now fluid: the local homepage navigation, top metric strip, and dual-column feeds expand close to the viewport edges on large screens instead of staying inside the prior narrow centered container.

@@ -319,8 +319,8 @@ const Header = ({ onGlobalSearch }: { onGlobalSearch: (kw: string, mode: string)
   };
 
   return (
-    <header className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-2xl border-b border-slate-200/50 px-6 py-3 transition-all duration-300">
-      <div className="max-w-[1400px] mx-auto flex justify-between items-center gap-6">
+    <header className="fixed top-0 z-50 w-full border-b border-slate-200/50 bg-white/80 px-6 py-3 backdrop-blur-2xl transition-all duration-300 md:px-8 xl:px-10 2xl:px-12">
+      <div className="flex w-full items-center justify-between gap-6">
         
         {/* 左侧：Logo & 主导航 */}
         <div className="flex items-center gap-6 shrink-0">
@@ -339,7 +339,7 @@ const Header = ({ onGlobalSearch }: { onGlobalSearch: (kw: string, mode: string)
         </div>
 
         {/* 中间：全站统一快捷搜索 */}
-        <div className="flex-1 max-w-[480px] hidden md:flex items-center bg-slate-100/50 hover:bg-slate-100 border border-slate-200/60 rounded-xl p-1 transition-all focus-within:bg-white focus-within:border-cyan-300 focus-within:shadow-[0_0_0_2px_rgba(6,182,212,0.1)] group">
+        <div className="hidden max-w-[480px] flex-1 items-center rounded-xl border border-slate-200/60 bg-slate-100/50 p-1 transition-all group hover:bg-slate-100 focus-within:border-cyan-300 focus-within:bg-white focus-within:shadow-[0_0_0_2px_rgba(6,182,212,0.1)] md:flex lg:max-w-[640px] xl:max-w-[760px] 2xl:max-w-[900px]">
            <div className="flex items-center bg-white/80 rounded-lg shadow-sm p-0.5 border border-slate-200/50 shrink-0">
              {(['公告', '调剂'] as const).map(mode => (
                <button 
