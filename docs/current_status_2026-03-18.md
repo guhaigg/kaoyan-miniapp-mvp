@@ -625,3 +625,8 @@
 - 网站、后端、账号体系、实时通知、服务器部署已经进入“可工作的 MVP 阶段”
 - 最大短板在数据生产与小程序闭环
 - 后续开发不应再优先花力气重做 UI，而应优先补齐内容供给、通知外发、验收和发布规范
+
+## 2026-03-28 Homepage Fullscreen Shell
+
+- `/` keeps the frozen `ui.html` homepage and the live API integrations added on 2026-03-28.
+- The desktop homepage shell is now fluid: the top metric strip and the dual-column feeds expand close to the viewport edges on large screens instead of staying inside the prior narrow centered container.

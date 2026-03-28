@@ -201,7 +201,7 @@ const QuotaTrendChart = () => {
   const fillD = `M 0,${height} L ${points} L ${width},${height} Z`;
 
   return (
-    <div className="relative w-full max-w-[180px] h-[48px]" onMouseLeave={() => setHoverIdx(null)}>
+    <div className="relative h-[48px] w-full min-w-[180px] max-w-[320px] xl:max-w-[420px]" onMouseLeave={() => setHoverIdx(null)}>
       <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full h-full overflow-visible">
         <defs>
           <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
@@ -258,7 +258,7 @@ const TierDistributionChart = () => {
   const total = tiers.reduce((acc, curr) => acc + curr.count, 0);
 
   return (
-    <div className="flex items-end gap-1.5 w-full max-w-[160px] h-[36px]" onMouseLeave={() => setHoverIdx(null)}>
+    <div className="flex h-[36px] w-full min-w-[160px] max-w-[260px] items-end gap-1.5 xl:max-w-[320px]" onMouseLeave={() => setHoverIdx(null)}>
       {tiers.map((tier, i) => {
         const isHovered = hoverIdx === i;
         const heightPercent = (tier.count / max) * 100;
@@ -461,13 +461,13 @@ const DashboardHome = ({ searchKw, searchMode }: { searchKw: string, searchMode:
     : 0;
 
   return (
-    <div className="pt-28 max-w-[1200px] mx-auto px-6 pb-32 relative z-10">
+    <div className="relative z-10 w-full px-6 pb-32 pt-28 md:px-8 xl:px-10 2xl:px-12">
       
       {/* === 顶部无边框数据总览 (赋能业务意义) === */}
-      <div className="flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-20 mb-20 px-8">
+      <div className="mb-20 flex w-full flex-col gap-12 lg:flex-row lg:items-end lg:gap-10 xl:gap-12">
         
         {/* 指标 1: 缺额流速 */}
-        <div className="flex items-end gap-6 w-full lg:w-auto flex-1 max-w-[350px]">
+        <div className="flex w-full flex-1 min-w-0 items-end gap-6">
           <div>
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full shadow-[0_0_6px_rgba(6,182,212,0.6)]"></span> RELEASE VELOCITY
@@ -484,7 +484,7 @@ const DashboardHome = ({ searchKw, searchMode }: { searchKw: string, searchMode:
         </div>
 
         {/* 指标 2: 质量画像 */}
-        <div className="flex items-end gap-6 w-full lg:w-auto flex-1 max-w-[350px]">
+        <div className="flex w-full flex-1 min-w-0 items-end gap-6">
           <div>
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">QUALITY TIER</div>
             <div className="flex items-baseline gap-1.5">
@@ -494,7 +494,7 @@ const DashboardHome = ({ searchKw, searchMode }: { searchKw: string, searchMode:
           </div>
           <div className="flex-1 pb-1">
             <TierDistributionChart />
-            <div className="flex justify-between text-[8px] text-slate-400 font-mono uppercase mt-2 w-[160px]">
+            <div className="mt-2 flex w-full max-w-[260px] justify-between text-[8px] font-mono uppercase text-slate-400 xl:max-w-[320px]">
               <span>985</span><span>211</span><span>D1L</span><span>ORD</span>
             </div>
           </div>
@@ -502,7 +502,7 @@ const DashboardHome = ({ searchKw, searchMode }: { searchKw: string, searchMode:
 
         {/* 指标 3: 个人雷达匹配 */}
         <div 
-          className="hidden xl:flex flex-col items-start gap-1.5 px-5 py-3 bg-orange-50/60 border border-orange-200/50 rounded-xl backdrop-blur-sm cursor-pointer hover:bg-orange-100/60 transition-colors shadow-sm group" 
+          className="hidden flex-col items-start gap-1.5 rounded-xl border border-orange-200/50 bg-orange-50/60 px-5 py-3 shadow-sm backdrop-blur-sm transition-colors group cursor-pointer hover:bg-orange-100/60 xl:flex xl:min-w-[220px] xl:flex-none"
           onClick={() => addToast({msg:'拦截成功：12 条调剂动态与你的目标高度重合', type:'warning'})}
         >
            <div className="flex items-center gap-2">
@@ -517,7 +517,7 @@ const DashboardHome = ({ searchKw, searchMode }: { searchKw: string, searchMode:
       </div>
 
       {/* === 核心内容双栏 === */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
+      <div className="grid w-full grid-cols-1 gap-12 lg:grid-cols-2 lg:gap-10 xl:gap-12">
         
         {/* 左栏：公告流 */}
         <div className={`space-y-4 transition-opacity duration-300 ${searchMode === '调剂' && searchKw ? 'opacity-40 grayscale pointer-events-none' : 'opacity-100'}`}>
