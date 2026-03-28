@@ -6,8 +6,29 @@ const BANNER_ROUTES = new Set(["/", "/login", "/register", "/account"]);
 
 export default function Background() {
   const pathname = usePathname();
-  const showBannerGlow = BANNER_ROUTES.has(pathname);
+  const showWorkspaceGrid = pathname === "/" || pathname === "/radar";
+  const showBannerGlow = !showWorkspaceGrid && BANNER_ROUTES.has(pathname);
   const showAdminTone = pathname.startsWith("/admin");
+
+  if (showWorkspaceGrid) {
+    return (
+      <>
+        <div className="pointer-events-none fixed inset-0 z-0 bg-[#fcfcfc]" />
+        <div
+          className="pointer-events-none fixed inset-0 z-0"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, #f1f5f9 1px, transparent 1px), linear-gradient(to bottom, #f1f5f9 1px, transparent 1px)",
+            backgroundSize: "80px 80px",
+          }}
+        />
+        <div className="pointer-events-none fixed right-[20%] top-[10%] z-0 h-[400px] w-[400px] rounded-full bg-cyan-100/20 blur-[120px]" />
+        {pathname === "/radar" ? (
+          <div className="pointer-events-none fixed bottom-[8%] left-[10%] z-0 h-[260px] w-[260px] rounded-full bg-orange-100/20 blur-[120px]" />
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <>

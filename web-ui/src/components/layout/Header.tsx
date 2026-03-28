@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Bell, LogIn, Menu, Search, Sparkles, Star } from "lucide-react";
+import { Bell, Search, Star } from "lucide-react";
 import { ApiError, logoutUser } from "@/lib/api";
 import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
@@ -13,9 +13,9 @@ import BiliHeaderUserCard from "./BiliHeaderUserCard";
 import { buildHeaderSummary } from "./bili-header-data";
 
 const NAV_ITEMS = [
-  { href: "/", label: "情报总览" },
-  { href: "/search", label: "公告检索" },
-  { href: "/radar", label: "雷达监控" },
+  { href: "/", label: "情报流" },
+  { href: "/search", label: "检索" },
+  { href: "/radar", label: "监控台" },
 ];
 
 type SearchMode = "announcements" | "adjustments";
@@ -37,7 +37,7 @@ export default function Header() {
   const noticesQuery = useWatchlistNoticesQuery(Boolean(portalAuth));
 
   const [searchInput, setSearchInput] = useState("");
-  const [searchMode, setSearchMode] = useState<SearchMode>(portalAuth ? "adjustments" : "announcements");
+  const [searchMode, setSearchMode] = useState<SearchMode>("announcements");
   const [userCardOpen, setUserCardOpen] = useState(false);
   const cardAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -122,33 +122,27 @@ export default function Header() {
     : null;
 
   const membershipLabel = portalAuth?.isAdmin ? "管理员" : portalAuth?.isPremium ? "高级会员" : "普通用户";
-  const showUpgradeCta = Boolean(portalAuth && !portalAuth.isAdmin && !portalAuth.isPremium);
-
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-50">
-        <div className="mx-auto max-w-[1880px] px-3 py-2 md:px-6">
-          <div className="relative flex h-16 items-center justify-between rounded-[28px] border border-black/5 bg-white/92 px-4 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur-xl md:px-5">
-            <div className="flex min-w-0 items-center gap-3">
-              <Link href="/" className="flex shrink-0 items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[#111827] text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)]">
-                  <span className="text-sm font-black tracking-[0.14em]">GW</span>
+        <div className="border-b border-slate-200/50 bg-white/80 px-6 py-3 backdrop-blur-2xl">
+          <div className="relative mx-auto flex max-w-[1400px] items-center justify-between gap-6">
+            <div className="flex shrink-0 items-center gap-6">
+              <Link href="/" className="group flex items-center gap-2">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded bg-slate-900 text-[11px] font-black text-white transition-transform group-hover:scale-105">
+                  GW
                 </span>
-                <span className="text-[1.9rem] font-black tracking-[-0.06em] text-slate-900">GewuJL.</span>
+                <span className="text-[15px] font-black tracking-[-0.02em] text-slate-900">GewuJL.</span>
               </Link>
 
-              <nav className="hidden items-center gap-1 xl:flex">
+              <nav className="hidden items-center gap-7 text-[14px] font-semibold tracking-[0.02em] text-slate-500 lg:flex">
                 {NAV_ITEMS.map((item) => {
                   const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`rounded-full px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.22em] transition-all ${
-                        active
-                          ? "bg-slate-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.18)]"
-                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                      }`}
+                      className={`transition-colors ${active ? "text-slate-900" : "hover:text-slate-900"}`}
                     >
                       {item.label}
                     </Link>
@@ -159,72 +153,65 @@ export default function Header() {
 
             <form
               onSubmit={handleSearchSubmit}
-              className="absolute left-1/2 top-1/2 hidden w-full max-w-[460px] -translate-x-1/2 -translate-y-1/2 xl:block"
+              className="hidden w-full max-w-[420px] items-center md:flex lg:absolute lg:left-1/2 lg:max-w-[480px] lg:-translate-x-1/2"
             >
-              <div className="flex h-11 items-center rounded-full border border-black/5 bg-slate-100/88 p-1 pl-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-                <div className="flex shrink-0 items-center gap-1">
+              <div className="group flex w-full items-center rounded-xl border border-slate-200/60 bg-slate-100/50 p-1 transition-all hover:bg-slate-100 focus-within:border-cyan-300 focus-within:bg-white focus-within:shadow-[0_0_0_2px_rgba(6,182,212,0.1)]">
+                <div className="flex shrink-0 items-center rounded-lg border border-slate-200/50 bg-white/80 p-0.5 shadow-sm">
                   {(
                     [
-                      { value: "adjustments", label: "调剂" },
                       { value: "announcements", label: "公告" },
+                      { value: "adjustments", label: "调剂" },
                     ] as const
                   ).map((item) => (
                     <button
                       key={item.value}
                       type="button"
                       onClick={() => setSearchMode(item.value)}
-                      className={`rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.08em] transition-all ${
-                        searchMode === item.value ? "bg-white text-slate-950 shadow-sm" : "text-slate-400"
+                      className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${
+                        searchMode === item.value ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
                       }`}
                     >
                       {item.label}
                     </button>
                   ))}
                 </div>
-                <div className="ml-2 flex min-w-0 flex-1 items-center">
-                  <Search size={15} className="shrink-0 text-slate-400" />
+                <div className="flex min-w-0 flex-1 items-center pl-3 pr-2">
+                  <Search size={14} className="mr-2 shrink-0 text-slate-400 transition-colors group-focus-within:text-cyan-500" />
                   <input
                     value={searchInput}
                     onChange={(event) => setSearchInput(event.target.value)}
-                    placeholder={searchMode === "adjustments" ? "快速过滤调剂情报…" : "快速搜索公告 / 学校 / 关键词"}
-                    className="ml-2 w-full bg-transparent text-[13px] font-medium text-slate-700 outline-none placeholder:text-slate-400"
+                    placeholder="输入目标院校或专业..."
+                    className="w-full bg-transparent text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400"
                   />
                 </div>
               </div>
             </form>
 
-            <div className="ml-auto flex items-center gap-2">
-              {showUpgradeCta ? (
-                <Link
-                  href="/account?tab=account&panel=billing"
-                  className="hidden rounded-full bg-[linear-gradient(90deg,#111827,#0f766e)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white lg:inline-flex"
-                >
-                  开通高级会员
-                </Link>
-              ) : null}
-
+            <div className="ml-auto flex shrink-0 items-center gap-4">
               <button
                 type="button"
                 onClick={handleOpenWatchlist}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                className="hidden rounded-full p-1 text-slate-400 transition-colors hover:text-slate-900 sm:block"
                 title="关注"
               >
-                <Star size={17} />
+                <Star size={18} />
               </button>
-              <Link
-                href="/account?tab=activity"
-                className="hidden h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 md:inline-flex"
-                title="动态"
+              <button
+                type="button"
+                className="relative hidden rounded-full p-1 text-slate-400 transition-colors hover:text-slate-900 sm:block"
+                title="通知"
               >
-                <Bell size={17} />
-              </Link>
+                <Bell size={18} />
+                <span className="absolute right-0 top-0 h-2 w-2 rounded-full border-2 border-white bg-red-500" />
+              </button>
+              <div className="mx-1 hidden h-4 w-px bg-slate-200 sm:block" />
 
               {portalAuth && summary ? (
                 <div className="relative" ref={cardAnchorRef}>
                   <button
                     type="button"
                     onClick={() => setUserCardOpen((prev) => !prev)}
-                    className="inline-flex items-center gap-2 rounded-full border border-black/5 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
                   >
                     <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[linear-gradient(135deg,#dbeafe,#d1fae5)] text-sm font-black text-slate-800">
                       {summary.displayName.slice(0, 1).toUpperCase()}
@@ -242,22 +229,20 @@ export default function Header() {
                   ) : null}
                 </div>
               ) : (
-                <div className="hidden items-center gap-2 md:flex">
+                <div className="hidden items-center gap-3 md:flex">
                   <button
                     type="button"
                     onClick={() => openAuth("login")}
-                    className="inline-flex items-center gap-1 rounded-full border border-black/5 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
+                    className="text-sm font-bold tracking-[0.01em] text-slate-700 transition-colors hover:text-slate-900"
                   >
-                    <LogIn size={14} />
                     登录
                   </button>
                   <button
                     type="button"
                     onClick={() => openAuth("register")}
-                    className="inline-flex items-center gap-1 rounded-full bg-slate-950 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
+                    className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold tracking-[0.01em] text-white shadow-sm transition-all hover:bg-slate-800 active:scale-95"
                   >
-                    <Sparkles size={14} />
-                    注册
+                    免费接入
                   </button>
                 </div>
               )}
@@ -265,10 +250,10 @@ export default function Header() {
               <button
                 type="button"
                 onClick={handleOpenWatchlist}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white text-slate-600 transition-colors hover:bg-slate-50 lg:hidden"
-                title="菜单"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 md:hidden"
+                title="关注"
               >
-                <Menu size={18} />
+                <Bell size={18} />
               </button>
             </div>
           </div>
@@ -279,7 +264,7 @@ export default function Header() {
         type="button"
         onClick={handleOpenWatchlist}
         data-watchlist-fab="true"
-        className="group fixed bottom-8 right-6 z-[80] flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#111827,#0f766e)] shadow-[0_16px_36px_rgba(15,23,42,0.28)] transition-transform hover:scale-105 md:hidden"
+        className="group fixed bottom-8 right-6 z-[80] flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 shadow-[0_16px_36px_rgba(15,23,42,0.28)] transition-transform hover:scale-105 md:hidden"
       >
         <Bell className="text-white" size={18} />
       </button>
