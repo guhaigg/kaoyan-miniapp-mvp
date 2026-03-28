@@ -1,16 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import {
-  BookOpen,
-  Radar,
-  User,
-  X,
-} from "lucide-react";
-import { ApiError, getCurrentUser, loginUser } from "@/lib/api";
+import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { motion } from "framer-motion";
+import { BookOpen } from "lucide-react";
 import type { SearchItem } from "@/lib/api";
 import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
@@ -18,19 +10,11 @@ import { useHomeAdjustmentsQuery, useHomeAnnouncementsQuery } from "@/hooks/useS
 import { useSubscriptionsQuery } from "@/hooks/useSubscriptions";
 import { useAppStore } from "@/lib/store";
 
-type SearchMode = "adjustment" | "announcement";
-
 type DistributionBar = {
   label: string;
   value: number;
   color: string;
 };
-
-const TOP_NAV_ITEMS = [
-  { id: "home", label: "情报总览", href: "/" },
-  { id: "announcement", label: "公告检索", href: "/search?tab=announcements" },
-  { id: "radar", label: "雷达监控", href: "/radar" },
-] as const;
 
 const FALLBACK_DISTRIBUTION: DistributionBar[] = [
   { label: "公告", value: 420, color: "bg-cyan-500" },
@@ -58,27 +42,12 @@ const ANONYMOUS_ADJUSTMENT_FALLBACK = [
 ] as const;
 
 export default function SignalDashboardHome() {
-  const router = useRouter();
   const dashboardRef = useRef<HTMLDivElement | null>(null);
-
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [searchMode, setSearchMode] = useState<SearchMode>("adjustment");
-  const [keyword, setKeyword] = useState("");
-  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [loginName, setLoginName] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginSubmitting, setLoginSubmitting] = useState(false);
-  const [loginMessage, setLoginMessage] = useState("");
 
-  const {
-    portalAuth,
-    showToast,
-    setPortalAuthFromToken,
-    setPortalProfile,
-  } = useAppStore();
-
+  const { portalAuth } = useAppStore();
   const canManageScopeTargets = Boolean(portalAuth?.isPremium || portalAuth?.isAdmin);
+
   const announcementsQuery = useHomeAnnouncementsQuery({
     page: 1,
     page_size: 3,
@@ -140,201 +109,16 @@ export default function SignalDashboardHome() {
     setMousePos({ x: 0, y: 0 });
   }
 
-  function routeToSearch() {
-    const trimmed = keyword.trim();
-    if (searchMode === "adjustment" && !portalAuth) {
-      setIsLoginOpen(true);
-      setLoginMessage("调剂检索需要先登录主账号。");
-      return;
-    }
-
-    const params = new URLSearchParams();
-    params.set("tab", searchMode === "adjustment" ? "adjustments" : "announcements");
-    if (trimmed) {
-      params.set("keywords", trimmed);
-    }
-    router.push(`/search?${params.toString()}`);
-  }
-
-  function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    routeToSearch();
-  }
-
-  function handleProfileClick() {
-    if (portalAuth) {
-      router.push("/account?tab=activity");
-      return;
-    }
-    setIsLoginOpen(true);
-    setLoginMessage("");
-  }
-
-  function handleRadarClick() {
-    if (!portalAuth) {
-      setIsLoginOpen(true);
-      setLoginMessage("登录后才能打开你的监控面板。");
-      return;
-    }
-    router.push("/radar");
-  }
-
-  async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (loginSubmitting) return;
-
-    if (loginName.trim().length < 3) {
-      setLoginMessage("账号至少 3 位。");
-      return;
-    }
-    if (loginPassword.length < 8) {
-      setLoginMessage("密码至少 8 位。");
-      return;
-    }
-
-    setLoginSubmitting(true);
-    setLoginMessage("");
-
-    try {
-      const result = await loginUser({
-        username: loginName.trim(),
-        password: loginPassword,
-      });
-
-      setPortalAuthFromToken({
-        tokenType: result.token_type,
-        accessToken: result.access_token,
-        expiresIn: result.expires_in,
-        refreshExpiresIn: result.refresh_expires_in,
-        userId: result.user_id,
-        username: result.username,
-      });
-
-      try {
-        const profile = await getCurrentUser(result.access_token);
-        setPortalProfile({
-          nickname: profile.nickname,
-          status: profile.status,
-          isAdmin: profile.is_admin,
-          isPremium: profile.is_premium,
-          role: profile.role,
-          premiumExpiresAt: profile.premium_expires_at,
-        });
-      } catch {
-        setPortalProfile({
-          nickname: null,
-          status: "active",
-          isAdmin: false,
-          isPremium: false,
-          role: "user",
-          premiumExpiresAt: null,
-        });
-      }
-
-      setIsLoginOpen(false);
-      setLoginPassword("");
-      showToast("已接入系统", "首页登录框已连到真实账号接口。", "info");
-    } catch (error) {
-      setLoginMessage(error instanceof ApiError ? error.message : "登录失败，请稍后重试。");
-    } finally {
-      setLoginSubmitting(false);
-    }
-  }
-
-  const displayName = portalAuth?.nickname || portalAuth?.username || "guest";
-  const syncLabel = portalAuth ? `${portalAuth.role.toUpperCase()} ONLINE` : "GUEST MODE";
   const sourceCount = Object.keys(announcementsQuery.data?.source_breakdown ?? {}).length;
+  const syncLabel = portalAuth ? `${portalAuth.role.toUpperCase()} ONLINE` : "GUEST MODE";
 
   return (
-    <div className="min-h-screen w-full bg-white font-sans text-slate-900 selection:bg-cyan-100 selection:text-cyan-900">
-      <header className="fixed left-0 right-0 top-0 z-50 flex h-[68px] items-center justify-between border-b border-slate-200 bg-white/95 px-6 backdrop-blur-xl">
-        <div className="flex h-full items-center gap-8" onMouseLeave={() => setHoveredNav(null)}>
-          <Link href="/" className="group flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white shadow-md transition-transform group-hover:scale-105">
-              <Radar size={18} strokeWidth={2.5} />
-            </div>
-            <span className="text-lg font-bold tracking-tight text-slate-900">GewuJL.</span>
-          </Link>
-
-          <nav className="hidden h-full items-center gap-8 md:flex">
-            {TOP_NAV_ITEMS.map((item) => (
-              <Link
-                key={item.id}
-                href={item.href}
-                onMouseEnter={() => setHoveredNav(item.id)}
-                className="relative flex h-full items-center text-xs font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-slate-900"
-              >
-                {item.label}
-                {hoveredNav === item.id ? <FlyingUnderline bottomOffset="bottom-[-1px]" /> : null}
-              </Link>
-            ))}
-          </nav>
-        </div>
-
-        <form onSubmit={handleSearchSubmit} className="mx-6 hidden max-w-[420px] flex-1 lg:flex">
-          <div className="relative flex w-full items-center overflow-hidden rounded-full border border-transparent bg-slate-100/80 transition-all focus-within:border-slate-200 focus-within:bg-white">
-            <div className="flex shrink-0 items-center p-1 pl-1.5">
-              {(
-                [
-                  { key: "adjustment", label: "调剂" },
-                  { key: "announcement", label: "公告" },
-                ] as const
-              ).map((mode) => (
-                <button
-                  key={mode.key}
-                  type="button"
-                  onClick={() => setSearchMode(mode.key)}
-                  className={`relative rounded-full px-3 py-1.5 text-[10px] font-bold transition-all ${
-                    searchMode === mode.key ? "text-slate-900" : "text-slate-400"
-                  }`}
-                >
-                  {searchMode === mode.key ? (
-                    <motion.div
-                      layoutId="searchModeIndicator"
-                      className="absolute inset-0 rounded-full bg-white shadow-sm"
-                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    />
-                  ) : null}
-                  <span className="relative z-10">{mode.label}</span>
-                </button>
-              ))}
-            </div>
-            <input
-              type="text"
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder={searchMode === "adjustment" ? "快速过滤调剂情报…" : "快速检索公告关键词…"}
-              className="flex-1 bg-transparent px-3 py-2 text-xs text-slate-900 outline-none placeholder:text-slate-400"
-            />
-          </div>
-        </form>
-
-        <div className="flex h-full items-center gap-3" onMouseLeave={() => setHoveredNav(null)}>
-          <div className="relative flex h-full items-center px-2" onMouseEnter={() => setHoveredNav("profile")}>
-            <button
-              type="button"
-              onClick={handleProfileClick}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100"
-            >
-              {portalAuth ? <span className="text-xs font-black uppercase">{displayName.slice(0, 1)}</span> : <User size={14} />}
-            </button>
-            {hoveredNav === "profile" ? <FlyingUnderline bottomOffset="bottom-[-1px]" /> : null}
-          </div>
-          <button
-            type="button"
-            onClick={handleRadarClick}
-            className="ml-2 rounded-lg bg-slate-900 px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest text-white transition-all hover:bg-slate-800 active:scale-95"
-          >
-            监控面板
-          </button>
-        </div>
-      </header>
-
+    <div className="w-full pb-32 text-slate-900">
       <section
         ref={dashboardRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        className="relative flex h-[220px] items-center overflow-hidden border-b border-slate-200/60 bg-[#f8fafc] pt-[68px]"
+        className="relative flex h-[220px] items-center overflow-hidden border-b border-slate-200/60 bg-[#f8fafc]"
       >
         <motion.div
           animate={{ x: mousePos.x * -10, y: mousePos.y * -5 }}
@@ -401,7 +185,7 @@ export default function SignalDashboardHome() {
         </div>
       </section>
 
-      <main className="mx-auto max-w-7xl px-6 py-12 pb-32">
+      <main className="mx-auto max-w-7xl px-6 py-12">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-2">
           <div className="space-y-5">
             <div className="mb-8 flex items-center gap-3 border-b border-slate-100 pb-4">
@@ -449,70 +233,6 @@ export default function SignalDashboardHome() {
           </div>
         </div>
       </main>
-
-      <AnimatePresence>
-        {isLoginOpen ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/10 backdrop-blur-sm"
-          >
-            <div className="absolute inset-0" onClick={() => setIsLoginOpen(false)} />
-            <motion.div
-              initial={{ scale: 0.98, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.98, opacity: 0 }}
-              className="relative z-10 w-full max-w-[360px] rounded-2xl border border-slate-200 bg-white p-8 shadow-2xl"
-            >
-              <div className="mb-6 flex items-center justify-between">
-                <h3 className="font-black uppercase tracking-tighter text-slate-900">System Access</h3>
-                <button
-                  type="button"
-                  onClick={() => setIsLoginOpen(false)}
-                  className="text-slate-300 transition-colors hover:text-slate-900"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form className="space-y-4" onSubmit={handleLoginSubmit}>
-                <input
-                  type="text"
-                  value={loginName}
-                  onChange={(event) => setLoginName(event.target.value)}
-                  placeholder="Account"
-                  autoComplete="username"
-                  className="w-full rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-xs outline-none transition-all focus:border-slate-300"
-                />
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(event) => setLoginPassword(event.target.value)}
-                  placeholder="Verify Key"
-                  autoComplete="current-password"
-                  className="w-full rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-xs outline-none transition-all focus:border-slate-300"
-                />
-                {loginMessage ? <p className="text-xs leading-5 text-rose-500">{loginMessage}</p> : null}
-                <button
-                  type="submit"
-                  disabled={loginSubmitting}
-                  className="mt-4 w-full rounded-xl bg-slate-900 py-4 text-xs font-black uppercase tracking-widest text-white shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loginSubmitting ? "Connecting…" : "Verify Connection"}
-                </button>
-              </form>
-
-              <div className="mt-4 flex items-center justify-between text-[11px] text-slate-400">
-                <span>Connected role: {portalAuth?.role || "guest"}</span>
-                <Link href="/register" className="text-slate-500 transition-colors hover:text-slate-900">
-                  去注册
-                </Link>
-              </div>
-            </motion.div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
     </div>
   );
 }
@@ -656,16 +376,6 @@ function MicroDistributionChart({ data }: { data: DistributionBar[] }) {
         />
       ))}
     </div>
-  );
-}
-
-function FlyingUnderline({ bottomOffset = "-bottom-[21px]" }: { bottomOffset?: string }) {
-  return (
-    <motion.div
-      layoutId="topNavUnderline"
-      className={`pointer-events-none absolute left-0 right-0 z-30 h-[2px] rounded-full bg-slate-900 ${bottomOffset}`}
-      transition={{ type: "spring", stiffness: 500, damping: 35, mass: 0.8 }}
-    />
   );
 }
 

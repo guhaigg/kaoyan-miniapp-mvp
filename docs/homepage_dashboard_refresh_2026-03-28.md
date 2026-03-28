@@ -12,7 +12,7 @@ It only changes the `/` page in `web-ui`.
 
 - The homepage no longer renders `BiliHeroBanner`, `BiliCategoryStrip`, and `BiliRecommendationGrid` as the landing experience.
 - `/` now renders `SignalDashboardHome`, a dedicated homepage component that follows the `ui.html` structure directly.
-- The global shared header/background are no longer injected on `/`; the homepage is now responsible for its own fixed top bar and visual shell.
+- The navigation bar is now unified through the shared `Header` component so `/`, `/search`, `/radar`, and the rest of the site use the same centered search layout and typography treatment.
 - Homepage actions now point to real application flows instead of static demo actions:
   - search bar -> `/search`
   - profile button -> `/account` when logged in
@@ -30,6 +30,7 @@ It only changes the `/` page in `web-ui`.
 - `web-ui/src/app/page.tsx`
 - `web-ui/src/app/layout.tsx`
 - `web-ui/src/components/layout/AppChrome.tsx`
+- `web-ui/src/components/layout/Header.tsx`
 - `web-ui/src/components/home/SignalDashboardHome.tsx`
 - `web-ui/src/hooks/useSearch.ts`
 
@@ -38,6 +39,5 @@ It only changes the `/` page in `web-ui`.
 - `cd web-ui && npm run lint`
 - `cd web-ui && npm run build`
 - Browser smoke on `http://127.0.0.1:3000/`:
-  - verified the homepage renders without the old global header/background shell
-  - verified the `ui.html`-style top bar is now the only homepage header
-  - verified the homepage login CTA opens the new inline login modal
+  - verified the new centered navigation bar renders across the shared app shell
+  - verified the homepage no longer renders a second local header

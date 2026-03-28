@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Bell, Compass, LogIn, Menu, Search, Sparkles, Star } from "lucide-react";
+import { Bell, LogIn, Menu, Search, Sparkles, Star } from "lucide-react";
 import { ApiError, logoutUser } from "@/lib/api";
 import { useMonitorTargetsQuery } from "@/hooks/useMonitoringTargets";
 import { useWatchlistNoticesQuery } from "@/hooks/useNotifications";
@@ -13,11 +13,12 @@ import BiliHeaderUserCard from "./BiliHeaderUserCard";
 import { buildHeaderSummary } from "./bili-header-data";
 
 const NAV_ITEMS = [
-  { href: "/", label: "首页" },
-  { href: "/search", label: "公告" },
-  { href: "/radar", label: "雷达" },
-  { href: "/watchlist", label: "关注" },
+  { href: "/", label: "情报总览" },
+  { href: "/search", label: "公告检索" },
+  { href: "/radar", label: "雷达监控" },
 ];
+
+type SearchMode = "announcements" | "adjustments";
 
 export default function Header() {
   const router = useRouter();
@@ -36,6 +37,7 @@ export default function Header() {
   const noticesQuery = useWatchlistNoticesQuery(Boolean(portalAuth));
 
   const [searchInput, setSearchInput] = useState("");
+  const [searchMode, setSearchMode] = useState<SearchMode>(portalAuth ? "adjustments" : "announcements");
   const [userCardOpen, setUserCardOpen] = useState(false);
   const cardAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -93,11 +95,19 @@ export default function Header() {
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const keyword = searchInput.trim();
-    if (!keyword) {
-      router.push("/search");
+
+    if (searchMode === "adjustments" && !portalAuth) {
+      showToast("请先登录", "调剂检索需要登录后使用", "info");
+      openAuth("login");
       return;
     }
-    router.push(`/search?keywords=${encodeURIComponent(keyword)}`);
+
+    const params = new URLSearchParams();
+    params.set("tab", searchMode);
+    if (keyword) {
+      params.set("keywords", keyword);
+    }
+    router.push(`/search?${params.toString()}`);
   }
 
   const summary = portalAuth
@@ -117,46 +127,77 @@ export default function Header() {
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-50">
-        <div className="mx-auto max-w-[1440px] px-3 py-2 md:px-6">
-          <div className="bili-surface flex h-12 items-center gap-2 rounded-full px-3 text-[#18191c] md:h-14 md:gap-3 md:px-5">
-            <Link href="/" className="shrink-0 text-xl font-black tracking-tight text-[#00aeec] md:text-2xl">
-              GEWU
-            </Link>
+        <div className="mx-auto max-w-[1880px] px-3 py-2 md:px-6">
+          <div className="relative flex h-16 items-center justify-between rounded-[28px] border border-black/5 bg-white/92 px-4 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur-xl md:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <Link href="/" className="flex shrink-0 items-center gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[#111827] text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)]">
+                  <span className="text-sm font-black tracking-[0.14em]">GW</span>
+                </span>
+                <span className="text-[1.9rem] font-black tracking-[-0.06em] text-slate-900">GewuJL.</span>
+              </Link>
 
-            <nav className="hidden items-center gap-1 lg:flex">
-              {NAV_ITEMS.map((item) => {
-                const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`rounded-full px-3 py-2 text-sm font-semibold transition-colors ${
-                      active ? "bg-[#00aeec]/12 text-[#00a0df]" : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
+              <nav className="hidden items-center gap-1 xl:flex">
+                {NAV_ITEMS.map((item) => {
+                  const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`rounded-full px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.22em] transition-all ${
+                        active
+                          ? "bg-slate-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.18)]"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
 
-            <form onSubmit={handleSearchSubmit} className="mx-auto hidden min-w-0 flex-1 lg:block">
-              <div className="flex h-10 items-center rounded-full border border-black/5 bg-white px-3">
-                <Search size={16} className="text-slate-400" />
-                <input
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder="搜索公告 / 学校 / 关键词"
-                  className="ml-2 w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-                />
+            <form
+              onSubmit={handleSearchSubmit}
+              className="absolute left-1/2 top-1/2 hidden w-full max-w-[460px] -translate-x-1/2 -translate-y-1/2 xl:block"
+            >
+              <div className="flex h-11 items-center rounded-full border border-black/5 bg-slate-100/88 p-1 pl-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                <div className="flex shrink-0 items-center gap-1">
+                  {(
+                    [
+                      { value: "adjustments", label: "调剂" },
+                      { value: "announcements", label: "公告" },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setSearchMode(item.value)}
+                      className={`rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.08em] transition-all ${
+                        searchMode === item.value ? "bg-white text-slate-950 shadow-sm" : "text-slate-400"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="ml-2 flex min-w-0 flex-1 items-center">
+                  <Search size={15} className="shrink-0 text-slate-400" />
+                  <input
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    placeholder={searchMode === "adjustments" ? "快速过滤调剂情报…" : "快速搜索公告 / 学校 / 关键词"}
+                    className="ml-2 w-full bg-transparent text-[13px] font-medium text-slate-700 outline-none placeholder:text-slate-400"
+                  />
+                </div>
               </div>
             </form>
 
-            <div className="ml-auto flex items-center gap-1 md:gap-2">
+            <div className="ml-auto flex items-center gap-2">
               {showUpgradeCta ? (
                 <Link
                   href="/account?tab=account&panel=billing"
-                  className="hidden rounded-full bg-[linear-gradient(90deg,#fb7299,#00aeec)] px-3 py-2 text-xs font-semibold text-white md:inline-flex"
+                  className="hidden rounded-full bg-[linear-gradient(90deg,#111827,#0f766e)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white lg:inline-flex"
                 >
                   开通高级会员
                 </Link>
@@ -165,24 +206,17 @@ export default function Header() {
               <button
                 type="button"
                 onClick={handleOpenWatchlist}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
                 title="关注"
               >
-                <Star size={18} />
+                <Star size={17} />
               </button>
               <Link
-                href="/radar"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
-                title="雷达"
-              >
-                <Compass size={18} />
-              </Link>
-              <Link
                 href="/account?tab=activity"
-                className="hidden h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 md:inline-flex"
+                className="hidden h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 md:inline-flex"
                 title="动态"
               >
-                <Bell size={18} />
+                <Bell size={17} />
               </Link>
 
               {portalAuth && summary ? (
@@ -192,7 +226,7 @@ export default function Header() {
                     onClick={() => setUserCardOpen((prev) => !prev)}
                     className="inline-flex items-center gap-2 rounded-full border border-black/5 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
                   >
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[linear-gradient(135deg,#ffd7e5,#d7f2ff)] text-sm font-black text-slate-700">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[linear-gradient(135deg,#dbeafe,#d1fae5)] text-sm font-black text-slate-800">
                       {summary.displayName.slice(0, 1).toUpperCase()}
                     </span>
                     <span className="hidden max-w-[108px] truncate md:inline">{summary.displayName}</span>
@@ -212,7 +246,7 @@ export default function Header() {
                   <button
                     type="button"
                     onClick={() => openAuth("login")}
-                    className="inline-flex items-center gap-1 rounded-full border border-black/5 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                    className="inline-flex items-center gap-1 rounded-full border border-black/5 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
                   >
                     <LogIn size={14} />
                     登录
@@ -220,7 +254,7 @@ export default function Header() {
                   <button
                     type="button"
                     onClick={() => openAuth("register")}
-                    className="inline-flex items-center gap-1 rounded-full bg-[linear-gradient(90deg,#fb7299,#00aeec)] px-3 py-2 text-xs font-semibold text-white"
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-950 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
                   >
                     <Sparkles size={14} />
                     注册
@@ -231,7 +265,7 @@ export default function Header() {
               <button
                 type="button"
                 onClick={handleOpenWatchlist}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 lg:hidden"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white text-slate-600 transition-colors hover:bg-slate-50 lg:hidden"
                 title="菜单"
               >
                 <Menu size={18} />
@@ -245,7 +279,7 @@ export default function Header() {
         type="button"
         onClick={handleOpenWatchlist}
         data-watchlist-fab="true"
-        className="group fixed bottom-8 right-6 z-[80] flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#fb7299,#00aeec)] shadow-[0_16px_36px_rgba(14,116,144,0.28)] transition-transform hover:scale-105 md:hidden"
+        className="group fixed bottom-8 right-6 z-[80] flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#111827,#0f766e)] shadow-[0_16px_36px_rgba(15,23,42,0.28)] transition-transform hover:scale-105 md:hidden"
       >
         <Bell className="text-white" size={18} />
       </button>
