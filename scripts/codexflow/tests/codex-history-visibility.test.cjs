@@ -35,6 +35,83 @@ test('mergeCodexMetadata keeps model_provider and cwd', () => {
   assert.equal(result.source, sessionMeta.payload.source);
 });
 
+test('mergeCodexMetadata accepts loadJsonl arrays', () => {
+  const sessionMeta = loadFixture('session-meta.jsonl');
+  const sessionIndex = loadFixture('session-index.jsonl');
+  const history = loadFixture('history.jsonl');
+  const sessionFilePath = path.join(fixturesDir, 'history.jsonl');
+
+  const result = mergeCodexMetadata({
+    sessionFilePath,
+    sessionMeta,
+    sessionIndex,
+    history,
+  });
+
+  assert.equal(result.title, sessionIndex[0].thread_name);
+  assert.equal(result.preview, history[0].text);
+});
+
+test('mergeCodexMetadata selects matching records by id', () => {
+  const baseMeta = loadFixture('session-meta.jsonl')[0];
+  const baseIndex = loadFixture('session-index.jsonl')[0];
+  const baseHistory = loadFixture('history.jsonl')[0];
+
+  const sessionMeta = [
+    {
+      ...baseMeta,
+      type: 'other',
+      payload: {
+        ...baseMeta.payload,
+        id: 'other-id',
+      },
+    },
+    {
+      ...baseMeta,
+      payload: {
+        ...baseMeta.payload,
+        id: 'target-id',
+      },
+    },
+  ];
+
+  const sessionIndex = [
+    {
+      ...baseIndex,
+      id: 'other-id',
+      thread_name: 'Other thread',
+    },
+    {
+      ...baseIndex,
+      id: 'target-id',
+      thread_name: 'Target thread',
+    },
+  ];
+
+  const history = [
+    {
+      ...baseHistory,
+      session_id: 'other-id',
+      text: 'other text',
+    },
+    {
+      ...baseHistory,
+      session_id: 'target-id',
+      text: 'target text',
+    },
+  ];
+
+  const result = mergeCodexMetadata({
+    sessionFilePath: path.join(fixturesDir, 'history.jsonl'),
+    sessionMeta,
+    sessionIndex,
+    history,
+  });
+
+  assert.equal(result.title, 'Target thread');
+  assert.equal(result.preview, 'target text');
+});
+
 test('buildIndexedCodexSummary prefixes preview with provider and cwd', () => {
   const summary = buildIndexedCodexSummary({
     preview: '你好',
@@ -103,4 +180,22 @@ test('selectHistorySessions falls back to all when filtered empty', () => {
   );
   assert.equal(result.sessions[0].id, 'a');
   assert.equal(result.sessions[0].fallbackReason, 'project_miss');
+});
+
+test('selectHistorySessions clamps negative offset and limit', () => {
+  const result = selectHistorySessions({
+    filtered: [
+      {
+        id: 'x',
+        providerId: 'codex',
+        date: '2026-04-06T10:00:00Z',
+      },
+    ],
+    all: [],
+    offset: -1,
+    limit: -2,
+  });
+
+  assert.equal(result.mode, 'project');
+  assert.deepEqual(result.sessions, []);
 });

@@ -41,13 +41,38 @@ const normalizeDate = (value) => {
   return Number.isNaN(time) ? 0 : time;
 };
 
+const pickSessionMeta = (sessionMeta) => {
+  if (Array.isArray(sessionMeta)) {
+    return sessionMeta.find((entry) => entry?.type === 'session_meta') ?? sessionMeta[0];
+  }
+  return sessionMeta;
+};
+
+const pickBySessionId = (entries, sessionId, idKey) => {
+  if (!Array.isArray(entries)) {
+    return entries;
+  }
+  if (sessionId) {
+    const match = entries.find((entry) => entry?.[idKey] === sessionId);
+    if (match) {
+      return match;
+    }
+  }
+  return entries[0];
+};
+
 const mergeCodexMetadata = ({ sessionFilePath, sessionMeta, sessionIndex, history }) => {
-  const payload = sessionMeta?.payload ?? {};
+  const metaRecord = pickSessionMeta(sessionMeta);
+  const payload = metaRecord?.payload ?? {};
+  const sessionId = payload.id ?? metaRecord?.id;
+  const indexRecord = pickBySessionId(sessionIndex, sessionId, 'id');
+  const historyRecord = pickBySessionId(history, sessionId, 'session_id');
+
   return {
     sessionFilePath,
-    id: payload.id ?? sessionIndex?.id ?? history?.session_id,
-    title: sessionIndex?.thread_name,
-    preview: history?.text,
+    id: sessionId ?? indexRecord?.id ?? historyRecord?.session_id,
+    title: indexRecord?.thread_name,
+    preview: historyRecord?.text,
     cwd: payload.cwd,
     originator: payload.originator,
     source: payload.source,
@@ -78,11 +103,12 @@ const buildIndexedCodexDetails = (partial) => ({
 });
 
 const selectHistorySessions = ({ filtered, all, offset, limit }) => {
-  const safeOffset = Number.isFinite(offset) ? offset : 0;
+  const safeOffset = Math.max(0, Number.isFinite(offset) ? offset : 0);
   const hasLimit = Number.isFinite(limit);
+  const safeLimit = hasLimit ? Math.max(0, limit) : undefined;
 
   if (Array.isArray(filtered) && filtered.length > 0) {
-    const end = hasLimit ? safeOffset + limit : undefined;
+    const end = hasLimit ? safeOffset + safeLimit : undefined;
     return {
       mode: 'project',
       sessions: filtered.slice(safeOffset, end),
@@ -99,7 +125,7 @@ const selectHistorySessions = ({ filtered, all, offset, limit }) => {
     ...session,
     fallbackReason: 'project_miss',
   }));
-  const end = hasLimit ? safeOffset + limit : undefined;
+  const end = hasLimit ? safeOffset + safeLimit : undefined;
 
   return {
     mode: 'fallback',
