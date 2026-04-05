@@ -36,6 +36,14 @@ const replaceAllRegex = (source, pattern, replacer, label) => {
   return source.replace(pattern, (...args) => replacer(...args.slice(0, -2)));
 };
 
+const replaceAllRegexOptional = (source, pattern, replacer) => {
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length === 0) {
+    return source;
+  }
+  return source.replace(pattern, (...args) => replacer(...args.slice(0, -2)));
+};
+
 const patchIndexerSource = (source) => {
   const newline = detectNewline(source);
   let text = normalizeNewlines(source);
@@ -112,12 +120,18 @@ const patchIndexerSource = (source) => {
     'indexer.details.resolve.catch'
   );
 
-  text = replaceAllRegex(
+  text = replaceAllRegexOptional(
     text,
-    /(^[ ]*)const summary = \{\n\1    (providerId(?:: "codex")?),\n\1    id: details\.id,\n\1    title: details\.title,\n\1    date: details\.date,\n\1    filePath: fp,\n\1    rawDate: details\.rawDate,\n\1    dirKey: details\.dirKey \|\| dirKeyOf\(fp\),\n\1    preview: details\.preview,\n\1    projectHash: details\.projectHash,\n\1    resumeMode: details\.resumeMode,\n\1    resumeId: details\.resumeId,\n\1    runtimeShell: details\.runtimeShell && details\.runtimeShell !== 'unknown' \? details\.runtimeShell : \(0, history_1\.detectRuntimeShell\)\(fp\),\n\1\};/gm,
-    (full, indent, providerExpr) =>
-      `${indent}const summary = historyVisibility.buildIndexedCodexSummary({\n${indent}    ${providerExpr},\n${indent}    id: details.id,\n${indent}    title: details.title,\n${indent}    date: details.date,\n${indent}    filePath: fp,\n${indent}    rawDate: details.rawDate,\n${indent}    dirKey: details.dirKey || dirKeyOf(fp),\n${indent}    preview: details.preview,\n${indent}    projectHash: details.projectHash,\n${indent}    resumeMode: details.resumeMode,\n${indent}    resumeId: details.resumeId,\n${indent}    runtimeShell: details.runtimeShell && details.runtimeShell !== 'unknown' ? details.runtimeShell : (0, history_1.detectRuntimeShell)(fp),\n${indent}    subProvider: details.subProvider,\n${indent}    source: details.source,\n${indent}    originator: details.originator,\n${indent}    cwd: details.cwd,\n${indent}});`,
-    'indexer.rescan.summary'
+    /(^[ ]*)const summary = \{\n\1    providerId: "codex",\n\1    id: details\.id,\n\1    title: details\.title,\n\1    date: details\.date,\n\1    filePath: fp,\n\1    rawDate: details\.rawDate,\n\1    dirKey: details\.dirKey \|\| dirKeyOf\(fp\),\n\1    preview: details\.preview,\n\1    projectHash: details\.projectHash,\n\1    resumeMode: details\.resumeMode,\n\1    resumeId: details\.resumeId,\n\1    runtimeShell: details\.runtimeShell && details\.runtimeShell !== 'unknown' \? details\.runtimeShell : \(0, history_1\.detectRuntimeShell\)\(fp\),\n\1\};/gm,
+    (full, indent) =>
+      `${indent}const summary = historyVisibility.buildIndexedCodexSummary({\n${indent}    providerId: "codex",\n${indent}    id: details.id,\n${indent}    title: details.title,\n${indent}    date: details.date,\n${indent}    filePath: fp,\n${indent}    rawDate: details.rawDate,\n${indent}    dirKey: details.dirKey || dirKeyOf(fp),\n${indent}    preview: details.preview,\n${indent}    projectHash: details.projectHash,\n${indent}    resumeMode: details.resumeMode,\n${indent}    resumeId: details.resumeId,\n${indent}    runtimeShell: details.runtimeShell && details.runtimeShell !== 'unknown' ? details.runtimeShell : (0, history_1.detectRuntimeShell)(fp),\n${indent}    subProvider: details.subProvider,\n${indent}    source: details.source,\n${indent}    originator: details.originator,\n${indent}    cwd: details.cwd,\n${indent}});`,
+  );
+
+  text = replaceAllRegexOptional(
+    text,
+    /(^[ ]*)const summary = \{\n\1    providerId,\n\1    id: details\.id,\n\1    title: details\.title,\n\1    date: details\.date,\n\1    filePath: fp,\n\1    rawDate: details\.rawDate,\n\1    dirKey: details\.dirKey \|\| dirKeyOf\(fp\),\n\1    preview: details\.preview,\n\1    projectHash: details\.projectHash,\n\1    resumeMode: details\.resumeMode,\n\1    resumeId: details\.resumeId,\n\1    runtimeShell: details\.runtimeShell && details\.runtimeShell !== 'unknown' \? details\.runtimeShell : \(0, history_1\.detectRuntimeShell\)\(fp\),\n\1\};/gm,
+    (full, indent) =>
+      `${indent}const summaryBase = {\n${indent}    providerId,\n${indent}    id: details.id,\n${indent}    title: details.title,\n${indent}    date: details.date,\n${indent}    filePath: fp,\n${indent}    rawDate: details.rawDate,\n${indent}    dirKey: details.dirKey || dirKeyOf(fp),\n${indent}    preview: details.preview,\n${indent}    projectHash: details.projectHash,\n${indent}    resumeMode: details.resumeMode,\n${indent}    resumeId: details.resumeId,\n${indent}    runtimeShell: details.runtimeShell && details.runtimeShell !== 'unknown' ? details.runtimeShell : (0, history_1.detectRuntimeShell)(fp),\n${indent}};\n${indent}const summary = providerId === "codex"\n${indent}    ? historyVisibility.buildIndexedCodexSummary({\n${indent}        ...summaryBase,\n${indent}        subProvider: details.subProvider,\n${indent}        source: details.source,\n${indent}        originator: details.originator,\n${indent}        cwd: details.cwd,\n${indent}    })\n${indent}    : summaryBase;`,
   );
 
   if (newline === '\r\n') {

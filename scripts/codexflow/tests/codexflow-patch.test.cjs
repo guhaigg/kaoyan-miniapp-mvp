@@ -1,6 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const vm = require('node:vm');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -14,6 +15,53 @@ const fixturesDir = path.join(__dirname, 'fixtures', 'electron');
 
 const readFixture = (name) =>
   fs.readFileSync(path.join(fixturesDir, name), 'utf8');
+
+const runInstalledRescanSnippet = ({ providerId }) => {
+  const source = readFixture('indexer.installed.before.js');
+  const patched = patchIndexerSource(source);
+  const sandbox = {
+    providerId,
+    dirKeyOf: () => 'dir-from-file',
+    history_1: { detectRuntimeShell: () => 'detected-shell' },
+    require: (request) => {
+      if (request === './historyVisibility.cjs') {
+        return {
+          buildIndexedCodexSummary: (partial) => ({
+            ...partial,
+            providerId: 'codex',
+            preview: `[patched] ${partial.preview || ''}`.trim(),
+            __helperApplied: true,
+          }),
+          buildIndexedCodexDetails: (partial) => partial,
+        };
+      }
+      return {};
+    },
+  };
+
+  vm.runInNewContext(patched, sandbox);
+  const result = sandbox.rescanSnippet(
+    {
+      id: 'session-id',
+      title: 'title',
+      date: 123,
+      rawDate: '2026-04-06T00:00:00.000Z',
+      dirKey: '',
+      preview: 'sample preview',
+      projectHash: 'project-hash',
+      resumeMode: 'resume',
+      resumeId: 'resume-id',
+      runtimeShell: 'bash',
+      subProvider: 'openai',
+      source: 'vscode',
+      originator: 'Codex Desktop',
+      cwd: 'D:\\codex\\kaoyan-miniapp-mvp',
+    },
+    'D:\\codex\\kaoyan-miniapp-mvp\\.codex\\session.jsonl'
+  );
+
+  return { patched, result };
+};
 
 test('patchIndexerSource injects history visibility helpers', () => {
   const source = readFixture('indexer.before.js');
@@ -41,8 +89,28 @@ test('patchIndexerSource supports installed indexer variant with dirKey assignme
   );
   assert.match(
     patched,
-    /const summary = historyVisibility\.buildIndexedCodexSummary\(\{[\s\S]*providerId(?:\: "codex")?,[\s\S]*cwd: details\.cwd,[\s\S]*\}\);/
+    /const summary = providerId === "codex"[\s\S]*buildIndexedCodexSummary[\s\S]*: summaryBase;/
   );
+});
+
+test('patchIndexerSource applies installed generic summary helper only for codex provider', () => {
+  const { result } = runInstalledRescanSnippet({ providerId: 'codex' });
+
+  assert.equal(result.providerId, 'codex');
+  assert.equal(result.__helperApplied, true);
+  assert.match(result.preview, /^\[patched\] sample preview$/);
+  assert.equal(result.cwd, 'D:\\codex\\kaoyan-miniapp-mvp');
+  assert.equal(result.subProvider, 'openai');
+});
+
+test('patchIndexerSource keeps installed generic summary semantics for non-codex provider', () => {
+  const { result } = runInstalledRescanSnippet({ providerId: 'gemini' });
+
+  assert.equal(result.providerId, 'gemini');
+  assert.equal(result.__helperApplied, undefined);
+  assert.equal(result.preview, 'sample preview');
+  assert.equal(result.cwd, undefined);
+  assert.equal(result.subProvider, undefined);
 });
 
 test('patchMainSource injects history selection metadata', () => {
