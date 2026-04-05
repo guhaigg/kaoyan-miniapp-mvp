@@ -15,7 +15,9 @@
     "db:migrate": "cd backend && python -m alembic upgrade head",
     "db:downgrade": "cd backend && python -m alembic downgrade -1",
     "db:revision": "cd backend && python -m alembic revision --autogenerate -m \"schema update\"",
-    "test:codexflow-history": "node --test ./scripts/codexflow/tests/*.test.cjs"
+    "test:codexflow-history": "node --test ./scripts/codexflow/tests/*.test.cjs",
+    "codexflow:history:patch:dry": "powershell -ExecutionPolicy Bypass -File ./scripts/codexflow/apply-history-visibility-patch.ps1 -DryRun",
+    "codexflow:history:patch": "powershell -ExecutionPolicy Bypass -File ./scripts/codexflow/apply-history-visibility-patch.ps1"
   },
   "keywords": [],
   "author": "",
