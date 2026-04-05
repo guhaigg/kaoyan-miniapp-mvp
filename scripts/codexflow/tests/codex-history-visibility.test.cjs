@@ -29,6 +29,10 @@ test('mergeCodexMetadata keeps model_provider and cwd', () => {
 
   assert.equal(result.model_provider, sessionMeta.payload.model_provider);
   assert.equal(result.cwd, sessionMeta.payload.cwd);
+  assert.equal(result.title, sessionIndex.thread_name);
+  assert.equal(result.preview, history.text);
+  assert.equal(result.originator, sessionMeta.payload.originator);
+  assert.equal(result.source, sessionMeta.payload.source);
 });
 
 test('buildIndexedCodexSummary prefixes preview with provider and cwd', () => {
@@ -42,6 +46,8 @@ test('buildIndexedCodexSummary prefixes preview with provider and cwd', () => {
     summary.preview,
     '[cpa_legacy · D:\\codex\\kaoyan-miniapp-mvp] 你好'
   );
+  assert.equal(summary.providerId, 'codex');
+  assert.equal(summary.subProvider, 'cpa_legacy');
 });
 
 test('buildIndexedCodexDetails keeps metadata fields', () => {
@@ -63,10 +69,38 @@ test('buildIndexedCodexDetails keeps metadata fields', () => {
 test('selectHistorySessions falls back to all when filtered empty', () => {
   const result = selectHistorySessions({
     filtered: [],
-    all: ['first', 'second', 'third'],
-    offset: 0,
-    limit: 2,
+    all: [
+      {
+        id: 'a',
+        providerId: 'codex',
+        date: '2026-04-05T10:00:00Z',
+      },
+      {
+        id: 'b',
+        providerId: 'other',
+        date: '2026-04-06T10:00:00Z',
+      },
+      {
+        id: 'c',
+        providerId: 'codex',
+        date: '2026-04-06T09:00:00Z',
+      },
+      {
+        id: 'd',
+        providerId: 'codex',
+        date: '2026-04-04T09:00:00Z',
+      },
+    ],
+    offset: 1,
+    limit: 1,
   });
 
-  assert.deepEqual(result, ['first', 'second']);
+  assert.equal(result.mode, 'fallback');
+  assert.equal(result.sessions.length, 1);
+  assert.deepEqual(
+    result.sessions.map((session) => session.providerId),
+    ['codex']
+  );
+  assert.equal(result.sessions[0].id, 'a');
+  assert.equal(result.sessions[0].fallbackReason, 'project_miss');
 });

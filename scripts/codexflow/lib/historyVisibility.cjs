@@ -33,6 +33,14 @@ const buildPreviewPrefix = ({ subProvider, cwd }) => {
   return `[${parts.join(' · ')}]`;
 };
 
+const normalizeDate = (value) => {
+  if (!value) {
+    return 0;
+  }
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
 const mergeCodexMetadata = ({ sessionFilePath, sessionMeta, sessionIndex, history }) => {
   const payload = sessionMeta?.payload ?? {};
   return {
@@ -54,6 +62,8 @@ const buildIndexedCodexSummary = (partial) => {
   const combined = prefix ? (preview ? `${prefix} ${preview}` : prefix) : preview;
   return {
     ...partial,
+    providerId: 'codex',
+    subProvider: partial?.subProvider,
     preview: combined,
   };
 };
@@ -68,13 +78,33 @@ const buildIndexedCodexDetails = (partial) => ({
 });
 
 const selectHistorySessions = ({ filtered, all, offset, limit }) => {
-  const preferred = Array.isArray(filtered) && filtered.length > 0 ? filtered : all;
   const safeOffset = Number.isFinite(offset) ? offset : 0;
-  const safeLimit = Number.isFinite(limit) ? limit : preferred?.length ?? 0;
-  if (!Array.isArray(preferred)) {
-    return [];
+  const hasLimit = Number.isFinite(limit);
+
+  if (Array.isArray(filtered) && filtered.length > 0) {
+    const end = hasLimit ? safeOffset + limit : undefined;
+    return {
+      mode: 'project',
+      sessions: filtered.slice(safeOffset, end),
+    };
   }
-  return preferred.slice(safeOffset, safeOffset + safeLimit);
+
+  const codexOnly = Array.isArray(all)
+    ? all.filter((session) => session?.providerId === 'codex')
+    : [];
+  const sorted = codexOnly
+    .slice()
+    .sort((a, b) => normalizeDate(b?.date) - normalizeDate(a?.date));
+  const annotated = sorted.map((session) => ({
+    ...session,
+    fallbackReason: 'project_miss',
+  }));
+  const end = hasLimit ? safeOffset + limit : undefined;
+
+  return {
+    mode: 'fallback',
+    sessions: annotated.slice(safeOffset, end),
+  };
 };
 
 module.exports = {
