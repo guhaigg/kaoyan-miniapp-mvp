@@ -34,6 +34,16 @@ Dry-run 不会：
 - 覆盖安装目录下 `app.asar`
 - 启停 CodexFlow 进程
 
+### 2.1 覆盖路径示例
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\codexflow\apply-history-visibility-patch.ps1 `
+  -InstallRoot "D:\apps\CodexFlow\win-unpacked" `
+  -LaunchCmd "D:\apps\CodexFlow\launch-codexflow.cmd" `
+  -WorkRoot "D:\tmp\codexflow-history-visibility" `
+  -DryRun
+```
+
 ## 3. 正式执行
 
 在仓库根目录执行：

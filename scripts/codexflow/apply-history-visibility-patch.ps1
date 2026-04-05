@@ -9,6 +9,26 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Resolve-NormalizedPath {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$PathValue,
+    [Parameter(Mandatory = $true)]
+    [string]$Label
+  )
+
+  if ([string]::IsNullOrWhiteSpace($PathValue)) {
+    throw "$Label is empty."
+  }
+
+  $full = [System.IO.Path]::GetFullPath($PathValue)
+  if ([string]::IsNullOrWhiteSpace($full)) {
+    throw "Failed to normalize ${Label}: $PathValue"
+  }
+
+  return $full.TrimEnd('\\', '/')
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $extractScript = Join-Path $PSScriptRoot 'extract-installed-codexflow.ps1'
 $packScript = Join-Path $PSScriptRoot 'pack-installed-codexflow.ps1'
@@ -36,6 +56,9 @@ if ($DryRun) {
   return
 }
 
+$normalizedInstallRoot = Resolve-NormalizedPath -PathValue $InstallRoot -Label 'InstallRoot'
+$appAsarPath = Resolve-NormalizedPath -PathValue (Join-Path $normalizedInstallRoot 'resources\app.asar') -Label 'app.asar path'
+
 if (-not (Test-Path -LiteralPath $extractScript -PathType Leaf)) {
   throw "Extract script not found: $extractScript"
 }
@@ -48,8 +71,31 @@ if (-not (Test-Path -LiteralPath $patchScript -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $helperSource -PathType Leaf)) {
   throw "Helper source not found: $helperSource"
 }
+if (-not (Test-Path -LiteralPath $normalizedInstallRoot -PathType Container)) {
+  throw "InstallRoot not found: $normalizedInstallRoot"
+}
+if (-not (Test-Path -LiteralPath $appAsarPath -PathType Leaf)) {
+  throw "Installed app.asar not found: $appAsarPath"
+}
 
-Get-Process -Name 'CodexFlow' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+$runningProcesses = Get-Process -Name 'CodexFlow' -ErrorAction SilentlyContinue
+if ($runningProcesses) {
+  Write-Host 'CodexFlow process detected. Stopping before patch...'
+  try {
+    $runningProcesses | Stop-Process -Force -ErrorAction Stop
+  }
+  catch {
+    throw "Failed to stop CodexFlow process: $($_.Exception.Message)"
+  }
+
+  Start-Sleep -Seconds 1
+  $stillRunning = Get-Process -Name 'CodexFlow' -ErrorAction SilentlyContinue
+  if ($stillRunning) {
+    throw 'CodexFlow process is still running after stop attempt. Abort patching to avoid partial update.'
+  }
+
+  Write-Host 'CodexFlow process stopped.'
+}
 
 & powershell @extractArgs
 if ($LASTEXITCODE -ne 0) {
@@ -70,3 +116,4 @@ if ($LaunchCmd -and (Test-Path -LiteralPath $LaunchCmd -PathType Leaf)) {
   Start-Process -FilePath $LaunchCmd | Out-Null
   Write-Host "LAUNCH_STARTED=$LaunchCmd"
 }
+
