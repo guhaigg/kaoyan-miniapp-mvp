@@ -29,6 +29,22 @@ test('patchIndexerSource injects history visibility helpers', () => {
   assert.match(patched, /buildIndexedCodexDetails/);
 });
 
+test('patchIndexerSource supports installed indexer variant with dirKey assignment before resolve', () => {
+  const source = readFixture('indexer.installed.before.js');
+  const patched = patchIndexerSource(source);
+
+  assert.match(patched, /buildIndexedCodexDetails/);
+  assert.match(patched, /buildIndexedCodexSummary/);
+  assert.match(
+    patched,
+    /resolve\(historyVisibility\.buildIndexedCodexDetails\(\{ providerId: "codex", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell, subProvider: modelProvider, source: sourceHint, originator \}\)\);/
+  );
+  assert.match(
+    patched,
+    /const summary = historyVisibility\.buildIndexedCodexSummary\(\{[\s\S]*providerId(?:\: "codex")?,[\s\S]*cwd: details\.cwd,[\s\S]*\}\);/
+  );
+});
+
 test('patchMainSource injects history selection metadata', () => {
   const source = readFixture('main.before.js');
   const patched = patchMainSource(source);
@@ -37,6 +53,15 @@ test('patchMainSource injects history selection metadata', () => {
   assert.match(patched, /fallbackReason/);
   assert.match(patched, /subProvider/);
   assert.match(patched, /cwd/);
+});
+
+test('patchMainSource supports installed main variant with deeper indentation', () => {
+  const source = readFixture('main.installed.before.js');
+  const patched = patchMainSource(source);
+
+  assert.match(patched, /selectHistorySessions/);
+  assert.match(patched, /fallbackReason/);
+  assert.match(patched, /selection\.sessions\.map/);
 });
 
 test('patchMainSource preserves sorted semantics', () => {

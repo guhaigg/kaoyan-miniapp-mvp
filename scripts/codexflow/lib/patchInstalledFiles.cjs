@@ -16,6 +16,26 @@ const replaceOnce = (source, search, replacement, label) => {
   return `${source.slice(0, idx)}${replacement}${source.slice(idx + search.length)}`;
 };
 
+const replaceOnceRegex = (source, pattern, replacer, label) => {
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length === 0) {
+    throw new Error(`Missing patch anchor: ${label}`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Multiple patch anchors found for: ${label}`);
+  }
+  const match = matches[0];
+  return source.replace(pattern, (...args) => replacer(...args.slice(0, -2)));
+};
+
+const replaceAllRegex = (source, pattern, replacer, label) => {
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length === 0) {
+    throw new Error(`Missing patch anchor: ${label}`);
+  }
+  return source.replace(pattern, (...args) => replacer(...args.slice(0, -2)));
+};
+
 const patchIndexerSource = (source) => {
   const newline = detectNewline(source);
   let text = normalizeNewlines(source);
@@ -69,17 +89,19 @@ const patchIndexerSource = (source) => {
     'indexer.summary.return'
   );
 
-  text = replaceOnce(
+  text = replaceOnceRegex(
     text,
-    "            rs.on('end', () => {\n                if (runtimeShell === 'unknown')\n                    runtimeShell = (0, history_1.detectRuntimeShell)(fp);\n                const finalResumeId = resumeId || id;\n                resolve({ providerId: \"codex\", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell });\n            });",
-    "            rs.on('end', () => {\n                if (runtimeShell === 'unknown')\n                    runtimeShell = (0, history_1.detectRuntimeShell)(fp);\n                const finalResumeId = resumeId || id;\n                resolve(historyVisibility.buildIndexedCodexDetails({ providerId: \"codex\", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell, subProvider: modelProvider, source: sourceHint, originator }));\n            });",
+    /(            rs\.on\('end', \(\) => \{\n)([\s\S]*?)(                resolve\(\{ providerId: "codex", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell \}\);\n            \}\);)/g,
+    (full, start, body) =>
+      `${start}${body}                resolve(historyVisibility.buildIndexedCodexDetails({ providerId: "codex", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell, subProvider: modelProvider, source: sourceHint, originator }));\n            });`,
     'indexer.details.resolve.end'
   );
 
-  text = replaceOnce(
+  text = replaceOnceRegex(
     text,
-    "            rs.on('error', () => {\n                if (runtimeShell === 'unknown')\n                    runtimeShell = (0, history_1.detectRuntimeShell)(fp);\n                const finalResumeId = resumeId || id;\n                resolve({ providerId: \"codex\", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell });\n            });",
-    "            rs.on('error', () => {\n                if (runtimeShell === 'unknown')\n                    runtimeShell = (0, history_1.detectRuntimeShell)(fp);\n                const finalResumeId = resumeId || id;\n                resolve(historyVisibility.buildIndexedCodexDetails({ providerId: \"codex\", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell, subProvider: modelProvider, source: sourceHint, originator }));\n            });",
+    /(            rs\.on\('error', \(\) => \{\n)([\s\S]*?)(                resolve\(\{ providerId: "codex", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell \}\);\n            \}\);)/g,
+    (full, start, body) =>
+      `${start}${body}                resolve(historyVisibility.buildIndexedCodexDetails({ providerId: "codex", id, title, date, filePath: fp, messages, skippedLines: skipped, rawDate, cwd, dirKey, preview, resumeMode, resumeId: finalResumeId, runtimeShell, subProvider: modelProvider, source: sourceHint, originator }));\n            });`,
     'indexer.details.resolve.error'
   );
 
@@ -90,10 +112,11 @@ const patchIndexerSource = (source) => {
     'indexer.details.resolve.catch'
   );
 
-  text = replaceOnce(
+  text = replaceAllRegex(
     text,
-    "    const summary = {\n        providerId: \"codex\",\n        id: details.id,\n        title: details.title,\n        date: details.date,\n        filePath: fp,\n        rawDate: details.rawDate,\n        dirKey: details.dirKey || dirKeyOf(fp),\n        preview: details.preview,\n        projectHash: details.projectHash,\n        resumeMode: details.resumeMode,\n        resumeId: details.resumeId,\n        runtimeShell: details.runtimeShell && details.runtimeShell !== 'unknown' ? details.runtimeShell : (0, history_1.detectRuntimeShell)(fp),\n    };",
-    "    const summary = historyVisibility.buildIndexedCodexSummary({\n        providerId: \"codex\",\n        id: details.id,\n        title: details.title,\n        date: details.date,\n        filePath: fp,\n        rawDate: details.rawDate,\n        dirKey: details.dirKey || dirKeyOf(fp),\n        preview: details.preview,\n        projectHash: details.projectHash,\n        resumeMode: details.resumeMode,\n        resumeId: details.resumeId,\n        runtimeShell: details.runtimeShell && details.runtimeShell !== 'unknown' ? details.runtimeShell : (0, history_1.detectRuntimeShell)(fp),\n        subProvider: details.subProvider,\n        source: details.source,\n        originator: details.originator,\n        cwd: details.cwd,\n    });",
+    /(^[ ]*)const summary = \{\n\1    (providerId(?:: "codex")?),\n\1    id: details\.id,\n\1    title: details\.title,\n\1    date: details\.date,\n\1    filePath: fp,\n\1    rawDate: details\.rawDate,\n\1    dirKey: details\.dirKey \|\| dirKeyOf\(fp\),\n\1    preview: details\.preview,\n\1    projectHash: details\.projectHash,\n\1    resumeMode: details\.resumeMode,\n\1    resumeId: details\.resumeId,\n\1    runtimeShell: details\.runtimeShell && details\.runtimeShell !== 'unknown' \? details\.runtimeShell : \(0, history_1\.detectRuntimeShell\)\(fp\),\n\1\};/gm,
+    (full, indent, providerExpr) =>
+      `${indent}const summary = historyVisibility.buildIndexedCodexSummary({\n${indent}    ${providerExpr},\n${indent}    id: details.id,\n${indent}    title: details.title,\n${indent}    date: details.date,\n${indent}    filePath: fp,\n${indent}    rawDate: details.rawDate,\n${indent}    dirKey: details.dirKey || dirKeyOf(fp),\n${indent}    preview: details.preview,\n${indent}    projectHash: details.projectHash,\n${indent}    resumeMode: details.resumeMode,\n${indent}    resumeId: details.resumeId,\n${indent}    runtimeShell: details.runtimeShell && details.runtimeShell !== 'unknown' ? details.runtimeShell : (0, history_1.detectRuntimeShell)(fp),\n${indent}    subProvider: details.subProvider,\n${indent}    source: details.source,\n${indent}    originator: details.originator,\n${indent}    cwd: details.cwd,\n${indent}});`,
     'indexer.rescan.summary'
   );
 
@@ -114,10 +137,11 @@ const patchMainSource = (source) => {
     'main.historyVisibility.require'
   );
 
-  text = replaceOnce(
+  text = replaceOnceRegex(
     text,
-    "        const sorted = filtered.sort((a, b) => b.date - a.date);\n        const offset = Math.max(0, Number(args.offset || 0));\n        const end = args.limit ? offset + Number(args.limit) : undefined;\n        const sliced = sorted.slice(offset, end);\n        const mapped = sliced.map((x) => ({\n            providerId: x.providerId || \"codex\",\n            id: x.id,\n            title: x.title,\n            date: x.date,\n            filePath: x.filePath,\n            rawDate: x.rawDate,\n            preview: x.preview,\n            projectHash: x.projectHash,\n            resumeMode: x.resumeMode,\n            resumeId: x.resumeId,\n            runtimeShell: x.runtimeShell,\n        }));\n        return { ok: true, sessions: mapped };",
-    "        const sorted = filtered.sort((a, b) => b.date - a.date);\n        const offset = Math.max(0, Number(args.offset || 0));\n        const limit = args.limit ? Number(args.limit) : undefined;\n        const selection = selectHistorySessions({ filtered: sorted, all, offset, limit });\n        const mapped = selection.sessions.map((x) => ({\n            providerId: x.providerId || \"codex\",\n            id: x.id,\n            title: x.title,\n            date: x.date,\n            filePath: x.filePath,\n            rawDate: x.rawDate,\n            preview: x.preview,\n            projectHash: x.projectHash,\n            resumeMode: x.resumeMode,\n            resumeId: x.resumeId,\n            runtimeShell: x.runtimeShell,\n            subProvider: x.subProvider,\n            cwd: x.cwd,\n            fallbackReason: x.fallbackReason,\n        }));\n        return { ok: true, sessions: mapped };",
+    /(^[ ]*)const sorted = filtered\.sort\(\(a, b\) => b\.date - a\.date\);\n\1const offset = Math\.max\(0, Number\(args\.offset \|\| 0\)\);\n\1const end = args\.limit \? offset \+ Number\(args\.limit\) : undefined;\n\1const sliced = sorted\.slice\(offset, end\);\n\1const mapped = sliced\.map\(\(x\) => \(\{\n\1    providerId: x\.providerId \|\| "codex",\n\1    id: x\.id,\n\1    title: x\.title,\n\1    date: x\.date,\n\1    filePath: x\.filePath,\n\1    rawDate: x\.rawDate,\n\1    preview: x\.preview,\n\1    projectHash: x\.projectHash,\n\1    resumeMode: x\.resumeMode,\n\1    resumeId: x\.resumeId,\n\1    runtimeShell: x\.runtimeShell,\n\1\}\)\);\n\1return \{ ok: true, sessions: mapped \};/gm,
+    (full, indent) =>
+      `${indent}const sorted = filtered.sort((a, b) => b.date - a.date);\n${indent}const offset = Math.max(0, Number(args.offset || 0));\n${indent}const limit = args.limit ? Number(args.limit) : undefined;\n${indent}const selection = selectHistorySessions({ filtered: sorted, all, offset, limit });\n${indent}const mapped = selection.sessions.map((x) => ({\n${indent}    providerId: x.providerId || "codex",\n${indent}    id: x.id,\n${indent}    title: x.title,\n${indent}    date: x.date,\n${indent}    filePath: x.filePath,\n${indent}    rawDate: x.rawDate,\n${indent}    preview: x.preview,\n${indent}    projectHash: x.projectHash,\n${indent}    resumeMode: x.resumeMode,\n${indent}    resumeId: x.resumeId,\n${indent}    runtimeShell: x.runtimeShell,\n${indent}    subProvider: x.subProvider,\n${indent}    cwd: x.cwd,\n${indent}    fallbackReason: x.fallbackReason,\n${indent}}));\n${indent}return { ok: true, sessions: mapped };`,
     'main.history.list'
   );
 
