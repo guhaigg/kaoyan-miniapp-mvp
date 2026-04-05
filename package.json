@@ -14,7 +14,8 @@
     "smoke:test-version": "cd backend && python scripts/smoke_test_version.py",
     "db:migrate": "cd backend && python -m alembic upgrade head",
     "db:downgrade": "cd backend && python -m alembic downgrade -1",
-    "db:revision": "cd backend && python -m alembic revision --autogenerate -m \"schema update\""
+    "db:revision": "cd backend && python -m alembic revision --autogenerate -m \"schema update\"",
+    "test:codexflow-history": "node --test ./scripts/codexflow/tests/*.test.cjs"
   },
   "keywords": [],
   "author": "",
