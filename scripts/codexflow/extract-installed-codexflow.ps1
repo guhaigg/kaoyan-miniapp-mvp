@@ -9,12 +9,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Trim-TrailingDirectorySeparators {
+  param([Parameter(Mandatory = $true)][string]$PathValue)
+  return $PathValue.TrimEnd([char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar))
+}
+
 function Resolve-NormalizedPath {
   param(
-    [Parameter(Mandatory = $true)]
-    [string]$PathValue,
-    [Parameter(Mandatory = $true)]
-    [string]$Label
+    [Parameter(Mandatory = $true)][string]$PathValue,
+    [Parameter(Mandatory = $true)][string]$Label
   )
 
   if ([string]::IsNullOrWhiteSpace($PathValue)) {
@@ -26,12 +29,18 @@ function Resolve-NormalizedPath {
     throw "Failed to normalize ${Label}: $PathValue"
   }
 
-  return $full.TrimEnd('\\', '/')
+  return Trim-TrailingDirectorySeparators -PathValue $full
 }
 
 function Get-NormalizedRoot {
   param([Parameter(Mandatory = $true)][string]$PathValue)
-  return [System.IO.Path]::GetPathRoot($PathValue).TrimEnd('\\', '/')
+
+  $root = [System.IO.Path]::GetPathRoot($PathValue)
+  if ([string]::IsNullOrWhiteSpace($root)) {
+    throw "Failed to resolve root path: $PathValue"
+  }
+
+  return Trim-TrailingDirectorySeparators -PathValue $root
 }
 
 function Test-IsPathUnder {
@@ -40,20 +49,17 @@ function Test-IsPathUnder {
     [Parameter(Mandatory = $true)][string]$BasePath
   )
 
-  $candidate = $PathValue.TrimEnd('\\', '/') + '\\'
-  $base = $BasePath.TrimEnd('\\', '/') + '\\'
+  $candidate = (Trim-TrailingDirectorySeparators -PathValue $PathValue) + [System.IO.Path]::DirectorySeparatorChar
+  $base = (Trim-TrailingDirectorySeparators -PathValue $BasePath) + [System.IO.Path]::DirectorySeparatorChar
   return $candidate.StartsWith($base, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
 $normalizedInstallRoot = Resolve-NormalizedPath -PathValue $InstallRoot -Label 'InstallRoot'
 $normalizedWorkRoot = Resolve-NormalizedPath -PathValue $WorkRoot -Label 'WorkRoot'
-$normalizedExtractRoot = Join-Path $normalizedWorkRoot 'app'
-$normalizedExtractRoot = Resolve-NormalizedPath -PathValue $normalizedExtractRoot -Label 'ExtractRoot'
-$appAsarPath = Join-Path $normalizedInstallRoot 'resources\app.asar'
-$appAsarPath = Resolve-NormalizedPath -PathValue $appAsarPath -Label 'app.asar path'
+$normalizedExtractRoot = Resolve-NormalizedPath -PathValue (Join-Path $normalizedWorkRoot 'app') -Label 'ExtractRoot'
+$appAsarPath = Resolve-NormalizedPath -PathValue (Join-Path $normalizedInstallRoot 'resources\app.asar') -Label 'app.asar path'
 
 $workRootRoot = Get-NormalizedRoot -PathValue $normalizedWorkRoot
-$installRootRoot = Get-NormalizedRoot -PathValue $normalizedInstallRoot
 
 if ($normalizedWorkRoot -eq $workRootRoot) {
   throw "Unsafe WorkRoot: root path is not allowed ($normalizedWorkRoot)"
@@ -103,4 +109,3 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "EXTRACT_ROOT=$normalizedExtractRoot"
-

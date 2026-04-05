@@ -9,12 +9,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Trim-TrailingDirectorySeparators {
+  param([Parameter(Mandatory = $true)][string]$PathValue)
+  return $PathValue.TrimEnd([char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar))
+}
+
 function Resolve-NormalizedPath {
   param(
-    [Parameter(Mandatory = $true)]
-    [string]$PathValue,
-    [Parameter(Mandatory = $true)]
-    [string]$Label
+    [Parameter(Mandatory = $true)][string]$PathValue,
+    [Parameter(Mandatory = $true)][string]$Label
   )
 
   if ([string]::IsNullOrWhiteSpace($PathValue)) {
@@ -26,7 +29,29 @@ function Resolve-NormalizedPath {
     throw "Failed to normalize ${Label}: $PathValue"
   }
 
-  return $full.TrimEnd('\\', '/')
+  return Trim-TrailingDirectorySeparators -PathValue $full
+}
+
+function Get-NormalizedRoot {
+  param([Parameter(Mandatory = $true)][string]$PathValue)
+
+  $root = [System.IO.Path]::GetPathRoot($PathValue)
+  if ([string]::IsNullOrWhiteSpace($root)) {
+    throw "Failed to resolve root path: $PathValue"
+  }
+
+  return Trim-TrailingDirectorySeparators -PathValue $root
+}
+
+function Test-IsPathUnder {
+  param(
+    [Parameter(Mandatory = $true)][string]$PathValue,
+    [Parameter(Mandatory = $true)][string]$BasePath
+  )
+
+  $candidate = (Trim-TrailingDirectorySeparators -PathValue $PathValue) + [System.IO.Path]::DirectorySeparatorChar
+  $base = (Trim-TrailingDirectorySeparators -PathValue $BasePath) + [System.IO.Path]::DirectorySeparatorChar
+  return $candidate.StartsWith($base, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -57,6 +82,26 @@ if ($DryRun) {
 }
 
 $normalizedInstallRoot = Resolve-NormalizedPath -PathValue $InstallRoot -Label 'InstallRoot'
+$normalizedWorkRoot = Resolve-NormalizedPath -PathValue $WorkRoot -Label 'WorkRoot'
+$normalizedExtractRoot = Resolve-NormalizedPath -PathValue (Join-Path $normalizedWorkRoot 'app') -Label 'ExtractRoot'
+$workRootRoot = Get-NormalizedRoot -PathValue $normalizedWorkRoot
+
+if ($normalizedWorkRoot -eq $workRootRoot) {
+  throw "Unsafe WorkRoot: root path is not allowed ($normalizedWorkRoot)"
+}
+if ($normalizedExtractRoot -eq (Get-NormalizedRoot -PathValue $normalizedExtractRoot)) {
+  throw "Unsafe extract root: root path is not allowed ($normalizedExtractRoot)"
+}
+if (-not (Test-IsPathUnder -PathValue $normalizedExtractRoot -BasePath $normalizedWorkRoot)) {
+  throw "Unsafe extract root: $normalizedExtractRoot is not under WorkRoot $normalizedWorkRoot"
+}
+if ([System.IO.Path]::GetFileName($normalizedExtractRoot) -ne 'app') {
+  throw "Unsafe extract root: expected leaf directory name 'app', got '$normalizedExtractRoot'"
+}
+if ((Test-IsPathUnder -PathValue $normalizedWorkRoot -BasePath $normalizedInstallRoot) -or (Test-IsPathUnder -PathValue $normalizedInstallRoot -BasePath $normalizedWorkRoot)) {
+  throw "Unsafe path overlap: WorkRoot ($normalizedWorkRoot) must not overlap InstallRoot ($normalizedInstallRoot)"
+}
+
 $appAsarPath = Resolve-NormalizedPath -PathValue (Join-Path $normalizedInstallRoot 'resources\app.asar') -Label 'app.asar path'
 
 if (-not (Test-Path -LiteralPath $extractScript -PathType Leaf)) {
@@ -116,4 +161,3 @@ if ($LaunchCmd -and (Test-Path -LiteralPath $LaunchCmd -PathType Leaf)) {
   Start-Process -FilePath $LaunchCmd | Out-Null
   Write-Host "LAUNCH_STARTED=$LaunchCmd"
 }
-
