@@ -113,6 +113,16 @@ test('patchIndexerSource keeps installed generic summary semantics for non-codex
   assert.equal(result.subProvider, undefined);
 });
 
+test('patchIndexerSource fails fast when installed summary anchors are all missing', () => {
+  const source = readFixture('indexer.installed.before.js')
+    .replace('const summary = {', 'const summaryMissing = {');
+
+  assert.throws(
+    () => patchIndexerSource(source),
+    /Missing patch anchor: indexer\.rescan\.summary/
+  );
+});
+
 test('patchMainSource injects history selection metadata', () => {
   const source = readFixture('main.before.js');
   const patched = patchMainSource(source);

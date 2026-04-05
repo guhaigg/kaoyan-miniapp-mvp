@@ -14,6 +14,12 @@
 
 ## 2. 执行命令
 
+### 2.0 统一工作目录
+
+```powershell
+Set-Location 'D:\codex\kaoyan-miniapp-mvp\.worktrees\codexflow-history-visibility'
+```
+
 ### 2.1 仓库内自动化验证
 
 ```powershell
@@ -181,6 +187,8 @@ console.log(JSON.stringify({
 
 ### 2.8 installed generic summary 路径：验证 non-codex provider 不被误改
 
+> 说明：本节命令是 **patcher-level regression check**，用于验证 `patchInstalledFiles.cjs` 对 installed generic summary 路径的回归保护；它不是 runtime UI 证据，也不替代历史面板的人工点击复核。
+
 ```powershell
 @"
 const fs = require('node:fs');
@@ -251,7 +259,7 @@ Copy-Item -LiteralPath 'C:\Users\17795\AppData\Local\CodexFlow\0.6.0\win-unpacke
 node --test .\scripts\codexflow\tests\*.test.cjs
 ```
 
-结果：`pass 18 / fail 0`
+结果：`pass 19 / fail 0`
 
 本轮新增/强化验证点：
 
