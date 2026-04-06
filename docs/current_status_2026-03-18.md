@@ -194,7 +194,7 @@
 
 香港服务器线上状态已确认：
 
-- 当前生产机 IP：`38.76.215.159`
+- 当前生产机 IP：`<production-server-ip>`
 - `kaoyan-backend.service`：运行中
 - `kaoyan-crawler-v2.service`：应与后端并行托管 V2 workflow worker；如果该服务未运行，`announcement_catalog_refresh`、bootstrap/rebuild 后续 step 会停在 `pending`
 - `nginx.service`：运行中
@@ -202,9 +202,9 @@
 
 线上域名：
 
-- `https://gewujl.cloud`
-- `https://www.gewujl.cloud`
-- `https://api.gewujl.cloud`
+- `https://example.com`
+- `https://www.example.com`
+- `https://api.example.com`
 
 当前 Redis 状态：
 
@@ -214,8 +214,8 @@
 
 补充：
 
-- 生产机源码仓库位于 `/root/code/kaoyan-miniapp-mvp`
-- 后端真实运行目录位于 `/root/code/kaoyan-miniapp-mvp/backend`
+- 生产机源码仓库位于 `/srv/kaoyan-miniapp-mvp`
+- 后端真实运行目录位于 `/srv/kaoyan-miniapp-mvp/backend`
 - 前端真实站点目录位于 `/var/www/html`
 - 服务器仓库已收敛到与 `origin/main` 一致
 - 详细说明见：

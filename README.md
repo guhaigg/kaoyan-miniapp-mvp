@@ -9,11 +9,11 @@
 
 ## Online Endpoints
 
-- Web: `https://gewujl.cloud`
-- Web (www): `https://www.gewujl.cloud`
-- API: `https://api.gewujl.cloud`
-- Health: `https://api.gewujl.cloud/api/v1/health`
-- Admin Console: `https://api.gewujl.cloud/admin/`
+- Web: `https://example.com`
+- Web (www): `https://www.example.com`
+- API: `https://api.example.com`
+- Health: `https://api.example.com/api/v1/health`
+- Admin Console: `https://api.example.com/admin/`
 
 ## Tech Stack
 

@@ -263,7 +263,7 @@ def test_console_requires_admin_login(client):
     admin_headers = _bootstrap_admin_headers(client, "portal_admin_console")
     response_after_login = client.get("/console/", follow_redirects=False, headers=admin_headers)
     assert response_after_login.status_code == 307
-    assert response_after_login.headers["location"] == "https://gewujl.cloud/admin/"
+    assert response_after_login.headers["location"] == "https://example.com/admin/"
 
 
 def test_admin_page_redirects_to_web_console(client):

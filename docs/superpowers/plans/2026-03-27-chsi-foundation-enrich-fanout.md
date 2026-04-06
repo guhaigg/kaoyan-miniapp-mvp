@@ -746,8 +746,8 @@ If `docs/handoff_announcement_portal_visibility_2026-03-25.md` did not change, r
 sha=$(git rev-parse --short HEAD)
 bundle="deploy-$sha.bundle"
 git bundle create "$bundle" main
-scp "$bundle" root@38.76.215.159:/root/
-ssh root@38.76.215.159 "cd /root/code/kaoyan-miniapp-mvp && git fetch /root/$bundle main:bundle-deploy-$sha && git checkout main && git merge --ff-only bundle-deploy-$sha && systemctl restart kaoyan-backend && systemctl restart kaoyan-crawler-v2 && curl -fsS https://api.gewujl.cloud/api/v1/health"
+scp "$bundle" <deploy-user>@<production-server-ip>:/root/
+ssh <deploy-user>@<production-server-ip> "cd /srv/kaoyan-miniapp-mvp && git fetch /root/$bundle main:bundle-deploy-$sha && git checkout main && git merge --ff-only bundle-deploy-$sha && systemctl restart kaoyan-backend && systemctl restart kaoyan-crawler-v2 && curl -fsS https://api.example.com/api/v1/health"
 ```
 
 Expected: health contains `"status":"ok"` and `"db":"up"`. If `redis` still reports `"down"` and that matches the current baseline, note it in the delivery summary instead of blocking the deploy.

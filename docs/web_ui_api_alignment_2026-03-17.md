@@ -66,7 +66,7 @@
   - `npm run build` 通过
 - 发布模式：
   - 采用静态导出产物部署至 Nginx 站点目录
-  - 浏览器端调用 `https://api.gewujl.cloud/api/v1/*`（或同源 `/api/v1/*`）
+  - 浏览器端调用 `https://api.example.com/api/v1/*`（或同源 `/api/v1/*`）
 
 ## 5) 后续建议
 

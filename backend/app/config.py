@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     admin_login_lock_seconds: int = 15 * 60
     user_refresh_ttl_seconds: int = 30 * 24 * 60 * 60
     wechat_bind_code_ttl_seconds: int = 10 * 60
-    web_base_url: str = "https://gewujl.cloud"
+    web_base_url: str = "https://example.com"
     rate_limit_per_minute: int = 120
     enable_notification_worker: bool = True
     notification_batch_size: int = 100
@@ -72,8 +72,8 @@ class Settings(BaseSettings):
         [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
-            "https://gewujl.cloud",
-            "https://www.gewujl.cloud",
+            "https://example.com",
+            "https://www.example.com",
         ]
     )
 

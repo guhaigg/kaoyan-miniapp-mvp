@@ -10,14 +10,14 @@ If you run tests with Python 3.9, you may hit compatibility errors such as `date
 ## 0.1) Current Production Paths (Hong Kong Server)
 
 - Static web root: `/var/www/html`
-- Backend repo root: `/root/code/kaoyan-miniapp-mvp`
-- Admin static files: `/root/code/kaoyan-miniapp-mvp/backend/app/static/console`
-- Web build source: `/root/code/kaoyan-miniapp-mvp/web-ui/out`
+- Backend repo root: `/srv/kaoyan-miniapp-mvp`
+- Admin static files: `/srv/kaoyan-miniapp-mvp/backend/app/static/console`
+- Web build source: `/srv/kaoyan-miniapp-mvp/web-ui/out`
 
 Version-controlled source mapping:
 
 - `/var/www/html/*`  <- `web-ui/out/*`
-- `/root/code/kaoyan-miniapp-mvp/backend/app/static/console/*` <- `backend/app/static/console/*`
+- `/srv/kaoyan-miniapp-mvp/backend/app/static/console/*` <- `backend/app/static/console/*`
 
 Important:
 
@@ -27,7 +27,7 @@ Important:
 
 ## 0.2) Current Production SSH Management Baseline
 
-Production SSH on `38.76.215.159` is now managed as key-only access.
+Production SSH on `<production-server-ip>` is now managed as key-only access.
 
 Current hardening file:
 
@@ -70,7 +70,7 @@ systemctl reload ssh
 - Then verify with:
 
 ```bash
-ssh -o BatchMode=yes root@38.76.215.159 'echo ok'
+ssh -o BatchMode=yes <deploy-user>@<production-server-ip> 'echo ok'
 ```
 
 ## 1) Environment Variables
@@ -109,7 +109,7 @@ Site-section browser probe note:
 - If you enable `ENABLE_SITE_SECTION_BROWSER_PROBE=true` in production, install browser binaries on the host as well, for example:
 
 ```bash
-cd /root/code/kaoyan-miniapp-mvp/backend
+cd /srv/kaoyan-miniapp-mvp/backend
 ./.venv/bin/python -m playwright install chromium
 ```
 
@@ -155,8 +155,8 @@ server {
   listen 443 ssl;
   server_name api.example.com;
 
-  ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+  ssl_certificate /etc/letsencrypt/live/<api-domain>/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/<api-domain>/privkey.pem;
 
   location / {
     proxy_pass http://127.0.0.1:8000;
@@ -201,14 +201,14 @@ Trigger:
 
 Required GitHub Secrets:
 
-- `HK_HOST` (current production example: `38.76.215.159`)
+- `HK_HOST` (current production example: `<production-server-ip>`)
 - `HK_USER` (example: `root`)
 - `HK_SSH_PRIVATE_KEY` (private key content)
 - `HK_SSH_PORT` (optional, default `22`)
 
 Optional GitHub Variables:
 
-- `HK_DEPLOY_PATH` (default `/root/code/kaoyan-miniapp-mvp`)
+- `HK_DEPLOY_PATH` (default `/srv/kaoyan-miniapp-mvp`)
 - `HK_WEB_ROOT` (default `/var/www/html`)
 - `HK_BACKEND_SERVICE` (example: `kaoyan-backend`)
 - `HK_WORKFLOW_SERVICE` (example: `kaoyan-crawler-v2`)
@@ -281,7 +281,7 @@ Retention and auto-cleanup:
 Edit `/etc/default/gewujl-backup`:
 
 ```bash
-REMOTE_BACKUP_TARGET=root@<backup_server_ip>:/data/gewujl-backups
+REMOTE_BACKUP_TARGET=<backup-user>@<backup-server-ip>:/data/kaoyan-miniapp-mvp-backups
 REMOTE_SSH_PORT=22
 REMOTE_SSH_KEY=/root/.ssh/id_ed25519
 ```

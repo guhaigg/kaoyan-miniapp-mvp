@@ -3,9 +3,9 @@ const APP_CONFIG = {
   shortName: "格物简",
   manualApiBase: "",
   apiBaseByEnv: {
-    develop: "https://api.gewujl.cloud/api/v1",
-    trial: "https://api.gewujl.cloud/api/v1",
-    release: "https://api.gewujl.cloud/api/v1",
+    develop: "https://api.example.com/api/v1",
+    trial: "https://api.example.com/api/v1",
+    release: "https://api.example.com/api/v1",
   },
 };
 

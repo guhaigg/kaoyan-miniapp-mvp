@@ -1,7 +1,7 @@
 {
   "name": "gewu-jianlu",
   "version": "1.0.0",
-  "description": "",
+  "description": "格物简录是一个微信小程序 + FastAPI 后端项目。仓库中的公开链接已替换为占位符。",
   "main": "index.js",
   "directories": {
     "doc": "docs"
@@ -17,6 +17,14 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<your-org>/<your-repo>.git"
+  },
+  "bugs": {
+    "url": "https://github.com/<your-org>/<your-repo>/issues"
+  },
+  "homepage": "https://github.com/<your-org>/<your-repo>",
   "devDependencies": {
     "@commitlint/cli": "^20.4.4",
     "@commitlint/config-conventional": "^20.4.4",

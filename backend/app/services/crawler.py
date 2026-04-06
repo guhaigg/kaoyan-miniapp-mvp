@@ -36,7 +36,7 @@ from .site_section_probe import resolve_candidate_links_for_section
 with suppress(Exception):
     from pypdf import PdfReader
 
-_UA = "Mozilla/5.0 (compatible; GeWuJianLuCrawler/0.1; +https://gewujl.cloud)"
+_UA = "Mozilla/5.0 (compatible; GeWuJianLuCrawler/0.1; +https://example.com)"
 _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)

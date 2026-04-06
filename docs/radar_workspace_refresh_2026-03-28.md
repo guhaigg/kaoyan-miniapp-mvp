@@ -32,4 +32,4 @@ The radar prediction API flow is unchanged. The work only reorganizes the page s
 
 - `cd web-ui && npm run lint`
 - `cd web-ui && npm run build`
-- Browser/live inspection of `https://gewujl.cloud/radar/` before implementation to confirm the existing UX issues being addressed
+- Browser/live inspection of `https://example.com/radar/` before implementation to confirm the existing UX issues being addressed

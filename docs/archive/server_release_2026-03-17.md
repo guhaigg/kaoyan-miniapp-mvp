@@ -42,35 +42,35 @@
 
 以下接口均返回 200：
 
-- `https://gewujl.cloud`
-- `https://gewujl.cloud/query/`
-- `https://gewujl.cloud/register/`
-- `https://api.gewujl.cloud/admin/`
-- `https://gewujl.cloud/assets/brand/gw-mark.svg`
-- `https://api.gewujl.cloud/static/console/gw-mark.svg`
+- `https://example.com`
+- `https://example.com/query/`
+- `https://example.com/register/`
+- `https://api.example.com/admin/`
+- `https://example.com/assets/brand/gw-mark.svg`
+- `https://api.example.com/static/console/gw-mark.svg`
 
 ## 5) 发布/同步命令（参考）
 
 ```bash
-scp infra/nginx/index.html root@<server_ip>:/var/www/html/index.html
-scp infra/nginx/register.html root@<server_ip>:/var/www/html/register.html
-scp infra/nginx/register.html root@<server_ip>:/var/www/html/register/index.html
-scp infra/nginx/query/index.html root@<server_ip>:/var/www/html/query/index.html
-scp infra/nginx/about/index.html root@<server_ip>:/var/www/html/about/index.html
-scp infra/nginx/assets/brand/gw-mark.svg root@<server_ip>:/var/www/html/assets/brand/gw-mark.svg
-scp infra/nginx/assets/brand/gw-app-shell.js root@<server_ip>:/var/www/html/assets/brand/gw-app-shell.js
+scp infra/nginx/index.html <deploy-user>@<server-ip>:/var/www/html/index.html
+scp infra/nginx/register.html <deploy-user>@<server-ip>:/var/www/html/register.html
+scp infra/nginx/register.html <deploy-user>@<server-ip>:/var/www/html/register/index.html
+scp infra/nginx/query/index.html <deploy-user>@<server-ip>:/var/www/html/query/index.html
+scp infra/nginx/about/index.html <deploy-user>@<server-ip>:/var/www/html/about/index.html
+scp infra/nginx/assets/brand/gw-mark.svg <deploy-user>@<server-ip>:/var/www/html/assets/brand/gw-mark.svg
+scp infra/nginx/assets/brand/gw-app-shell.js <deploy-user>@<server-ip>:/var/www/html/assets/brand/gw-app-shell.js
 
-scp backend/app/static/console/admin.html root@<server_ip>:/root/code/kaoyan-miniapp-mvp/backend/app/static/console/admin.html
-scp backend/app/static/console/admin.css root@<server_ip>:/root/code/kaoyan-miniapp-mvp/backend/app/static/console/admin.css
-scp backend/app/static/console/admin.js root@<server_ip>:/root/code/kaoyan-miniapp-mvp/backend/app/static/console/admin.js
-scp backend/app/static/console/gw-mark.svg root@<server_ip>:/root/code/kaoyan-miniapp-mvp/backend/app/static/console/gw-mark.svg
+scp backend/app/static/console/admin.html <deploy-user>@<server-ip>:/srv/kaoyan-miniapp-mvp/backend/app/static/console/admin.html
+scp backend/app/static/console/admin.css <deploy-user>@<server-ip>:/srv/kaoyan-miniapp-mvp/backend/app/static/console/admin.css
+scp backend/app/static/console/admin.js <deploy-user>@<server-ip>:/srv/kaoyan-miniapp-mvp/backend/app/static/console/admin.js
+scp backend/app/static/console/gw-mark.svg <deploy-user>@<server-ip>:/srv/kaoyan-miniapp-mvp/backend/app/static/console/gw-mark.svg
 ```
 
 ## 6) 回滚建议
 
 - Web 静态页回滚：恢复 `/var/www/html` 下对应文件的 `.bak` 或上一版文件。
-- 管理台回滚：恢复 `/root/code/kaoyan-miniapp-mvp/backend/app/static/console` 的上一版文件后重启后端服务。
+- 管理台回滚：恢复 `/srv/kaoyan-miniapp-mvp/backend/app/static/console` 的上一版文件后重启后端服务。
 - 回滚后务必复查：
   - `/api/v1/health`
-  - `https://gewujl.cloud/query/` 页面返回链路
-  - `https://api.gewujl.cloud/admin/` 登录页可访问
+  - `https://example.com/query/` 页面返回链路
+  - `https://api.example.com/admin/` 登录页可访问

@@ -88,7 +88,7 @@ npm run test:backend
 已在生产机执行正式回填：
 
 ```bash
-cd /root/code/kaoyan-miniapp-mvp
+cd /srv/kaoyan-miniapp-mvp
 backend/.venv/bin/python backend/scripts/backfill_announcement_portal_metadata.py --overwrite
 ```
 
@@ -103,7 +103,7 @@ backend/.venv/bin/python backend/scripts/backfill_announcement_portal_metadata.p
 执行后已验证：
 
 - `http://127.0.0.1:8000/api/v1/health`
-- `https://api.gewujl.cloud/api/v1/health`
+- `https://api.example.com/api/v1/health`
 
 均返回：
 
@@ -120,14 +120,14 @@ backend/.venv/bin/python backend/scripts/backfill_announcement_portal_metadata.p
 这轮逻辑不仅影响新入库内容，也影响旧公告是否应该继续可见。生产已经完成一次全量 `--overwrite` 回填；如果后续继续调整规则，建议先做 dry-run，再决定是否重新覆盖：
 
 ```bash
-cd /root/code/kaoyan-miniapp-mvp
+cd /srv/kaoyan-miniapp-mvp
 ./.venv/bin/python backend/scripts/backfill_announcement_portal_metadata.py --overwrite --dry-run
 ```
 
 如果 dry-run 结果符合预期，再执行：
 
 ```bash
-cd /root/code/kaoyan-miniapp-mvp
+cd /srv/kaoyan-miniapp-mvp
 ./.venv/bin/python backend/scripts/backfill_announcement_portal_metadata.py --overwrite
 ```
 

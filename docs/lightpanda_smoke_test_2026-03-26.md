@@ -29,7 +29,7 @@ From the repo root:
 ```bash
 python backend/scripts/lightpanda_smoke.py ^
   --cdp-url http://127.0.0.1:9222 ^
-  --url https://gewujl.cloud/search/ ^
+  --url https://example.com/search/ ^
   --selector "a" ^
   --selector "input"
 ```
@@ -39,7 +39,7 @@ Linux/macOS form:
 ```bash
 python backend/scripts/lightpanda_smoke.py \
   --cdp-url http://127.0.0.1:9222 \
-  --url https://gewujl.cloud/search/ \
+  --url https://example.com/search/ \
   --selector "a" \
   --selector "input"
 ```
@@ -48,7 +48,7 @@ python backend/scripts/lightpanda_smoke.py \
 
 ```bash
 python backend/scripts/lightpanda_smoke.py \
-  --url https://gewujl.cloud/admin/ \
+  --url https://example.com/admin/ \
   --dump-html tmp/lightpanda-admin.html
 ```
 
@@ -61,7 +61,7 @@ The script prints JSON like:
   "engine": "lightpanda",
   "ok": true,
   "status": 200,
-  "final_url": "https://gewujl.cloud/search/",
+  "final_url": "https://example.com/search/",
   "title": "..."
 }
 ```

@@ -24,15 +24,15 @@ If instructions conflict, follow the stricter rule.
 Ge Wu Jian Lu (`格物简录`) is a multi-surface project with:
 
 - `backend/`: FastAPI API, auth, search, subscriptions, notifications, admin
-- `web-ui/`: Next.js web UI for `gewujl.cloud`
+- `web-ui/`: Next.js web UI for `example.com`
 - `miniapp/`: WeChat mini program
 - `infra/`: nginx, systemd, backup, deployment assets
 - `docs/`: process, deployment, architecture, release records
 
 Production currently uses:
 
-- Web: `https://gewujl.cloud`
-- API: `https://api.gewujl.cloud`
+- Web: `https://example.com`
+- API: `https://api.example.com`
 - External MySQL
 - Redis
 - Nginx + systemd
@@ -130,12 +130,12 @@ Authoritative deployment details live in `docs/deployment.md`.
 Important current paths:
 
 - Web static root: `/var/www/html`
-- Server repo root: `/root/code/kaoyan-miniapp-mvp`
+- Server repo root: `/srv/kaoyan-miniapp-mvp`
 
 Typical web deploy flow on the Hong Kong host:
 
 ```bash
-cd /root/code/kaoyan-miniapp-mvp
+cd /srv/kaoyan-miniapp-mvp
 git pull --ff-only origin main
 cd web-ui
 npm ci

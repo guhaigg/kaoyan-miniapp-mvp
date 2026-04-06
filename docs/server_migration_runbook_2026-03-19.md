@@ -15,11 +15,11 @@
 
 ## 2. 当前线上结构
 
-现有生产机：`38.76.215.159`
+现有生产机：`<production-server-ip>`
 
-- 仓库目录：`/root/code/kaoyan-miniapp-mvp`
-- 后端运行目录：`/root/code/kaoyan-miniapp-mvp/backend`
-- 前端源码目录：`/root/code/kaoyan-miniapp-mvp/web-ui`
+- 仓库目录：`/srv/kaoyan-miniapp-mvp`
+- 后端运行目录：`/srv/kaoyan-miniapp-mvp/backend`
+- 前端源码目录：`/srv/kaoyan-miniapp-mvp/web-ui`
 - 前端静态站点目录：`/var/www/html`
 - 后端 systemd 服务：`kaoyan-backend`
 - API Nginx 配置：`/etc/nginx/sites-enabled/kaoyan-api`
@@ -29,9 +29,9 @@
 
 当前 Nginx 真实职责：
 
-- `https://api.gewujl.cloud` 反代 `127.0.0.1:8000`
-- `https://gewujl.cloud` / `https://www.gewujl.cloud` 静态根目录是 `/var/www/html`
-- `https://gewujl.cloud/api/v1/` 同样反代 `127.0.0.1:8000`
+- `https://api.example.com` 反代 `127.0.0.1:8000`
+- `https://example.com` / `https://www.example.com` 静态根目录是 `/var/www/html`
+- `https://example.com/api/v1/` 同样反代 `127.0.0.1:8000`
 
 ## 3. 当前环境与配置文件
 
@@ -44,8 +44,8 @@
 
 - `backend/.env`
 - SSL 证书目录：
-  - `/etc/letsencrypt/live/api.gewujl.cloud/`
-  - `/etc/letsencrypt/live/gewujl.cloud/`
+  - `/etc/letsencrypt/live/api.example.com/`
+  - `/etc/letsencrypt/live/example.com/`
   - `/etc/letsencrypt/options-ssl-nginx.conf`
   - `/etc/letsencrypt/ssl-dhparams.pem`
 
@@ -160,17 +160,17 @@
 ```bash
 mkdir -p /root/code
 cd /root/code
-git clone https://github.com/guhaigg/kaoyan-miniapp-mvp.git
+git clone https://github.com/<your-org>/<your-repo>.git
 cd kaoyan-miniapp-mvp
 git checkout main
 git reset --hard origin/main
 
-cd /root/code/kaoyan-miniapp-mvp/backend
+cd /srv/kaoyan-miniapp-mvp/backend
 python3.12 -m venv .venv
 .venv/bin/pip install -U pip
 .venv/bin/pip install -r requirements.txt
 
-cd /root/code/kaoyan-miniapp-mvp/web-ui
+cd /srv/kaoyan-miniapp-mvp/web-ui
 npm ci
 npm run build
 ```
@@ -178,7 +178,7 @@ npm run build
 ### 8.3 环境变量
 
 ```bash
-cp /root/code/kaoyan-miniapp-mvp/backend/.env.example /root/code/kaoyan-miniapp-mvp/backend/.env
+cp /srv/kaoyan-miniapp-mvp/backend/.env.example /srv/kaoyan-miniapp-mvp/backend/.env
 ```
 
 然后用旧服务器上的真实 `.env` 内容覆盖。不要把真实值提交到仓库。
@@ -187,7 +187,7 @@ cp /root/code/kaoyan-miniapp-mvp/backend/.env.example /root/code/kaoyan-miniapp-
 
 ```bash
 rm -rf /var/www/html/*
-cp -R /root/code/kaoyan-miniapp-mvp/web-ui/out/* /var/www/html/
+cp -R /srv/kaoyan-miniapp-mvp/web-ui/out/* /var/www/html/
 ```
 
 ### 8.5 systemd
@@ -236,15 +236,15 @@ systemctl reload nginx
 推荐命令：
 
 ```bash
-cd /root/code/kaoyan-miniapp-mvp/backend
-PYTHONPATH=/root/code/kaoyan-miniapp-mvp/backend .venv/bin/python scripts/import_historical_intelligence.py
+cd /srv/kaoyan-miniapp-mvp/backend
+PYTHONPATH=/srv/kaoyan-miniapp-mvp/backend .venv/bin/python scripts/import_historical_intelligence.py
 ```
 
 如果需要先验证，可先执行：
 
 ```bash
-cd /root/code/kaoyan-miniapp-mvp/backend
-PYTHONPATH=/root/code/kaoyan-miniapp-mvp/backend .venv/bin/python -m pytest -q backend/tests/test_historical_intelligence.py backend/tests/test_search.py
+cd /srv/kaoyan-miniapp-mvp/backend
+PYTHONPATH=/srv/kaoyan-miniapp-mvp/backend .venv/bin/python -m pytest -q backend/tests/test_historical_intelligence.py backend/tests/test_search.py
 ```
 
 ### 方案 B：数据库也迁移
@@ -261,8 +261,8 @@ PYTHONPATH=/root/code/kaoyan-miniapp-mvp/backend .venv/bin/python -m pytest -q b
 
 ```bash
 curl -sS http://127.0.0.1:8000/api/v1/health
-curl -sS https://api.gewujl.cloud/api/v1/health
-curl -I https://gewujl.cloud/search/
+curl -sS https://api.example.com/api/v1/health
+curl -I https://example.com/search/
 ```
 
 ### 10.2 数据检查

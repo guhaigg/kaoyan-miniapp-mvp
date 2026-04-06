@@ -5,7 +5,7 @@ MODE="${1:-daily}"
 
 APP_NAME="${APP_NAME:-gewujl}"
 BACKUP_ROOT="${BACKUP_ROOT:-/root/backups}"
-DEPLOY_PATH="${DEPLOY_PATH:-/root/code/kaoyan-miniapp-mvp}"
+DEPLOY_PATH="${DEPLOY_PATH:-/srv/kaoyan-miniapp-mvp}"
 WEB_ROOT="${WEB_ROOT:-/var/www/html}"
 ENV_FILE="${ENV_FILE:-${DEPLOY_PATH}/backend/.env}"
 KEEP_DAYS_DAILY="${KEEP_DAYS_DAILY:-14}"
