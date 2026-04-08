@@ -1,0 +1,40 @@
+flowchart LR
+    A(["用户需求进入"])
+    B["Skill-First\n先调用匹配 Skill"]
+    C{"任务类型判断"}
+    D["轻量任务\n最小正确改动"]
+    E["非平凡任务\nBrainstorming → Writing Plans"]
+    F{"执行路由"}
+    G["Direct\n单写者直接执行"]
+    H["Parallel Agents\n并行写者 / 单写者+只读侧车"]
+    I["High-Assurance Serial\n共享写范围时高保障串行"]
+    J["TDD + Code Review\n按风险选择审查强度"]
+    K["Verification Before Completion\n先验证，再宣称完成"]
+    L["Finishing Branch\n合并 / PR / 保留"]
+    M["Engineering Knowledge Garden\n沉淀模式、坑点、验证配方"]
+    N(["下一轮任务复用"])
+
+    A --> B --> C
+    C -->|"轻量"| D --> K
+    C -->|"非平凡"| E --> F
+    F --> G --> J
+    F --> H --> J
+    F --> I --> J
+    J --> K --> L --> M --> N
+    M -. "经验回流" .-> B
+
+    X1["独有设计① Skill-First"] -.-> B
+    X2["独有设计② 锁定交付边界"] -.-> E
+    X3["独有设计③ 共享写范围 ≠ 停止并行"] -.-> H
+    X4["独有设计④ 证据先于完成声明"] -.-> K
+    X5["独有设计⑤ 知识花园闭环"] -.-> M
+
+    classDef start fill:#0B1220,stroke:#38BDF8,color:#EFF6FF,stroke-width:2px;
+    classDef core fill:#101828,stroke:#8B5CF6,color:#F8FAFC,stroke-width:2px;
+    classDef decision fill:#1F2937,stroke:#F59E0B,color:#FEF3C7,stroke-width:2px;
+    classDef note fill:#FFF7ED,stroke:#EA580C,color:#7C2D12,stroke-width:1.5px,stroke-dasharray: 5 3;
+
+    class A,N start;
+    class B,D,E,G,H,I,J,K,L,M core;
+    class C,F decision;
+    class X1,X2,X3,X4,X5 note;

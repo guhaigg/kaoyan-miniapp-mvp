@@ -2,6 +2,16 @@
 
 格物简录是一个微信小程序 + FastAPI 后端的项目，用于聚合与检索公告/调剂信息。当前开发环境已接入外部 MySQL，服务域名已配置 HTTPS。
 
+## Better SP Workflow
+
+下面这张图是 README 展示版的 Better SP 特殊流程图：先走 `Skill-First`，再根据任务复杂度决定是否进入 `Brainstorming / Writing Plans`，执行阶段按写范围与风险选择 `Direct / Parallel Agents / High-Assurance Serial`，最后通过验证、收尾和知识回流形成闭环。
+
+[![Better SP Workflow](./docs/assets/better-sp-readme-flowchart.png)](https://www.figma.com/online-whiteboard/create-diagram/36c01457-718b-4012-95aa-490082f20018?utm_source=other&utm_content=edit_in_figjam&oai_id=&request_id=c2a99434-e76d-411b-9a88-ab4ae64c9a41)
+
+- Figma（可编辑流程图）：<https://www.figma.com/online-whiteboard/create-diagram/36c01457-718b-4012-95aa-490082f20018?utm_source=other&utm_content=edit_in_figjam&oai_id=&request_id=c2a99434-e76d-411b-9a88-ab4ae64c9a41>
+- 仓库内图源：`docs/assets/better-sp-readme-flowchart.mmd`
+- README PNG：`docs/assets/better-sp-readme-flowchart.png`
+
 ## Runtime Requirements
 
 - Python `>=3.11`（推荐 `3.12`）
